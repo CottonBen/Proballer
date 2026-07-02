@@ -89,6 +89,7 @@ function requireLoginRedirect() {
 
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function fmtDate(iso) {
-  const d = new Date(iso + 'T12:00:00');
-  return `${WEEKDAYS[d.getDay()]} ${d.getDate()}.${d.getMonth() + 1}.`;
+  // UTC-anchored so a calendar date renders the same weekday in every timezone.
+  const d = new Date(iso + 'T12:00:00Z');
+  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
 }

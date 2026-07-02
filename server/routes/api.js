@@ -40,6 +40,7 @@ router.get('/config', (req, res) => {
     pricing: config.pricing,
     hours: { start: config.dayStartHour, end: config.dayEndHour },
     bookingHorizonDays: config.bookingHorizonDays,
+    emailDelivery: require('../mailer').smtpConfigured(),
   });
 });
 
@@ -108,6 +109,22 @@ router.post('/auth/login', loginThrottle, (req, res) => {
 
 router.post('/auth/logout', (req, res) => {
   destroySession(req, res);
+  res.json({ ok: true });
+});
+
+// Any logged-in user can rotate their own password. Signs other sessions out.
+router.post('/auth/change-password', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Please log in.' });
+  const current = String(req.body?.currentPassword || '');
+  const next = String(req.body?.newPassword || '');
+  if (next.length < 8) return res.status(400).json({ error: 'New password must be at least 8 characters.' });
+  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(req.user.id);
+  if (!user || !bcrypt.compareSync(current, user.password_hash)) {
+    return res.status(401).json({ error: 'Current password is wrong.' });
+  }
+  db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(next, 10), user.id);
+  db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id); // invalidate everywhere
+  createSession(res, user.id); // keep the current browser signed in
   res.json({ ok: true });
 });
 
@@ -339,7 +356,10 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
   const sessions = {
     pending: one("SELECT COUNT(*) FROM bookings WHERE status = 'confirmed'"),
     pendingValueCents: one("SELECT COALESCE(SUM(total_cents),0) FROM bookings WHERE status = 'confirmed'"),
-    completed: windowed(d => one("SELECT COUNT(*) FROM bookings WHERE status = 'completed' AND date >= ?", d)),
+    // Completed sessions are windowed on the session date, bounded to today so a
+    // booking the admin marked done early (future date) can't leak into the past window.
+    completed: windowed(d => one(
+      "SELECT COUNT(*) FROM bookings WHERE status = 'completed' AND date >= ? AND date <= ?", d, today)),
     cancelledAll: one("SELECT COUNT(*) FROM bookings WHERE status = 'cancelled'"),
   };
 
@@ -350,13 +370,15 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
     funnel[k] = {
       started: started[k],
       completed: finished[k],
-      rate: started[k] ? Math.round(finished[k] / started[k] * 100) : null,
+      // Clamp at 100%: "started" is a client event and "completed" is server-side,
+      // so at window edges completed can slightly exceed started.
+      rate: started[k] ? Math.min(100, Math.round(finished[k] / started[k] * 100)) : null,
     };
   }
 
   const revenue = {
     completedCents: windowed(d =>
-      one("SELECT COALESCE(SUM(total_cents),0) FROM bookings WHERE status = 'completed' AND date >= ?", d)),
+      one("SELECT COALESCE(SUM(total_cents),0) FROM bookings WHERE status = 'completed' AND date >= ? AND date <= ?", d, today)),
     invoicesPaidCents: one("SELECT COALESCE(SUM(amount_cents),0) FROM invoices WHERE status = 'paid'"),
     invoicesOutstandingCents: one("SELECT COALESCE(SUM(amount_cents),0) FROM invoices WHERE status = 'sent'"),
   };
@@ -370,20 +392,25 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
   const coaches = db.prepare('SELECT * FROM coaches WHERE active = 1 ORDER BY display_order, id').all()
     .map(c => {
       const completed = windowed(d =>
-        one("SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status = 'completed' AND date >= ?", c.id, d));
+        one("SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status = 'completed' AND date >= ? AND date <= ?", c.id, d, today));
       const upcoming = one("SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status = 'confirmed'", c.id);
-      const revenueAllCents = one(
+      // Earned revenue = completed sessions only, matching the headline figure.
+      const revenueCompletedCents = one(
+        "SELECT COALESCE(SUM(total_cents),0) FROM bookings WHERE coach_id = ? AND status = 'completed'", c.id);
+      // Booked value including upcoming (shown separately so it isn't confused with earned revenue).
+      const bookedValueCents = one(
         "SELECT COALESCE(SUM(total_cents),0) FROM bookings WHERE coach_id = ? AND status != 'cancelled'", c.id);
       const slotsNext14 = one(
         'SELECT COUNT(*) FROM availability WHERE coach_id = ? AND date BETWEEN ? AND ?', c.id, today, horizon14);
+      // Any non-cancelled booking in the window occupies a slot (confirmed or already completed).
       const bookedNext14 = one(
-        "SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status = 'confirmed' AND date BETWEEN ? AND ?",
+        "SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status != 'cancelled' AND date BETWEEN ? AND ?",
         c.id, today, horizon14);
       return {
         id: c.id, name: c.name, slug: c.slug,
         locations: parseJSON(c.locations, []), positions: parseJSON(c.positions, []),
-        completed, upcoming, revenueAllCents, slotsNext14, bookedNext14,
-        utilization: slotsNext14 ? Math.round(bookedNext14 / slotsNext14 * 100) : null,
+        completed, upcoming, revenueCompletedCents, bookedValueCents, slotsNext14, bookedNext14,
+        utilization: slotsNext14 ? Math.min(100, Math.round(bookedNext14 / slotsNext14 * 100)) : null,
       };
     });
 
@@ -399,7 +426,7 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
     pageviews: mapDays(db.prepare(
       'SELECT day, COUNT(*) n FROM visits WHERE day >= ? GROUP BY day').all(days[0])),
     completedSessions: mapDays(db.prepare(
-      "SELECT date, COUNT(*) n FROM bookings WHERE status='completed' AND date >= ? GROUP BY date").all(days[0])),
+      "SELECT date, COUNT(*) n FROM bookings WHERE status='completed' AND date >= ? AND date <= ? GROUP BY date").all(days[0], today)),
     funnelStarted: mapDays(db.prepare(
       "SELECT day, COUNT(*) n FROM events WHERE type='booking_started' AND day >= ? GROUP BY day").all(days[0])),
     funnelCompleted: mapDays(db.prepare(
@@ -454,6 +481,14 @@ router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
   if (!['completed', 'cancelled', 'confirmed'].includes(to)) return res.status(400).json({ error: 'Bad status.' });
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(Number(req.params.id));
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  // Re-activating a cancelled booking can collide with another booking that
+  // took the slot in the meantime — check before hitting the unique index.
+  if (to !== 'cancelled' && booking.status === 'cancelled') {
+    const clash = db.prepare(`SELECT 1 FROM bookings
+      WHERE coach_id = ? AND date = ? AND hour = ? AND status != 'cancelled' AND id != ?`)
+      .get(booking.coach_id, booking.date, booking.hour, booking.id);
+    if (clash) return res.status(409).json({ error: 'That slot has since been booked by someone else.' });
+  }
   db.prepare('UPDATE bookings SET status = ?, completed_at = ? WHERE id = ?')
     .run(to, to === 'completed' ? nowISO() : null, booking.id);
   if (to === 'cancelled') {
@@ -474,13 +509,7 @@ router.get('/admin/export/:name.csv', requireRole('admin'), (req, res) => {
   const data = require('../sheets-datasets')();
   const list = data[req.params.name];
   if (!list) return res.status(404).json({ error: 'Unknown dataset. Options: ' + Object.keys(data).join(', ') });
-  const headers = list.length ? Object.keys(list[0]) : ['empty'];
-  const escCsv = (v) => {
-    const s = v == null ? '' : String(v);
-    return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
-  };
-  const csv = [headers.join(','), ...list.map(r => headers.map(h => escCsv(r[h])).join(','))].join('\n');
-  res.type('text/csv').attachment(`${req.params.name}.csv`).send(csv);
+  res.type('text/csv').attachment(`${req.params.name}.csv`).send(require('../csv').toCSV(list));
 });
 
 router.post('/admin/sheets/sync', requireRole('admin'), async (req, res) => {

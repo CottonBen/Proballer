@@ -14,6 +14,32 @@ services:
         value: "0"         # fresh production deploys start clean
       - key: DATA_DIR
         value: /var/data
+      # Set these in the Render dashboard (marked sync:false so they are not in git).
+      # Initial admin/coach credentials — override the source defaults on first boot:
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: ADMIN_PASSWORD
+        sync: false
+      - key: COACH_EMAIL
+        sync: false
+      - key: COACH_PASSWORD
+        sync: false
+      # Real invoice emails (any SMTP provider — Brevo/Mailgun/Postmark):
+      - key: SMTP_HOST
+        sync: false
+      - key: SMTP_PORT
+        sync: false
+      - key: SMTP_USER
+        sync: false
+      - key: SMTP_PASS
+        sync: false
+      - key: SMTP_FROM
+        sync: false
+      # Google Sheets sync (service account JSON path + sheet id):
+      - key: GOOGLE_SERVICE_ACCOUNT
+        sync: false
+      - key: GOOGLE_SHEET_ID
+        sync: false
     disk:
       name: proballers-data
       mountPath: /var/data

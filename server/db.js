@@ -144,9 +144,12 @@ function helsinkiNow(d = new Date()) {
   };
 }
 
-// Helsinki date string N days from today (negative = past).
+// Helsinki date string N days from today (negative = past). Uses calendar-date
+// arithmetic (not millisecond math) so it is correct across DST transitions.
 function helsinkiDateOffset(days) {
-  return helsinkiNow(new Date(Date.now() + days * 86400000)).date;
+  const [y, m, d] = helsinkiNow().date.split('-').map(Number);
+  const t = new Date(Date.UTC(y, m - 1, d + days));
+  return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
 }
 
 function nowISO() { return new Date().toISOString(); }
@@ -157,10 +160,12 @@ function nowISO() { return new Date().toISOString(); }
 // ---------------------------------------------------------------------------
 function autoCompleteBookings() {
   const { date, hour } = helsinkiNow();
+  // completed_at is the session end in Helsinki local time (naive, no numeric
+  // offset — the old hard-coded +02:00 was wrong during summer time / EEST).
   db.prepare(`
     UPDATE bookings
     SET status = 'completed',
-        completed_at = date || 'T' || printf('%02d', hour + 1) || ':00:00+02:00'
+        completed_at = date || 'T' || printf('%02d', hour + 1) || ':00:00'
     WHERE status = 'confirmed' AND (date < ? OR (date = ? AND hour + 1 <= ?))
   `).run(date, date, hour);
 }

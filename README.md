@@ -47,6 +47,17 @@ clearly banner-flagged in the admin) so every screen has something to show.
 
 The two configured accounts (owner + Kalle) use the credentials you specified.
 An extra coach login exists for Ben: `ben@proballers.fi` / `ChangeMe123!` — **change it**.
+
+### Credentials & security (read before going live)
+
+- **Change the passwords for production.** The defaults are baked into the source for
+  local convenience. On the server, set `ADMIN_EMAIL` / `ADMIN_PASSWORD` and
+  `COACH_EMAIL` / `COACH_PASSWORD` env vars *before the first boot* so the seeded
+  accounts use your real secrets (the database only ever stores bcrypt hashes).
+- **Rotate any time from inside the app:** any logged-in user can `POST /api/auth/change-password`
+  with `{currentPassword, newPassword}` (this also signs out other sessions).
+- Because you pasted your Google account password into a chat, change that password too —
+  and note this app never uses it (Google Sheets connects via a service account instead).
 New coaches: add a `users` row with role `coach` + a `coaches` profile row (see
 `scripts/seed.js` for the exact shape) — or ask your developer/Claude to add a small
 "invite coach" admin button later.

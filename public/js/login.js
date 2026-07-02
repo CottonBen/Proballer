@@ -1,9 +1,14 @@
 // Login / signup page. Redirects each role to its own home.
 'use strict';
 
+// Only honor a same-origin, path-relative next (blocks open-redirect phishing).
+function safeNext(raw) {
+  return raw && raw.startsWith('/') && !raw.startsWith('//') ? raw : null;
+}
+
 (async function init() {
   const user = await initHeaderAuth();
-  const next = new URLSearchParams(location.search).get('next');
+  const next = safeNext(new URLSearchParams(location.search).get('next'));
   if (user) { location.href = next || DASH_FOR_ROLE[user.role] || '/'; return; }
 
   let mode = 'login';

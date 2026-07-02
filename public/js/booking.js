@@ -39,6 +39,10 @@ function closeWizard() {
 document.addEventListener('DOMContentLoaded', () => {
   document.getElementById('wizard-close').addEventListener('click', closeWizard);
   backdrop().addEventListener('click', (e) => { if (e.target === backdrop()) closeWizard(); });
+  // Escape closes the wizard when it's open.
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && backdrop().classList.contains('open')) closeWizard();
+  });
 });
 
 const STEP_TITLES = ['Pick a time', 'Your position', 'Session focus', 'Where do you train?', 'Confirm your booking'];
@@ -161,7 +165,9 @@ function renderFocus() {
         <div class="t">${esc(f.label)} ${f.online ? '<span class="chip" style="font-size:.68rem">ONLINE</span>' : ''}</div>
         <div class="d">${esc(FOCUS_HINTS[f.id] || '')}</div>
       </div>`).join('')}</div>` + nav({ nextOk: Boolean(W.focus) });
-  bindOptCards('focus');
+  // Changing the focus can change whether a location is valid (online forces
+  // 'Online'; on-pitch needs a real city), so drop any previously picked city.
+  bindOptCards('focus', () => { W.location = null; });
 }
 
 // --- step 3: location -------------------------------------------------------
@@ -175,13 +181,22 @@ function renderLocation() {
   bindOptCards('location');
 }
 
-function bindOptCards(field) {
-  body().querySelectorAll('.opt-card').forEach((card) => card.addEventListener('click', () => {
-    W[field] = card.dataset.val;
-    body().querySelectorAll('.opt-card').forEach((c) => c.classList.remove('sel'));
-    card.classList.add('sel');
-    body().querySelector('[data-nav="next"]').disabled = false;
-  }));
+function bindOptCards(field, onChange) {
+  body().querySelectorAll('.opt-card').forEach((card) => {
+    card.setAttribute('tabindex', '0');
+    card.setAttribute('role', 'button');
+    const choose = () => {
+      W[field] = card.dataset.val;
+      body().querySelectorAll('.opt-card').forEach((c) => c.classList.remove('sel'));
+      card.classList.add('sel');
+      body().querySelector('[data-nav="next"]').disabled = false;
+      if (onChange) onChange(card.dataset.val);
+    };
+    card.addEventListener('click', choose);
+    card.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); choose(); }
+    });
+  });
 }
 
 // --- step 4: review + login + confirm ---------------------------------------
@@ -207,8 +222,9 @@ async function renderReview() {
       <strong>${discount ? `<span class="price-old">${eur(price)}</span> ` : ''}
         <span class="price-new">${eur(price - discount)}</span>
         ${discount ? `<span class="chip" style="font-size:.68rem">${p.saleLabel} −${p.salePercent}%</span>` : ''}</strong></div>
-    <p class="small muted" style="margin-top:12px">Confirming sends the invoice (${eur(price - discount)},
-      due in 7 days) to your email. Pay by the due date — details are on the invoice.</p>
+    <p class="small muted" style="margin-top:12px">Confirming issues the invoice (${eur(price - discount)},
+      due in 7 days)${W.site.emailDelivery ? ' to your email' : ', viewable in My bookings'}.
+      Pay by the due date — details are on the invoice.</p>
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -237,9 +253,13 @@ async function renderReview() {
     } catch (err) {
       btn.disabled = false; btn.textContent = 'Confirm booking';
       body().querySelector('#confirm-error').textContent = err.message;
-      if (err.status === 409) { // slot taken — refresh slots and go back to step 0
+      if (err.status === 409) { // slot taken — refresh slots and go back to the picker
         const data = await API.get(`/coaches/${W.coach.id}/slots`).catch(() => null);
-        if (data) { W.slots = data.slots; W.slot = null; }
+        if (data) { W.slots = data.slots; }
+        W.slot = null;
+        W.step = 0;
+        toast('That time was just taken — please pick another.', true);
+        render();
       }
     }
   });
@@ -274,8 +294,10 @@ function renderAuthPanel() {
   let mode = 'login';
   panel.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {
     mode = b.dataset.tab;
-    panel.querySelectorAll('[data-tab]').forEach((x) =>
-      x.classList.toggle('btn-primary', x === b) || x.classList.toggle('btn-ghost', x !== b));
+    panel.querySelectorAll('[data-tab]').forEach((x) => {
+      x.classList.toggle('btn-primary', x === b);
+      x.classList.toggle('btn-ghost', x !== b);
+    });
     panel.querySelector('#f-name').hidden = mode === 'login';
     panel.querySelector('button[type="submit"]').innerHTML =
       mode === 'login' ? 'Log in &amp; continue' : 'Create account &amp; continue';
@@ -317,7 +339,9 @@ function renderSuccess({ booking, invoice }) {
         <div class="review-row"><span class="muted">Amount</span><strong>${eur(invoice.amountCents)}</strong></div>
         <div class="review-row" style="border:none"><span class="muted">Due</span><strong>${esc(invoice.dueDate)}</strong></div>
       </div>
-      <p class="small muted">The invoice has been sent to your email. You can also open it any time
+      <p class="small muted">${W.site.emailDelivery
+        ? 'The invoice has been sent to your email.'
+        : 'Your invoice is ready to view below.'} You can open it any time
         from <a href="/my-bookings">My bookings</a>.</p>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:8px">
         <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">View invoice</a>

@@ -11,14 +11,16 @@ const state = {
 };
 
 const key = (d, h) => `${d}|${h}`;
+// Date math done in UTC (noon anchor) so it is independent of the browser's
+// timezone — a plain YYYY-MM-DD string in, a correct YYYY-MM-DD string out.
 const addDays = (iso, n) => {
-  const d = new Date(iso + 'T12:00:00');
-  d.setDate(d.getDate() + n);
+  const d = new Date(iso + 'T12:00:00Z');
+  d.setUTCDate(d.getUTCDate() + n);
   return d.toISOString().slice(0, 10);
 };
 const mondayOf = (iso) => {
-  const d = new Date(iso + 'T12:00:00');
-  return addDays(iso, -((d.getDay() + 6) % 7));
+  const d = new Date(iso + 'T12:00:00Z');
+  return addDays(iso, -((d.getUTCDay() + 6) % 7));
 };
 
 (async function init() {

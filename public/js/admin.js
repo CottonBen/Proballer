@@ -126,7 +126,9 @@ function renderCoachTable() {
   const t = document.getElementById('coach-table');
   t.innerHTML = `
     <tr><th>Coach</th><th>Trains</th><th>Cities</th><th>Completed<br><span style="font-weight:400">7 / 30 / 90 / all</span></th>
-      <th>Upcoming</th><th>Open slots<br>next 14 d</th><th>Utilization</th><th>Revenue</th></tr>` +
+      <th>Upcoming</th><th>Open slots<br>next 14 d</th><th>Utilization</th>
+      <th>Earned<br><span style="font-weight:400">completed</span></th>
+      <th>Booked value<br><span style="font-weight:400">incl. upcoming</span></th></tr>` +
     A.coaches.map((c) => `
       <tr data-coach="${c.id}" style="cursor:pointer">
         <td><strong>${esc(c.name)}</strong></td>
@@ -136,7 +138,8 @@ function renderCoachTable() {
         <td>${c.upcoming}</td>
         <td>${c.slotsNext14}</td>
         <td>${c.utilization === null ? '<span class="muted">no slots</span>' : c.utilization + '%'}</td>
-        <td>${eur(c.revenueAllCents)}</td>
+        <td>${eur(c.revenueCompletedCents)}</td>
+        <td class="muted">${eur(c.bookedValueCents)}</td>
       </tr>`).join('');
   t.querySelectorAll('tr[data-coach]').forEach((row) =>
     row.addEventListener('click', () => openCoachCalendar(Number(row.dataset.coach))));
@@ -152,7 +155,7 @@ async function openCoachCalendar(id) {
   const avail = new Set(data.slots.map((s) => `${s.date}|${s.hour}`));
   const booked = new Map(data.bookings.map((b) => [`${b.date}|${b.hour}`, b]));
   const days = [];
-  for (let d = new Date(data.from + 'T12:00:00'); days.length < 14; d.setDate(d.getDate() + 1)) {
+  for (let d = new Date(data.from + 'T12:00:00Z'); days.length < 14; d.setUTCDate(d.getUTCDate() + 1)) {
     days.push(d.toISOString().slice(0, 10));
   }
   const site = await API.get('/config');

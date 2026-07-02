@@ -32,24 +32,34 @@ app.use((req, res, next) => {
 app.use(sessionMiddleware);
 
 // ---------------------------------------------------------------------------
-// Visitor tracking: anonymous cookie + one row per page view. Admin and coach
-// traffic is not counted, so the dashboard reflects real (potential) customers.
+// Visitor tracking: anonymous cookie + one row per page view. Only public
+// acquisition pages are counted (not dashboards/login), and admin/coach traffic
+// is excluded, so the dashboard reflects real (potential) customers.
 // ---------------------------------------------------------------------------
-const PAGES = new Set(['/', '/index.html', '/login', '/coach', '/admin', '/my-bookings']);
+const ACQUISITION_PAGES = new Set(['/', '/index.html']);
+const BOT_UA = /bot|crawl|spider|slurp|monitor|curl|wget|python-requests|headless|preview|facebookexternalhit|uptime/i;
 app.use((req, res, next) => {
   const cookies = parseCookies(req);
   let vid = cookies.pbf_vid;
-  if (!vid || !/^[a-f0-9]{24}$/.test(vid)) {
+  const hadCookie = vid && /^[a-f0-9]{24}$/.test(vid);
+  if (!hadCookie) {
     vid = crypto.randomBytes(12).toString('hex');
     res.append('Set-Cookie', `pbf_vid=${vid}; Path=/; SameSite=Lax; Max-Age=${365 * 86400}` +
       (process.env.NODE_ENV === 'production' ? '; Secure' : ''));
   }
   req.visitorId = vid;
-  if (req.method === 'GET' && PAGES.has(req.path)
+
+  const ua = req.headers['user-agent'] || '';
+  if (req.method === 'GET' && ACQUISITION_PAGES.has(req.path) && !BOT_UA.test(ua)
       && !(req.user && (req.user.role === 'admin' || req.user.role === 'coach'))) {
     const { date } = helsinkiNow();
+    // For cookieless hits (bots/scripts that don't persist cookies) derive a
+    // stable id from IP+UA+day so repeated hits collapse to one unique/day
+    // instead of inflating the count with a fresh random id each request.
+    const countId = hadCookie ? vid
+      : 'h' + crypto.createHash('sha256').update(`${req.ip}|${ua}|${date}`).digest('hex').slice(0, 23);
     db.prepare('INSERT INTO visits (visitor_id, path, day, ts) VALUES (?,?,?,?)')
-      .run(vid, req.path, date, nowISO());
+      .run(countId, req.path, date, nowISO());
   }
   next();
 });

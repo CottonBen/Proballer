@@ -257,6 +257,7 @@ input:focus { outline: 2px solid rgba(201, 247, 58, 0.5); border-color: transpar
 
 /* ---------- dashboard shared ---------- */
 .dash-title { display: flex; align-items: center; justify-content: space-between; gap: 16px; flex-wrap: wrap; margin: 34px 0 22px; }
+.dash-cols { grid-template-columns: 2fr 1fr; align-items: start; }
 .stat-grid { grid-template-columns: repeat(auto-fill, minmax(215px, 1fr)); }
 .stat-card .label { color: var(--muted); font-size: 0.82rem; text-transform: uppercase; letter-spacing: 0.1em; font-weight: 700; }
 .stat-card .value { font-family: var(--display); font-size: 2.6rem; font-weight: 700; line-height: 1.1; color: var(--lime); }
@@ -342,4 +343,5 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
   .section { padding: 56px 0; }
   .opt-grid { grid-template-columns: 1fr; }
   .section-head { flex-direction: column; align-items: flex-start; }
+  .dash-cols { grid-template-columns: 1fr; }
 }

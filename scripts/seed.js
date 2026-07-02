@@ -35,13 +35,19 @@ function seed({ demo = true, reset = false } = {}) {
   const getCoach = db.prepare('SELECT id FROM coaches WHERE slug = ?');
 
   // --- Core accounts -------------------------------------------------------
+  // Passwords come from env vars in production (set ADMIN_PASSWORD etc. on the
+  // host); the values you specified are the local/dev defaults. Either way the
+  // DB only ever stores a bcrypt hash, and any account can be rotated later via
+  // the authenticated /api/auth/change-password endpoint.
   if (userCount === 0) {
-    insUser.run('cottonbenjaminmik@gmail.com', bcrypt.hashSync('Castagne20!', 10),
+    const adminEmail = (process.env.ADMIN_EMAIL || 'cottonbenjaminmik@gmail.com').toLowerCase();
+    insUser.run(adminEmail, bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'Castagne20!', 10),
       'Benjamin Cotton', 'admin', 0, now);
 
-    insUser.run('kalle.sundman@icloud.com', bcrypt.hashSync('Kaakeli.09', 10),
+    const kalleEmail = (process.env.COACH_EMAIL || 'kalle.sundman@icloud.com').toLowerCase();
+    insUser.run(kalleEmail, bcrypt.hashSync(process.env.COACH_PASSWORD || 'Kaakeli.09', 10),
       'Kalle Sundman', 'coach', 0, now);
-    const kalleId = getUser.get('kalle.sundman@icloud.com').id;
+    const kalleId = getUser.get(kalleEmail).id;
     insCoach.run(kalleId, 'Kalle Sundman', 'kalle-sundman',
       'Kalle is a technical coach who has come up through the Finnish junior leagues. ' +
       'He focuses on first touch, positioning and confidence on the ball, and loves working ' +

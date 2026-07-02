@@ -17,9 +17,15 @@ const esc = (s) => String(s).replace(/[&<>"']/g,
 const eur = (cents) => (cents / 100).toFixed(2).replace('.', ',') + ' €';
 
 function nextInvoiceNumber() {
-  const row = db.prepare('SELECT COUNT(*) AS n FROM invoices').get();
+  // Derive from the highest existing sequence for this year, not COUNT(*):
+  // COUNT(*) collides after demo-data (or any invoice) removal.
   const year = new Date().getFullYear();
-  return `${config.invoice.numberPrefix}-${year}-${String(row.n + 1).padStart(4, '0')}`;
+  const prefix = `${config.invoice.numberPrefix}-${year}-`;
+  const row = db.prepare(
+    'SELECT number FROM invoices WHERE number LIKE ? ORDER BY LENGTH(number) DESC, number DESC LIMIT 1'
+  ).get(prefix + '%');
+  const last = row ? Number(String(row.number).slice(prefix.length)) || 0 : 0;
+  return `${prefix}${String(last + 1).padStart(4, '0')}`;
 }
 
 function renderInvoiceHTML(inv, booking, customer, coachName, focusLabel) {
