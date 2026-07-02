@@ -1,0 +1,25 @@
+{
+  "name": "proballers-coaching-finland",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Proballers Coaching Finland — booking platform for 1-on-1 football coaching (working title)",
+  "type": "commonjs",
+  "main": "server/app.js",
+  "engines": {
+    "node": ">=22.13.0"
+  },
+  "scripts": {
+    "start": "node server/app.js",
+    "dev": "node --watch server/app.js",
+    "seed:demo": "node scripts/seed.js --demo",
+    "reset": "node scripts/seed.js --reset",
+    "reset:production": "node scripts/seed.js --reset --no-demo",
+    "export": "node scripts/export-csv.js",
+    "test": "node --test test/"
+  },
+  "dependencies": {
+    "bcryptjs": "^2.4.3",
+    "express": "^4.21.2",
+    "nodemailer": "^9.0.3"
+  }
+}
