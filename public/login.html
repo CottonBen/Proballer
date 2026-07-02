@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Log in — Proballers Coaching Finland</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main>
+    <section class="section" style="min-height:70vh;display:flex;align-items:center">
+      <div class="wrap" style="max-width:460px;width:100%">
+        <h1 style="font-size:2.6rem">Welcome back</h1>
+        <p class="muted">One door for everyone — players, coaches and admin.
+          You'll land on your own page.</p>
+        <div class="card">
+          <div style="display:flex;gap:8px;margin-bottom:16px">
+            <button class="btn btn-sm btn-primary" data-tab="login">Log in</button>
+            <button class="btn btn-sm btn-ghost" data-tab="signup">Create account</button>
+          </div>
+          <form id="auth-form">
+            <label class="f" id="f-name" hidden><span>Player / parent name</span>
+              <input type="text" name="name" autocomplete="name"></label>
+            <label class="f"><span>Email</span>
+              <input type="email" name="email" required autocomplete="email"></label>
+            <label class="f"><span>Password</span>
+              <input type="password" name="password" required autocomplete="current-password"></label>
+            <div class="form-error" id="auth-error"></div>
+            <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn">Log in</button>
+          </form>
+        </div>
+        <p class="small muted" style="margin-top:14px">New players: creating an account takes ten
+          seconds and lets you book sessions and see your invoices.</p>
+      </div>
+    </section>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/login.js"></script>
+</body>
+</html>

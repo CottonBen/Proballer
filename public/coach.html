@@ -1,0 +1,79 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coach dashboard — Proballers Coaching Finland</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="dash-title">
+      <div>
+        <h1 style="font-size:2.4rem" id="coach-name">Coach</h1>
+        <p class="muted" id="coach-sub">Your calendar, your rules — players can only book times you open.</p>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:2fr 1fr;align-items:start" id="dash-cols">
+      <!-- availability calendar -->
+      <div class="card">
+        <div class="cal-toolbar">
+          <h3 style="margin:0">Availability</h3>
+          <div style="display:flex;align-items:center;gap:8px">
+            <button class="btn btn-ghost btn-sm" id="prev-week">‹ Prev</button>
+            <strong id="week-label"></strong>
+            <button class="btn btn-ghost btn-sm" id="next-week">Next ›</button>
+          </div>
+          <button class="btn btn-primary btn-sm" id="save-avail" disabled>Save changes</button>
+        </div>
+        <p class="small muted" style="margin-top:0">Click hours to mark yourself free (8:00–20:00).
+          You are treated as <strong>not available</strong> unless you open the hour. Changes only
+          apply after you press <strong>Save changes</strong>.</p>
+        <div class="cal-scroll"><div class="cal" id="cal"></div></div>
+        <div class="cal-legend">
+          <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>Not available</span>
+          <span><i style="background:rgba(201,247,58,0.25);border:1px solid rgba(201,247,58,.5)"></i>Available</span>
+          <span><i style="background:var(--lime)"></i>Booked</span>
+          <span><i style="background:rgba(201,247,58,0.5)"></i>Unsaved change</span>
+        </div>
+      </div>
+
+      <div class="grid">
+        <!-- filters -->
+        <div class="card">
+          <h3>My filters</h3>
+          <p class="small muted">Where you train and which positions you coach. Players only see
+            options that match these.</p>
+          <div class="small muted" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Cities</div>
+          <div id="loc-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:16px"></div>
+          <div class="small muted" style="margin-bottom:6px;text-transform:uppercase;letter-spacing:.08em">Positions I train</div>
+          <div id="pos-chips" style="display:flex;gap:8px;flex-wrap:wrap;margin-bottom:18px"></div>
+          <button class="btn btn-primary btn-sm" id="save-filters" style="width:100%">Save filters</button>
+          <div class="form-error" id="filters-msg"></div>
+        </div>
+
+        <!-- upcoming sessions -->
+        <div class="card">
+          <h3>My sessions</h3>
+          <div id="sessions-list" class="small"></div>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/coach.js"></script>
+</body>
+</html>

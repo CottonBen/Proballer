@@ -1,0 +1,253 @@
+// Admin dashboard: analytics, coach performance, bookings, exports.
+'use strict';
+
+let A = null;              // analytics payload
+let WIN = 'd30';           // selected window
+const WIN_LABEL = { d7: 'past 7 days', d30: 'past 30 days', d90: 'past 90 days', all: 'all time' };
+
+(async function init() {
+  const user = await initHeaderAuth();
+  if (!user) return requireLoginRedirect();
+  if (user.role !== 'admin') { location.href = DASH_FOR_ROLE[user.role] || '/'; return; }
+
+  document.querySelectorAll('#window-pills button').forEach((b) =>
+    b.addEventListener('click', () => {
+      WIN = b.dataset.w;
+      document.querySelectorAll('#window-pills button').forEach((x) => x.classList.toggle('on', x === b));
+      renderStats();
+    }));
+
+  document.querySelectorAll('#booking-filter button').forEach((b) =>
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#booking-filter button').forEach((x) => x.classList.toggle('on', x === b));
+      loadBookings(b.dataset.s);
+    }));
+
+  document.getElementById('cal-close').addEventListener('click', () =>
+    document.getElementById('cal-backdrop').classList.remove('open'));
+  document.getElementById('cal-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'cal-backdrop') e.currentTarget.classList.remove('open');
+  });
+
+  document.getElementById('sheets-sync').addEventListener('click', syncSheets);
+  document.getElementById('remove-demo').addEventListener('click', removeDemo);
+
+  await refresh();
+  await loadBookings('');
+})().catch((e) => toast(e.message, true));
+
+async function refresh() {
+  A = await API.get('/admin/analytics');
+  document.getElementById('gen-time').textContent =
+    `Everything about the business, live · updated ${new Date(A.generatedAt).toLocaleTimeString('fi-FI')}`;
+  document.getElementById('demo-note').hidden = !A.demoDataPresent;
+  renderStats();
+  renderCharts();
+  renderCoachTable();
+  renderExports();
+}
+
+// --- headline stats ---------------------------------------------------------
+function miniRow(obj, fmt = (v) => v) {
+  return `<div class="sub">7d ${fmt(obj.d7)} · 30d ${fmt(obj.d30)} · 90d ${fmt(obj.d90)} · all ${fmt(obj.all)}</div>`;
+}
+
+function renderStats() {
+  const conv = A.funnel[WIN];
+  const cards = [
+    { label: 'Unique visitors', value: A.visitors.unique[WIN], sub: miniRow(A.visitors.unique) },
+    { label: 'Page views', value: A.visitors.pageviews[WIN], sub: miniRow(A.visitors.pageviews) },
+    { label: 'Booked, not completed', value: A.sessions.pending,
+      sub: `<div class="sub">upcoming sessions worth ${eur(A.sessions.pendingValueCents)}</div>` },
+    { label: 'Completed sessions', value: A.sessions.completed[WIN], sub: miniRow(A.sessions.completed) },
+    { label: 'Booking conversion', value: conv.rate === null ? '—' : conv.rate + '%',
+      sub: `<div class="sub">${conv.completed} booked of ${conv.started} who tried (${WIN_LABEL[WIN]})</div>` },
+    { label: 'Revenue (completed)', value: eur(A.revenue.completedCents[WIN]),
+      sub: miniRow(A.revenue.completedCents, (v) => Math.round(v / 100) + '€') },
+    { label: 'New customers', value: WIN === 'all' ? A.customers.total : A.customers.new[WIN],
+      sub: `<div class="sub">${A.customers.total} customer accounts in total</div>` },
+    { label: 'Invoices outstanding', value: eur(A.revenue.invoicesOutstandingCents),
+      sub: `<div class="sub">${eur(A.revenue.invoicesPaidCents)} already paid</div>` },
+  ];
+  document.getElementById('stat-cards').innerHTML = cards.map((c) => `
+    <div class="card stat-card">
+      <div class="label">${c.label}</div>
+      <div class="value">${c.value}</div>
+      ${c.sub || ''}
+    </div>`).join('');
+}
+
+// --- charts (hand-rolled SVG, no libraries) ----------------------------------
+function lineChart(series, labels, colors) {
+  const Wd = 620, Ht = 200, pad = 8;
+  const max = Math.max(1, ...series.flat());
+  const pts = (arr) => arr.map((v, i) =>
+    `${pad + i * (Wd - 2 * pad) / (arr.length - 1)},${Ht - pad - v * (Ht - 2 * pad) / max}`).join(' ');
+  const area = (arr) => `${pad},${Ht - pad} ${pts(arr)} ${Wd - pad},${Ht - pad}`;
+  return `<svg viewBox="0 0 ${Wd} ${Ht + 26}" preserveAspectRatio="none" role="img">
+    ${[0.25, 0.5, 0.75].map((f) =>
+      `<line x1="${pad}" x2="${Wd - pad}" y1="${Ht - pad - f * (Ht - 2 * pad)}" y2="${Ht - pad - f * (Ht - 2 * pad)}"
+        stroke="rgba(255,255,255,0.06)"/>`).join('')}
+    ${series.map((arr, i) => `
+      ${i === 0 ? `<polygon points="${area(arr)}" fill="${colors[i]}" opacity="0.12"/>` : ''}
+      <polyline points="${pts(arr)}" fill="none" stroke="${colors[i]}" stroke-width="2.5"
+        stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
+    <text x="${pad}" y="${Ht + 18}" fill="#94a49a" font-size="12">${labels.from}</text>
+    <text x="${Wd - pad}" y="${Ht + 18}" fill="#94a49a" font-size="12" text-anchor="end">${labels.to}</text>
+    <text x="${Wd - pad}" y="${pad + 12}" fill="#94a49a" font-size="12" text-anchor="end">peak ${max}</text>
+  </svg>`;
+}
+
+function renderCharts() {
+  const s = A.series;
+  const range = { from: fmtDate(s.days[0]), to: fmtDate(s.days[s.days.length - 1]) };
+  const legend = (items) => `<div class="small muted">${items.map(([c, t]) =>
+    `<span style="color:${c}">●</span> ${t}`).join(' &nbsp; ')}</div>`;
+  document.getElementById('charts').innerHTML = `
+    <div class="card chart-card">
+      <div class="chart-title"><h3 style="margin:0">Visitors — last 90 days</h3></div>
+      ${legend([['#c9f73a', 'page views per day']])}
+      ${lineChart([s.pageviews], range, ['#c9f73a'])}
+    </div>
+    <div class="card chart-card">
+      <div class="chart-title"><h3 style="margin:0">Sessions completed</h3></div>
+      ${legend([['#4ade80', 'sessions per day']])}
+      ${lineChart([s.completedSessions], range, ['#4ade80'])}
+    </div>
+    <div class="card chart-card">
+      <div class="chart-title"><h3 style="margin:0">Booking funnel</h3></div>
+      ${legend([['#7fb5fb', 'started booking'], ['#c9f73a', 'finished booking']])}
+      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#7fb5fb', '#c9f73a'])}
+    </div>`;
+}
+
+// --- coach performance table -------------------------------------------------
+function renderCoachTable() {
+  const t = document.getElementById('coach-table');
+  t.innerHTML = `
+    <tr><th>Coach</th><th>Trains</th><th>Cities</th><th>Completed<br><span style="font-weight:400">7 / 30 / 90 / all</span></th>
+      <th>Upcoming</th><th>Open slots<br>next 14 d</th><th>Utilization</th><th>Revenue</th></tr>` +
+    A.coaches.map((c) => `
+      <tr data-coach="${c.id}" style="cursor:pointer">
+        <td><strong>${esc(c.name)}</strong></td>
+        <td>${c.positions.map((p) => esc(cap(p).slice(0, 3))).join(', ')}</td>
+        <td>${c.locations.map(esc).join(', ')}</td>
+        <td>${c.completed.d7} / ${c.completed.d30} / ${c.completed.d90} / <strong>${c.completed.all}</strong></td>
+        <td>${c.upcoming}</td>
+        <td>${c.slotsNext14}</td>
+        <td>${c.utilization === null ? '<span class="muted">no slots</span>' : c.utilization + '%'}</td>
+        <td>${eur(c.revenueAllCents)}</td>
+      </tr>`).join('');
+  t.querySelectorAll('tr[data-coach]').forEach((row) =>
+    row.addEventListener('click', () => openCoachCalendar(Number(row.dataset.coach))));
+}
+
+// Read-only two-week calendar for one coach.
+async function openCoachCalendar(id) {
+  const bd = document.getElementById('cal-backdrop');
+  const box = document.getElementById('cal-modal-body');
+  bd.classList.add('open');
+  box.innerHTML = '<p class="muted">Loading calendar…</p>';
+  const data = await API.get(`/admin/coaches/${id}/calendar`);
+  const avail = new Set(data.slots.map((s) => `${s.date}|${s.hour}`));
+  const booked = new Map(data.bookings.map((b) => [`${b.date}|${b.hour}`, b]));
+  const days = [];
+  for (let d = new Date(data.from + 'T12:00:00'); days.length < 14; d.setDate(d.getDate() + 1)) {
+    days.push(d.toISOString().slice(0, 10));
+  }
+  const site = await API.get('/config');
+  let grid = '<div class="cal" style="grid-template-columns:64px repeat(14, minmax(52px,1fr));min-width:900px">';
+  grid += '<div></div>' + days.map((d) => `
+    <div class="hd ${d === data.from ? 'today' : ''}"><div class="dow">${fmtDate(d).split(' ')[0]}</div>
+    <div class="num" style="font-size:1rem">${d.slice(8)}</div></div>`).join('');
+  for (let h = site.hours.start; h < site.hours.end; h++) {
+    grid += `<div class="hr">${String(h).padStart(2, '0')}</div>`;
+    for (const d of days) {
+      const k = `${d}|${h}`;
+      const b = booked.get(k);
+      grid += `<div class="cal-cell ${b ? 'booked' : avail.has(k) ? 'avail' : ''}" style="cursor:default;height:26px"
+        data-label="" title="${b ? esc(`${b.customer} · ${cap(b.position)} · ${b.focus}`) : ''}"></div>`;
+    }
+  }
+  grid += '</div>';
+  box.innerHTML = `
+    <h2 style="font-size:1.7rem">${esc(data.coach.name)} — next 14 days</h2>
+    <p class="muted small">${data.coach.locations.map(esc).join(', ')} ·
+      trains ${data.coach.positions.map((p) => esc(cap(p))).join(', ')}</p>
+    <div class="cal-scroll">${grid}</div>
+    <div class="cal-legend">
+      <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>Not available</span>
+      <span><i style="background:rgba(201,247,58,0.25)"></i>Open for booking</span>
+      <span><i style="background:var(--lime)"></i>Booked (hover for details)</span>
+    </div>`;
+}
+
+// --- bookings table -----------------------------------------------------------
+async function loadBookings(status) {
+  const rows = await API.get('/admin/bookings' + (status ? `?status=${status}` : ''));
+  const t = document.getElementById('bookings-table');
+  t.innerHTML = `
+    <tr><th>Ref</th><th>When</th><th>Coach</th><th>Customer</th><th>Session</th>
+      <th>Total</th><th>Status</th><th>Invoice</th><th></th></tr>` +
+    rows.map((b) => `
+      <tr>
+        <td class="muted">${esc(b.code)}</td>
+        <td>${esc(fmtDate(b.date))} ${String(b.hour).padStart(2, '0')}:00</td>
+        <td>${esc(b.coach)}</td>
+        <td title="${esc(b.customer_email)}">${esc(b.customer)}</td>
+        <td>${esc(cap(b.position))} · ${esc(b.focus)}${b.is_online ? ' · online' : ' · ' + esc(b.location)}</td>
+        <td>${eur(b.total_cents)}</td>
+        <td><span class="status-tag status-${esc(b.status)}">${esc(b.status)}</span></td>
+        <td>${b.invoice_number
+          ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>
+             <span class="muted small">${esc(b.invoice_status)}</span>` : '—'}</td>
+        <td style="white-space:nowrap">
+          ${b.status === 'confirmed' ? `<button class="btn btn-ghost btn-sm" data-act="completed" data-id="${b.id}">Done</button>
+            <button class="btn btn-danger btn-sm" data-act="cancelled" data-id="${b.id}">Cancel</button>` : ''}
+          ${b.invoice_status === 'sent' ? `<button class="btn btn-ghost btn-sm" data-paid="${esc(b.invoice_number)}">Mark paid</button>` : ''}
+        </td>
+      </tr>`).join('');
+
+  t.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (btn.dataset.act === 'cancelled' && !confirm('Cancel this booking? The invoice will be voided.')) return;
+    await API.post(`/admin/bookings/${btn.dataset.id}/status`, { status: btn.dataset.act });
+    toast('Booking updated.');
+    await refresh();
+    await loadBookings(status);
+  }));
+  t.querySelectorAll('[data-paid]').forEach((btn) => btn.addEventListener('click', async () => {
+    await API.post(`/admin/invoices/${encodeURIComponent(btn.dataset.paid)}/paid`, {});
+    toast('Invoice marked as paid.');
+    await refresh();
+    await loadBookings(status);
+  }));
+}
+
+// --- data & export ------------------------------------------------------------
+function renderExports() {
+  const names = ['Bookings', 'Invoices', 'Coaches', 'Availability', 'VisitsDaily', 'Funnel', 'Customers'];
+  document.getElementById('csv-links').innerHTML = names.map((n) =>
+    `<a class="btn btn-ghost btn-sm" href="/api/admin/export/${n}.csv">${n}.csv</a>`).join('');
+  const st = A.sheets;
+  document.getElementById('sheets-status').innerHTML = st.configured
+    ? `Connected ✓ — last sync: ${st.lastSync ? new Date(st.lastSync).toLocaleString('fi-FI') : 'not yet'}`
+    : 'Not connected yet — data stays local until you connect a sheet.';
+}
+
+async function syncSheets() {
+  try {
+    const res = await API.post('/admin/sheets/sync', {});
+    if (res.synced) { toast(`Synced ${res.tabs.length} tabs to Google Sheets.`); await refresh(); }
+    else toast('Google Sheets is not connected yet — see the README for the 2-minute setup.', true);
+  } catch (err) {
+    toast(err.message, true);
+  }
+}
+
+async function removeDemo() {
+  if (!confirm('Remove ALL demo data (example coaches, bookings, visits)? Your real accounts stay.')) return;
+  await API.post('/admin/demo-data/remove', {});
+  toast('Demo data removed — dashboard now shows only real activity.');
+  await refresh();
+  await loadBookings('');
+}

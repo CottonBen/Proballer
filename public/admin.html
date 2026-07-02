@@ -1,0 +1,99 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Proballers Coaching Finland</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="dash-title">
+      <div>
+        <h1 style="font-size:2.4rem">Mission control</h1>
+        <p class="muted" id="gen-time">Everything about the business, live.</p>
+      </div>
+      <div class="window-pills" id="window-pills">
+        <button data-w="d7">7 days</button>
+        <button data-w="d30" class="on">30 days</button>
+        <button data-w="d90">90 days</button>
+        <button data-w="all">All time</button>
+      </div>
+    </div>
+
+    <div id="demo-note" hidden class="card" style="border-color:rgba(247,161,58,.5);margin-bottom:18px">
+      <strong style="color:#f7a13a">Demo data is loaded.</strong>
+      <span class="muted small">The numbers below include generated example data so you can see how
+        everything works. When you go live, press</span>
+      <button class="btn btn-ghost btn-sm" id="remove-demo">Remove demo data</button>
+    </div>
+
+    <!-- headline stats -->
+    <div class="grid stat-grid" id="stat-cards"></div>
+
+    <!-- charts -->
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:18px" id="charts"></div>
+
+    <!-- coaches -->
+    <div class="dash-title"><h2 style="font-size:1.8rem">How the coaches are doing</h2></div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="coach-table"></table>
+      <p class="small muted" style="margin:10px 0 0">Click a coach to see their live calendar
+        (what they've opened + what's booked).</p>
+    </div>
+
+    <!-- bookings -->
+    <div class="dash-title">
+      <h2 style="font-size:1.8rem">Bookings</h2>
+      <div class="window-pills" id="booking-filter">
+        <button data-s="" class="on">All</button>
+        <button data-s="confirmed">Upcoming</button>
+        <button data-s="completed">Completed</button>
+        <button data-s="cancelled">Cancelled</button>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="bookings-table"></table>
+    </div>
+
+    <!-- data & export -->
+    <div class="dash-title"><h2 style="font-size:1.8rem">Business data</h2></div>
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
+      <div class="card">
+        <h3>Google Sheets</h3>
+        <p class="small muted" id="sheets-status">Checking…</p>
+        <button class="btn btn-primary btn-sm" id="sheets-sync">Sync to Google Sheets now</button>
+        <p class="small muted" style="margin-top:10px">Not connected yet? The README has a 2-minute,
+          no-password setup (service account) — after that every booking auto-syncs.</p>
+      </div>
+      <div class="card">
+        <h3>CSV downloads</h3>
+        <p class="small muted">The same datasets the Google Sheet gets:</p>
+        <div id="csv-links" style="display:flex;gap:8px;flex-wrap:wrap"></div>
+      </div>
+    </div>
+  </main>
+
+  <!-- coach calendar modal -->
+  <div class="modal-backdrop" id="cal-backdrop">
+    <div class="modal" style="max-width:900px" role="dialog" aria-modal="true">
+      <button class="close" id="cal-close" aria-label="Close">×</button>
+      <div id="cal-modal-body"></div>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/admin.js"></script>
+</body>
+</html>

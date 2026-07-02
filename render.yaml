@@ -1,0 +1,20 @@
+# One-click deploy blueprint for Render (https://render.com).
+# Create a new "Blueprint" and point it at this repository.
+services:
+  - type: web
+    name: proballers-coaching
+    runtime: node
+    plan: starter          # small paid plan => persistent disk for the database
+    buildCommand: npm ci
+    startCommand: npm start
+    envVars:
+      - key: NODE_ENV
+        value: production
+      - key: DEMO_DATA
+        value: "0"         # fresh production deploys start clean
+      - key: DATA_DIR
+        value: /var/data
+    disk:
+      name: proballers-data
+      mountPath: /var/data
+      sizeGB: 1

@@ -1,0 +1,120 @@
+# Proballers Coaching Finland
+
+Booking platform for a Finnish 1-on-1 football coaching business (working title).
+Fully self-contained: Node.js + built-in SQLite, no external services required to run.
+
+## What's inside
+
+- **Public site** — hero carousel that rotates coaches every 5 seconds, coach cards,
+  and a booking wizard: pick a free time → your position → session focus → city → confirm.
+  A launch sale (50 % off, configurable) is applied automatically.
+- **Three login roles**, one login page (`/login`):
+  - **Admin** → `/admin`: visitors (7/30/90 days/all time), booked-but-not-completed count,
+    completed sessions per window, booking conversion (tried vs. managed), revenue, invoices,
+    per-coach performance, live view of every coach's calendar, bookings management,
+    CSV exports and Google Sheets sync.
+  - **Coach** → `/coach`: weekly availability calendar (8:00–20:00, default *not* available,
+    click + **Save changes**), filters for cities (Helsinki/Espoo/Vantaa) and positions
+    (goalkeepers/defenders/midfielders/attackers, multi-select) with a **Save filters** button,
+    and their session list.
+  - **Customer** → `/my-bookings`: their sessions and invoices.
+- **Invoices** — every confirmed booking creates an invoice (HTML in `data/outbox/`),
+  emailed automatically once SMTP is configured.
+- **Data everywhere** — every dataset downloads as CSV and syncs to Google Sheets when connected.
+
+## Run it locally
+
+```bash
+npm install
+npm start            # http://localhost:3000
+```
+
+Node **22.13+** required (uses the built-in `node:sqlite`).
+
+First start seeds the real logins and **demo data** (fake coaches, bookings and traffic,
+clearly banner-flagged in the admin) so every screen has something to show.
+
+- Remove demo data: press **Remove demo data** in the admin, or `npm run reset:production`.
+- Reset everything back to demo state: `npm run reset`.
+
+## Logins
+
+| Role | Where it lands |
+|---|---|
+| Admin (owner) | `/admin` — analytics & management |
+| Coach | `/coach` — availability calendar + filters |
+| Customer | `/my-bookings` — self-signup on the site |
+
+The two configured accounts (owner + Kalle) use the credentials you specified.
+An extra coach login exists for Ben: `ben@proballers.fi` / `ChangeMe123!` — **change it**.
+New coaches: add a `users` row with role `coach` + a `coaches` profile row (see
+`scripts/seed.js` for the exact shape) — or ask your developer/Claude to add a small
+"invite coach" admin button later.
+
+## Deploy to a public server
+
+The app is one Node process + one SQLite file — it runs on any host. Two easy paths:
+
+**Render (recommended, ~10 min)**
+1. Push this folder to a **new, empty** GitHub repository (it is not connected to any yet).
+2. On render.com: *New → Blueprint*, pick the repo — `render.yaml` configures everything,
+   including the persistent disk for the database.
+3. Set `DEMO_DATA=0` (already in the blueprint) so production starts clean.
+
+**Any VPS / Docker**
+```bash
+docker build -t proballers .
+docker run -d -p 80:3000 -v proballers-data:/app/data -e NODE_ENV=production -e DEMO_DATA=0 proballers
+```
+
+Behind HTTPS (any reverse proxy or Render's built-in TLS), session cookies are
+automatically marked `Secure` via `NODE_ENV=production`.
+
+## Connect Google Sheets (no password needed — ~2 minutes)
+
+The app never logs into a Google account. It uses a *service account*, Google's
+supported way to let an app edit one specific sheet you own:
+
+1. Go to [console.cloud.google.com](https://console.cloud.google.com) with the
+   cottonbenjaminmik@gmail.com account → create a project → *APIs & Services* →
+   enable **Google Sheets API**.
+2. *IAM & Admin → Service accounts → Create*. Then *Keys → Add key → JSON* — a key
+   file downloads.
+3. Create a blank Google Sheet in your account. Press **Share** and add the service
+   account's email (looks like `something@project.iam.gserviceaccount.com`) as **Editor**.
+4. Start the app with:
+   ```bash
+   GOOGLE_SERVICE_ACCOUNT=/path/to/key.json GOOGLE_SHEET_ID=<the long id in the sheet URL> npm start
+   ```
+
+From then on the sheet gets tabs for **Bookings, Invoices, Coaches, Availability,
+VisitsDaily, Funnel, Customers** — synced automatically after every booking, hourly,
+and on demand via the admin's *Sync now* button.
+
+## Email invoices for real
+
+Set SMTP credentials from any provider (Brevo has a free tier; Gmail works with an
+[App Password](https://support.google.com/accounts/answer/185833) — *not* your account password):
+
+```bash
+SMTP_HOST=smtp-relay.brevo.com SMTP_PORT=587 \
+SMTP_USER=... SMTP_PASS=... SMTP_FROM="Proballers Coaching <you@example.com>" npm start
+```
+
+Until then, every invoice is still generated and viewable in the app (and in `data/outbox/`).
+
+## Configuration
+
+Business rules live in [config.js](config.js): prices, the sale percentage, training
+hours (8–20), cities, positions, session focus types, invoice details. Change and restart.
+
+## Project layout
+
+```
+config.js            business settings (prices, sale, hours, cities, positions)
+server/              express app, SQLite layer, auth, invoices, Sheets sync
+server/routes/api.js all JSON endpoints
+public/              the website (no build step required)
+scripts/             seed + CSV export
+data/                SQLite database, invoices outbox, exports (created at runtime)
+```

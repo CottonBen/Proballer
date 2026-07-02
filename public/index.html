@@ -1,0 +1,86 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Proballers Coaching Finland — 1-on-1 football coaching for young players</title>
+  <meta name="description" content="Personal football coaching for young players in Helsinki, Espoo and Vantaa. Book a 1-on-1 session with a coach who has played the game.">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="sale-banner" id="sale-banner" hidden></div>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main>
+    <!-- Hero: rotating coach spotlight, changes every 5 seconds -->
+    <section class="hero">
+      <div class="wrap">
+        <div class="carousel" id="carousel" aria-live="polite"></div>
+        <div class="dots" id="dots" role="tablist" aria-label="Slides"></div>
+      </div>
+    </section>
+
+    <!-- Coaches + booking -->
+    <section class="section" id="coaches">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div>
+            <h2>Meet the coaches</h2>
+            <p class="muted" style="max-width:60ch">Every coach sets their own calendar. Pick a coach,
+              pick a free time, and build the session around your position and what you want to improve.</p>
+          </div>
+          <div id="price-tag" class="display" style="font-size:1.6rem"></div>
+        </div>
+        <div class="grid coach-grid" id="coach-grid"></div>
+      </div>
+    </section>
+
+    <!-- How it works -->
+    <section class="section" style="padding-top:0">
+      <div class="wrap">
+        <h2 class="reveal">How it works</h2>
+        <div class="grid reveal" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
+          <div class="card"><h3>1 · Pick a time</h3><p class="muted">Choose a coach and one of the times
+            they have opened in their calendar. Sessions run 8:00–20:00, every day.</p></div>
+          <div class="card"><h3>2 · Shape the session</h3><p class="muted">Tell us your position —
+            goalkeeper, defender, midfielder or attacker — and pick a focus, from finishing to Game IQ.</p></div>
+          <div class="card"><h3>3 · Confirm &amp; train</h3><p class="muted">Confirm the booking and the
+            invoice lands in your email. Then it's just you, the coach and the pitch.</p></div>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div>
+        <strong>Proballers Coaching Finland</strong><br>
+        Helsinki · Espoo · Vantaa
+      </div>
+      <div>1-on-1 coaching for young footballers.<br>Working name — official name coming soon.</div>
+    </div>
+  </footer>
+
+  <!-- Booking wizard modal -->
+  <div class="modal-backdrop" id="wizard-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Book a session">
+      <button class="close" id="wizard-close" aria-label="Close">×</button>
+      <div id="wizard-body"></div>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/landing.js"></script>
+  <script src="/js/booking.js"></script>
+</body>
+</html>
