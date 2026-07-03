@@ -230,11 +230,16 @@ async function loadSessions() {
   const upcoming = rows.filter((r) => r.status === 'confirmed').slice().reverse();
   const past = rows.filter((r) => r.status !== 'confirmed');
 
+  // "Completed" only makes sense once the session has taken place — the server
+  // rejects earlier, so disable it for clearly-future dates to match.
+  const isFuture = (r) => r.date > state.today;
   const statusBtns = (r) => ['confirmed', 'completed', 'cancelled'].map((s) => {
     const label = s === 'confirmed' ? 'Current' : cap(s);
     const on = r.status === s;
-    return `<button class="btn btn-sm ${on ? 'btn-primary' : s === 'cancelled' ? 'btn-danger' : 'btn-ghost'}"
-      data-status="${s}" data-code="${esc(r.code)}" ${on ? 'disabled' : ''}>${label}</button>`;
+    const lockFuture = s === 'completed' && isFuture(r);
+    const cls = on ? 'btn-primary' : s === 'cancelled' ? 'btn-danger' : 'btn-ghost';
+    return `<button class="btn btn-sm ${cls}" data-status="${s}" data-code="${esc(r.code)}"
+      ${on || lockFuture ? 'disabled' : ''} ${lockFuture ? 'title="Available after the session has taken place"' : ''}>${label}</button>`;
   }).join(' ');
 
   const item = (r) => `

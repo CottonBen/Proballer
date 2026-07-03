@@ -148,9 +148,17 @@ CREATE TABLE IF NOT EXISTS meta (
 );
 `);
 
-// Migration for databases created before the credits feature existed.
-try { db.exec('ALTER TABLE bookings ADD COLUMN credit_applied INTEGER NOT NULL DEFAULT 0'); }
-catch { /* column already exists */ }
+// Idempotent column migrations for databases created before a feature existed.
+for (const stmt of [
+  'ALTER TABLE bookings ADD COLUMN credit_applied INTEGER NOT NULL DEFAULT 0',
+  // Coach payout locked in at completion time (never recomputed afterwards).
+  'ALTER TABLE bookings ADD COLUMN earn_cents INTEGER',
+  'ALTER TABLE bookings ADD COLUMN payout_basis_cents INTEGER',
+  // Invoice status before a void, so reactivation can restore 'paid' vs 'sent'.
+  'ALTER TABLE invoices ADD COLUMN prev_status TEXT',
+]) {
+  try { db.exec(stmt); } catch { /* column already exists */ }
+}
 
 // ---------------------------------------------------------------------------
 // Europe/Helsinki time helpers. All business dates/hours are Helsinki-local.

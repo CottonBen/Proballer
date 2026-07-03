@@ -155,7 +155,10 @@ function renderCoachTable() {
         <td class="muted">${eur(c.bookedValueCents)}</td>
       </tr>`).join('');
   t.querySelectorAll('tr[data-coach]').forEach((row) =>
-    row.addEventListener('click', () => openCoachCalendar(Number(row.dataset.coach))));
+    row.addEventListener('click', () => openCoachCalendar(Number(row.dataset.coach)).catch((err) => {
+      document.getElementById('cal-backdrop').classList.remove('open');
+      toast(err.message, true);
+    })));
 }
 
 // Editable two-week calendar for one coach: the admin can open and close
@@ -222,7 +225,11 @@ async function openCoachCalendar(id) {
       paint();
     }));
 
-    box.querySelector('#cal-save').addEventListener('click', async () => {
+    const saveBtn = box.querySelector('#cal-save');
+    saveBtn.addEventListener('click', async () => {
+      if (saveBtn.disabled) return;
+      saveBtn.disabled = true; // guard against double-submit
+      saveBtn.textContent = 'Saving…';
       const adds = [], removes = [];
       for (const [k, op] of pending) {
         const [date, hour] = k.split('|');
@@ -235,8 +242,12 @@ async function openCoachCalendar(id) {
         if (r.rejected.length) msg += ` ${r.rejected.length} skipped (past hours).`;
         toast(msg, r.conflicts.length > 0);
         await refresh();
-        openCoachCalendar(id); // reload with saved state
+        if (document.getElementById('cal-backdrop').classList.contains('open')) {
+          openCoachCalendar(id).catch((err) => toast(err.message, true)); // reload with saved state
+        }
       } catch (err) {
+        saveBtn.disabled = false;
+        saveBtn.textContent = `Save changes (${pending.size})`;
         toast(err.message, true);
       }
     });
@@ -264,24 +275,36 @@ async function loadBookings(status) {
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>
              <span class="muted small">${esc(b.invoice_status)}</span>` : '—'}</td>
         <td style="white-space:nowrap">
-          ${b.status === 'confirmed' ? `<button class="btn btn-ghost btn-sm" data-act="completed" data-id="${b.id}">Done</button>
+          ${b.status === 'confirmed' ? `
+            <button class="btn btn-ghost btn-sm" data-act="completed" data-id="${b.id}"
+              ${b.date > A.today ? 'disabled title="Available after the session has taken place"' : ''}>Done</button>
             <button class="btn btn-danger btn-sm" data-act="cancelled" data-id="${b.id}">Cancel</button>` : ''}
           ${b.invoice_status === 'sent' ? `<button class="btn btn-ghost btn-sm" data-paid="${esc(b.invoice_number)}">Mark paid</button>` : ''}
         </td>
       </tr>`).join('');
 
   t.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async () => {
-    if (btn.dataset.act === 'cancelled' && !confirm('Cancel this booking? The invoice will be voided.')) return;
-    await API.post(`/admin/bookings/${btn.dataset.id}/status`, { status: btn.dataset.act });
-    toast('Booking updated.');
-    await refresh();
-    await loadBookings(status);
+    if (btn.dataset.act === 'cancelled' && !confirm('Cancel this booking? The invoice will be voided and the customer gets a free-session credit.')) return;
+    btn.disabled = true;
+    try {
+      await API.post(`/admin/bookings/${btn.dataset.id}/status`, { status: btn.dataset.act });
+      toast('Booking updated.');
+      await Promise.all([refresh(), loadBookings(status), loadCRM()]);
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message, true);
+    }
   }));
   t.querySelectorAll('[data-paid]').forEach((btn) => btn.addEventListener('click', async () => {
-    await API.post(`/admin/invoices/${encodeURIComponent(btn.dataset.paid)}/paid`, {});
-    toast('Invoice marked as paid.');
-    await refresh();
-    await loadBookings(status);
+    btn.disabled = true;
+    try {
+      await API.post(`/admin/invoices/${encodeURIComponent(btn.dataset.paid)}/paid`, {});
+      toast('Invoice marked as paid.');
+      await Promise.all([refresh(), loadBookings(status), loadCRM()]);
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message, true);
+    }
   }));
 }
 
