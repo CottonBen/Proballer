@@ -51,6 +51,48 @@ module.exports = {
     replyEmail: 'cottonbenjaminmik@gmail.com',
   },
 
+  // The one and only payment method: bank transfer to the owner's account.
+  payment: {
+    method: 'Bank transfer',
+    payee: 'Benjamin Cotton / Proballers Coaching Finland',
+    iban: 'FI07 5723 0220 8149 53',
+    // Customers use the invoice number as the payment reference (viestikenttä).
+    referenceHint: 'Use the invoice number as the message/reference',
+  },
+
   // How many days ahead coaches can publish availability / customers can book.
   bookingHorizonDays: 60,
+
+  // Coach commission tiers, based on COMPLETED sessions in the current calendar
+  // month: sessions #1-5 pay the Tier 1 rate, #6-15 Tier 2, #16+ Tier 3.
+  // IMPORTANT: coaches are never shown the percentages — the UI only ever shows
+  // euro amounts ("you earn 15,00 € for this session"). Percentages live here
+  // and in the admin views only. Each tier's physical perk costs ≤ ~20 €.
+  coachTiers: [
+    {
+      name: 'Match Fit', sessionLabel: '0–5 sessions / month',
+      minSessionIndex: 1, percent: 50,
+      benefits: [
+        'Proballers water bottle + ball pump kit',
+        'Access to the shared training equipment pool',
+      ],
+    },
+    {
+      name: 'First Team', sessionLabel: '5–15 sessions / month',
+      minSessionIndex: 6, percent: 60,
+      benefits: [
+        'Branded Proballers training top',
+        'Priority placement in the coach list on the site',
+      ],
+    },
+    {
+      name: 'Captain', sessionLabel: '15+ sessions / month',
+      minSessionIndex: 16, percent: 70,
+      benefits: [
+        '20 € monthly equipment allowance (cones, bibs, balls)',
+        'Featured spot in the homepage carousel',
+        '“Top coach” badge on your coach card',
+      ],
+    },
+  ],
 };

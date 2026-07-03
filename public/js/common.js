@@ -58,10 +58,18 @@ async function initHeaderAuth() {
     a.textContent = 'Log in';
     box.appendChild(a);
   } else {
-    const dash = document.createElement('a');
-    dash.href = DASH_FOR_ROLE[me.user.role] || '/';
-    dash.className = 'btn btn-ghost btn-sm';
-    dash.textContent = me.user.role === 'admin' ? 'Admin' : me.user.role === 'coach' ? 'My calendar' : 'My bookings';
+    // Dual-role users (admin + coach profile) get a button for each hat.
+    const links = [];
+    if (me.user.role === 'admin') links.push(['/admin', 'Admin']);
+    if (me.coachProfile) links.push(['/coach', 'My calendar']);
+    if (me.user.role === 'customer') links.push(['/my-bookings', 'My bookings']);
+    for (const [href, label] of links) {
+      const a = document.createElement('a');
+      a.href = href;
+      a.className = 'btn btn-ghost btn-sm';
+      a.textContent = label;
+      box.appendChild(a);
+    }
     const out = document.createElement('button');
     out.className = 'btn btn-ghost btn-sm';
     out.textContent = 'Log out';
@@ -69,7 +77,7 @@ async function initHeaderAuth() {
       await API.post('/auth/logout', {});
       location.href = '/';
     });
-    box.append(dash, out);
+    box.appendChild(out);
   }
   return me.user;
 }

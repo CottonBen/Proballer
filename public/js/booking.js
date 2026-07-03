@@ -231,7 +231,7 @@ async function renderReview() {
         ${priceChip}</strong></div>
     <p class="small muted" style="margin-top:12px">${hasCredit
       ? 'This session is free — your credit is applied automatically and the 0,00 € invoice is just for your records.'
-      : `Confirming issues the invoice (${eur(price - discount)}, due in 7 days)${W.site.emailDelivery ? ' to your email' : ', viewable in My bookings'}. Pay by the due date — details are on the invoice.`}</p>
+      : `Confirming issues the invoice (${eur(price - discount)}, due in 7 days)${W.site.emailDelivery ? ' to your email' : ', viewable in My bookings'}. Payment is by ${esc((W.site.payment && W.site.payment.method || 'bank transfer').toLowerCase())} — the account number (IBAN) and reference are on the invoice.`}</p>
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -349,7 +349,8 @@ function renderSuccess({ booking, invoice }) {
       </div>
       <p class="small muted">${W.site.emailDelivery
         ? 'The invoice has been sent to your email.'
-        : 'Your invoice is ready to view below.'} You can open it any time
+        : 'Your invoice is ready to view below.'} Pay by bank transfer — the IBAN and
+        payment reference are on the invoice. You can open it any time
         from <a href="/my-bookings">My bookings</a>.</p>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:8px">
         <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">View invoice</a>

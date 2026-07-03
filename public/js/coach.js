@@ -26,13 +26,15 @@ const mondayOf = (iso) => {
 (async function init() {
   const user = await initHeaderAuth();
   if (!user) return requireLoginRedirect();
-  if (user.role !== 'coach') { location.href = DASH_FOR_ROLE[user.role] || '/'; return; }
+  // Coaches and admins-with-a-coach-profile belong here; customers don't.
+  if (user.role === 'customer') { location.href = '/my-bookings'; return; }
 
   state.site = await API.get('/config');
   try {
     state.coach = await API.get('/coach/me');
   } catch (err) {
-    document.getElementById('coach-sub').textContent = err.message;
+    document.getElementById('coach-sub').innerHTML =
+      esc(err.message) + (user.role === 'admin' ? ' — <a href="/admin">back to the admin page</a>.' : '');
     return;
   }
   document.getElementById('coach-name').textContent = state.coach.name;
@@ -45,6 +47,7 @@ const mondayOf = (iso) => {
   buildFilters();
   await loadWeek();
   await loadSessions();
+  await loadTier();
 
   document.getElementById('prev-week').addEventListener('click', () => moveWeek(-7));
   document.getElementById('next-week').addEventListener('click', () => moveWeek(7));
@@ -142,6 +145,50 @@ async function saveAvailability() {
   }
 }
 
+// --- tier & earnings ----------------------------------------------------------
+// Shows only euro amounts and session counts — never commission percentages.
+async function loadTier() {
+  const box = document.getElementById('tier-body');
+  let t;
+  try { t = await API.get('/coach/tier'); }
+  catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; return; }
+
+  const monthName = new Date(t.month + '-15T12:00:00Z')
+    .toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
+  const progress = t.sessionsToNextTier !== null
+    ? `<div class="small muted" style="margin-top:4px">${t.sessionsToNextTier} more completed
+        session${t.sessionsToNextTier === 1 ? '' : 's'} and you move up to
+        <strong style="color:var(--lime)">${esc(t.nextTierName)}</strong></div>`
+    : '<div class="small" style="margin-top:4px;color:var(--lime)">Top tier — maximum earnings per session 🏆</div>';
+
+  box.innerHTML = `
+    <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
+      <div class="display" style="font-size:1.5rem;color:var(--lime)">
+        Tier ${t.tierNumber} — ${esc(t.tierName)}</div>
+      <span class="chip gray">${esc(t.sessionLabel)}</span>
+    </div>
+    <div class="small muted">${t.sessionsThisMonth} session${t.sessionsThisMonth === 1 ? '' : 's'}
+      completed in ${esc(monthName)}</div>
+    ${progress}
+    <div class="review-row" style="margin-top:10px"><span class="muted">You earn per on-pitch session</span>
+      <strong style="color:var(--lime)">${eur(t.earnPerSession.onPitchCents)}</strong></div>
+    <div class="review-row"><span class="muted">You earn per online session</span>
+      <strong>${eur(t.earnPerSession.onlineCents)}</strong></div>
+    <div class="review-row"><span class="muted">Earned in ${esc(monthName)}</span>
+      <strong>${eur(t.earnedThisMonthCents)}</strong></div>
+    <div class="small muted" style="margin:12px 0 4px;text-transform:uppercase;letter-spacing:.08em">Your benefits</div>
+    ${t.benefits.map((b) => `<div>✔ ${esc(b)}</div>`).join('')}
+    <div class="small muted" style="margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">All tiers</div>
+    ${t.allTiers.map((x) => `
+      <div style="padding:8px 0;border-top:1px dashed var(--line);${x.number === t.tierNumber ? '' : 'opacity:.65'}">
+        <strong>${x.number}. ${esc(x.name)}</strong>
+        <span class="muted">· ${esc(x.sessions)}</span><br>
+        <span class="muted">Per session:</span> ${eur(x.earnPerSession.onPitchCents)}
+        <span class="muted">on-pitch ·</span> ${eur(x.earnPerSession.onlineCents)} <span class="muted">online</span><br>
+        <span class="muted">${x.benefits.map(esc).join(' · ')}</span>
+      </div>`).join('')}`;
+}
+
 // --- filters ----------------------------------------------------------------
 function buildFilters() {
   const locBox = document.getElementById('loc-chips');
@@ -200,7 +247,9 @@ async function loadSessions() {
         <a class="small" href="mailto:${esc(r.customer_email)}">${esc(r.customer_email)}</a></div>
       <div class="small muted">${esc(cap(r.position))} · ${esc(r.focus)} ·
         ${r.is_online ? 'online' : esc(r.location)} ·
-        ${r.credit_applied ? 'FREE (credit)' : eur(r.total_cents)}</div>
+        ${r.credit_applied ? 'client pays 0 € (credit)' : 'client pays ' + eur(r.total_cents)}</div>
+      ${r.earn_cents != null ? `<div class="small" style="color:var(--lime);margin-top:2px">
+        You earn ${eur(r.earn_cents)}${r.earn_estimated ? ' (estimate — final amount set when the session is completed)' : ''}</div>` : ''}
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${statusBtns(r)}</div>
     </div>`;
 
@@ -222,6 +271,7 @@ async function loadSessions() {
         : `Marked as ${to === 'confirmed' ? 'current' : to}.`);
       await loadSessions();
       await loadWeek(); // a cancelled slot becomes bookable again
+      await loadTier(); // completions move the monthly tier forward
     } catch (err) {
       btn.disabled = false;
       toast(err.message, true);

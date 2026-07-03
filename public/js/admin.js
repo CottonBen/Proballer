@@ -32,8 +32,16 @@ const WIN_LABEL = { d7: 'past 7 days', d30: 'past 30 days', d90: 'past 90 days',
   document.getElementById('sheets-sync').addEventListener('click', syncSheets);
   document.getElementById('remove-demo').addEventListener('click', removeDemo);
 
+  document.querySelectorAll('#invoice-filter button').forEach((b) =>
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#invoice-filter button').forEach((x) => x.classList.toggle('on', x === b));
+      INVOICE_FILTER = b.dataset.f;
+      renderCRM();
+    }));
+
   await refresh();
   await loadBookings('');
+  await loadCRM();
 })().catch((e) => toast(e.message, true));
 
 async function refresh() {
@@ -127,6 +135,8 @@ function renderCoachTable() {
   t.innerHTML = `
     <tr><th>Coach</th><th>Trains</th><th>Cities</th><th>Completed<br><span style="font-weight:400">7 / 30 / 90 / all</span></th>
       <th>Upcoming</th><th>Open slots<br>next 14 d</th><th>Utilization</th>
+      <th>Tier<br><span style="font-weight:400">this month</span></th>
+      <th>Coach payout<br><span style="font-weight:400">this month</span></th>
       <th>Earned<br><span style="font-weight:400">completed</span></th>
       <th>Booked value<br><span style="font-weight:400">incl. upcoming</span></th></tr>` +
     A.coaches.map((c) => `
@@ -138,6 +148,9 @@ function renderCoachTable() {
         <td>${c.upcoming}</td>
         <td>${c.slotsNext14}</td>
         <td>${c.utilization === null ? '<span class="muted">no slots</span>' : c.utilization + '%'}</td>
+        <td title="${c.tier.sessionsThisMonth} sessions this month">
+          <span class="chip" style="font-size:.7rem">T${c.tier.number} · ${c.tier.percent}%</span></td>
+        <td>${eur(c.tier.payoutThisMonthCents)}</td>
         <td>${eur(c.revenueCompletedCents)}</td>
         <td class="muted">${eur(c.bookedValueCents)}</td>
       </tr>`).join('');
@@ -145,44 +158,90 @@ function renderCoachTable() {
     row.addEventListener('click', () => openCoachCalendar(Number(row.dataset.coach))));
 }
 
-// Read-only two-week calendar for one coach.
+// Editable two-week calendar for one coach: the admin can open and close
+// slots exactly like the coach can (booked and past cells stay locked).
 async function openCoachCalendar(id) {
   const bd = document.getElementById('cal-backdrop');
   const box = document.getElementById('cal-modal-body');
   bd.classList.add('open');
   box.innerHTML = '<p class="muted">Loading calendar…</p>';
-  const data = await API.get(`/admin/coaches/${id}/calendar`);
+  const [data, site] = await Promise.all([
+    API.get(`/admin/coaches/${id}/calendar`),
+    API.get('/config'),
+  ]);
   const avail = new Set(data.slots.map((s) => `${s.date}|${s.hour}`));
   const booked = new Map(data.bookings.map((b) => [`${b.date}|${b.hour}`, b]));
+  const pending = new Map(); // "date|hour" -> 'add' | 'remove'
   const days = [];
   for (let d = new Date(data.from + 'T12:00:00Z'); days.length < 14; d.setUTCDate(d.getUTCDate() + 1)) {
     days.push(d.toISOString().slice(0, 10));
   }
-  const site = await API.get('/config');
-  let grid = '<div class="cal" style="grid-template-columns:64px repeat(14, minmax(52px,1fr));min-width:900px">';
-  grid += '<div></div>' + days.map((d) => `
-    <div class="hd ${d === data.from ? 'today' : ''}"><div class="dow">${fmtDate(d).split(' ')[0]}</div>
-    <div class="num" style="font-size:1rem">${d.slice(8)}</div></div>`).join('');
-  for (let h = site.hours.start; h < site.hours.end; h++) {
-    grid += `<div class="hr">${String(h).padStart(2, '0')}</div>`;
-    for (const d of days) {
-      const k = `${d}|${h}`;
-      const b = booked.get(k);
-      grid += `<div class="cal-cell ${b ? 'booked' : avail.has(k) ? 'avail' : ''}" style="cursor:default;height:26px"
-        data-label="" title="${b ? esc(`${b.customer} · ${cap(b.position)} · ${b.focus}`) : ''}"></div>`;
+
+  function paint() {
+    let grid = '<div class="cal" style="grid-template-columns:64px repeat(14, minmax(52px,1fr));min-width:900px">';
+    grid += '<div></div>' + days.map((d) => `
+      <div class="hd ${d === data.from ? 'today' : ''}"><div class="dow">${fmtDate(d).split(' ')[0]}</div>
+      <div class="num" style="font-size:1rem">${d.slice(8)}</div></div>`).join('');
+    for (let h = site.hours.start; h < site.hours.end; h++) {
+      grid += `<div class="hr">${String(h).padStart(2, '0')}</div>`;
+      for (const d of days) {
+        const k = `${d}|${h}`;
+        const b = booked.get(k);
+        let cls = 'cal-cell';
+        if (b) cls += ' booked';
+        else if (pending.get(k) === 'add') cls += ' pending-add';
+        else if (pending.get(k) === 'remove') cls += ' pending-remove';
+        else if (avail.has(k)) cls += ' avail';
+        grid += `<div class="${cls}" data-k="${k}" style="height:26px" data-label=""
+          title="${b ? esc(`${b.customer} · ${cap(b.position)} · ${b.focus}`) : ''}"></div>`;
+      }
     }
+    grid += '</div>';
+    box.innerHTML = `
+      <h2 style="font-size:1.7rem">${esc(data.coach.name)} — next 14 days</h2>
+      <p class="muted small">${data.coach.locations.map(esc).join(', ')} ·
+        trains ${data.coach.positions.map((p) => esc(cap(p))).join(', ')} ·
+        click hours to open/close them for booking</p>
+      <div class="cal-scroll">${grid}</div>
+      <div class="cal-legend">
+        <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>Not available</span>
+        <span><i style="background:rgba(201,247,58,0.25)"></i>Open for booking</span>
+        <span><i style="background:var(--lime)"></i>Booked (hover for details)</span>
+        <span><i style="background:rgba(201,247,58,0.5)"></i>Unsaved change</span>
+      </div>
+      <div style="display:flex;justify-content:flex-end;margin-top:14px">
+        <button class="btn btn-primary btn-sm" id="cal-save" ${pending.size ? '' : 'disabled'}>
+          ${pending.size ? `Save changes (${pending.size})` : 'Save changes'}</button>
+      </div>`;
+
+    box.querySelectorAll('.cal-cell').forEach((cell) => cell.addEventListener('click', () => {
+      const k = cell.dataset.k;
+      if (cell.classList.contains('booked')) return;
+      if (pending.has(k)) pending.delete(k);
+      else pending.set(k, avail.has(k) ? 'remove' : 'add');
+      paint();
+    }));
+
+    box.querySelector('#cal-save').addEventListener('click', async () => {
+      const adds = [], removes = [];
+      for (const [k, op] of pending) {
+        const [date, hour] = k.split('|');
+        (op === 'add' ? adds : removes).push({ date, hour: Number(hour) });
+      }
+      try {
+        const r = await API.put(`/admin/coaches/${id}/availability`, { adds, removes });
+        let msg = `Saved — ${r.added} opened, ${r.removed} closed.`;
+        if (r.conflicts.length) msg += ` ${r.conflicts.length} could not be closed (booked).`;
+        if (r.rejected.length) msg += ` ${r.rejected.length} skipped (past hours).`;
+        toast(msg, r.conflicts.length > 0);
+        await refresh();
+        openCoachCalendar(id); // reload with saved state
+      } catch (err) {
+        toast(err.message, true);
+      }
+    });
   }
-  grid += '</div>';
-  box.innerHTML = `
-    <h2 style="font-size:1.7rem">${esc(data.coach.name)} — next 14 days</h2>
-    <p class="muted small">${data.coach.locations.map(esc).join(', ')} ·
-      trains ${data.coach.positions.map((p) => esc(cap(p))).join(', ')}</p>
-    <div class="cal-scroll">${grid}</div>
-    <div class="cal-legend">
-      <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>Not available</span>
-      <span><i style="background:rgba(201,247,58,0.25)"></i>Open for booking</span>
-      <span><i style="background:var(--lime)"></i>Booked (hover for details)</span>
-    </div>`;
+  paint();
 }
 
 // --- bookings table -----------------------------------------------------------
@@ -226,9 +285,76 @@ async function loadBookings(status) {
   }));
 }
 
+// --- CRM: customers + invoices -------------------------------------------------
+let CRM = null;
+let INVOICE_FILTER = '';
+
+async function loadCRM() {
+  CRM = await API.get('/admin/crm');
+  renderCRM();
+}
+
+function renderCRM() {
+  if (!CRM) return;
+  document.getElementById('crm-stats').innerHTML = [
+    { label: 'Invoices paid', value: eur(CRM.totals.paidCents) },
+    { label: 'Outstanding', value: eur(CRM.totals.outstandingCents),
+      sub: `<div class="sub">${CRM.totals.overdue} overdue</div>` },
+    { label: 'Customer accounts', value: CRM.customers.length },
+  ].map((c) => `<div class="card stat-card"><div class="label">${c.label}</div>
+    <div class="value" style="font-size:2rem">${c.value}</div>${c.sub || ''}</div>`).join('');
+
+  const ct = document.getElementById('crm-customers');
+  document.getElementById('crm-empty').hidden = CRM.customers.length > 0;
+  ct.innerHTML = CRM.customers.length ? `
+    <tr><th>Customer</th><th>Email</th><th>Signed up</th><th>Bookings</th>
+      <th>Done / upcoming / cancelled</th><th>Paid</th><th>Outstanding</th>
+      <th>Free credits</th><th>Last session</th></tr>` +
+    CRM.customers.map((c) => `
+      <tr>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
+        <td>${esc(c.signed_up)}</td>
+        <td><strong>${c.bookings}</strong></td>
+        <td>${c.completed || 0} / ${c.upcoming || 0} / ${c.cancelled || 0}</td>
+        <td>${eur(c.paid_cents)}</td>
+        <td>${c.outstanding_cents ? `<strong style="color:#f7a13a">${eur(c.outstanding_cents)}</strong>` : eur(0)}</td>
+        <td>${c.free_credits || ''}</td>
+        <td class="muted">${c.last_session ? esc(fmtDate(c.last_session)) : '—'}</td>
+      </tr>`).join('') : '';
+
+  const today = A ? A.today : '';
+  const rows = CRM.invoices.filter((i) => !INVOICE_FILTER || i.status === INVOICE_FILTER);
+  document.getElementById('crm-invoices').innerHTML = `
+    <tr><th>Invoice</th><th>Customer</th><th>Coach</th><th>Amount</th>
+      <th>Issued</th><th>Due</th><th>Status</th><th></th></tr>` +
+    rows.map((i) => {
+      const overdue = i.status === 'sent' && today && i.due_date < today;
+      return `
+      <tr>
+        <td><a href="/api/invoices/${encodeURIComponent(i.number)}" target="_blank">${esc(i.number)}</a></td>
+        <td title="${esc(i.customer_email)}">${esc(i.customer)}</td>
+        <td>${esc(i.coach)}</td>
+        <td>${eur(i.amount_cents)}</td>
+        <td class="muted">${esc(i.issued)}</td>
+        <td class="${overdue ? '' : 'muted'}" ${overdue ? 'style="color:var(--danger)"' : ''}>
+          ${esc(i.due_date)}${overdue ? ' ⚠' : ''}</td>
+        <td><span class="status-tag ${i.status === 'paid' ? 'status-completed' : i.status === 'void' ? 'status-cancelled' : 'status-confirmed'}">${esc(i.status)}</span></td>
+        <td>${i.status === 'sent'
+          ? `<button class="btn btn-ghost btn-sm" data-crm-paid="${esc(i.number)}">Mark paid</button>` : ''}</td>
+      </tr>`;
+    }).join('');
+
+  document.querySelectorAll('[data-crm-paid]').forEach((btn) => btn.addEventListener('click', async () => {
+    await API.post(`/admin/invoices/${encodeURIComponent(btn.dataset.crmPaid)}/paid`, {});
+    toast('Invoice marked as paid.');
+    await Promise.all([refresh(), loadCRM(), loadBookings('')]);
+  }));
+}
+
 // --- data & export ------------------------------------------------------------
 function renderExports() {
-  const names = ['Bookings', 'Invoices', 'Coaches', 'Availability', 'VisitsDaily', 'Funnel', 'Customers'];
+  const names = ['Bookings', 'Invoices', 'Coaches', 'CoachPayouts', 'Availability', 'VisitsDaily', 'Funnel', 'Customers'];
   document.getElementById('csv-links').innerHTML = names.map((n) =>
     `<a class="btn btn-ghost btn-sm" href="/api/admin/export/${n}.csv">${n}.csv</a>`).join('');
   const st = A.sheets;

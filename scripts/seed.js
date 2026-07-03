@@ -11,6 +11,28 @@ const path = require('node:path');
 const fs = require('node:fs');
 const config = require('../config');
 
+// Idempotent structural migrations, run on every server start. Safe on both
+// fresh and existing databases.
+function migrate(db, nowISO) {
+  // Kalle is both an admin and a coach (his coach profile stays linked).
+  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'kalle.sundman@icloud.com' AND role = 'coach'").run();
+
+  // Ben's coach profile belongs on the owner's own account — retire the old
+  // separate ben@proballers.fi login if it exists.
+  const owner = db.prepare("SELECT id FROM users WHERE email = 'cottonbenjaminmik@gmail.com'").get();
+  const oldBen = db.prepare("SELECT id FROM users WHERE email = 'ben@proballers.fi'").get();
+  if (owner) {
+    if (oldBen) {
+      db.prepare("UPDATE coaches SET user_id = ? WHERE slug = 'ben-cotton' AND user_id = ?").run(owner.id, oldBen.id);
+      db.prepare('DELETE FROM sessions WHERE user_id = ?').run(oldBen.id);
+      db.prepare('DELETE FROM notifications WHERE user_id = ?').run(oldBen.id);
+      db.prepare('DELETE FROM users WHERE id = ?').run(oldBen.id);
+    } else {
+      db.prepare("UPDATE coaches SET user_id = ? WHERE slug = 'ben-cotton' AND user_id IS NULL").run(owner.id);
+    }
+  }
+}
+
 function seed({ demo = true, reset = false } = {}) {
   if (reset) {
     const { DATA_DIR } = require('../server/db');
@@ -23,6 +45,7 @@ function seed({ demo = true, reset = false } = {}) {
   const { db, nowISO, helsinkiDateOffset } = require('../server/db');
 
   const userCount = db.prepare('SELECT COUNT(*) AS n FROM users').get().n;
+  if (userCount > 0) migrate(db, nowISO);
   if (userCount > 0 && !demo) return { seeded: false };
 
   const now = nowISO();
@@ -44,9 +67,10 @@ function seed({ demo = true, reset = false } = {}) {
     insUser.run(adminEmail, bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'Castagne20!', 10),
       'Benjamin Cotton', 'admin', 0, now);
 
+    // Kalle is both an admin and a coach: admin role + a linked coach profile.
     const kalleEmail = (process.env.COACH_EMAIL || 'kalle.sundman@icloud.com').toLowerCase();
     insUser.run(kalleEmail, bcrypt.hashSync(process.env.COACH_PASSWORD || 'Kaakeli.09', 10),
-      'Kalle Sundman', 'coach', 0, now);
+      'Kalle Sundman', 'admin', 0, now);
     const kalleId = getUser.get(kalleEmail).id;
     insCoach.run(kalleId, 'Kalle Sundman', 'kalle-sundman',
       'Kalle on 17 vuotias laitapuolustaja, joka on pelannut myös monia vuosia keskikentällä. ' +
@@ -57,10 +81,9 @@ function seed({ demo = true, reset = false } = {}) {
       JSON.stringify(['midfielders', 'attackers']),
       1, 20, 0, now);
 
-    // Ben — first face of the site. Coach login so he can manage his calendar.
-    insUser.run('ben@proballers.fi', bcrypt.hashSync('ChangeMe123!', 10),
-      'Ben Cotton', 'coach', 0, now);
-    const benId = getUser.get('ben@proballers.fi').id;
+    // Ben — first face of the site. His coach profile lives on the owner's
+    // own (admin) account, so one login covers both roles.
+    const benId = getUser.get(adminEmail).id;
     insCoach.run(benId, 'Ben Cotton', 'ben-cotton',
       'Ben plays football in Somerset for Millfield School. He has previously played for ' +
       'FC Honka before his move to the UK. Ben is a central defender and mainly coaches ' +
@@ -254,8 +277,12 @@ function removeDemoData() {
     DELETE FROM sessions WHERE user_id IN (SELECT id FROM users WHERE demo = 1);
     DELETE FROM coaches WHERE demo = 1;
     DELETE FROM users WHERE demo = 1;
-    DELETE FROM meta WHERE key = 'demo_seeded';
   `);
+  // Leave a marker (instead of deleting the key) so a server restart does NOT
+  // quietly reseed the demo data the admin just removed. `npm run reset`
+  // still brings the demo environment back on purpose.
+  db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('demo_seeded', 'removed-by-admin')")
+    .run();
 }
 
 if (require.main === module) {

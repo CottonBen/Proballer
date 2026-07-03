@@ -67,6 +67,32 @@
       <table class="data" id="bookings-table"></table>
     </div>
 
+    <!-- CRM -->
+    <div class="dash-title">
+      <div>
+        <h2 style="font-size:1.8rem">Customers — CRM</h2>
+        <p class="muted small" style="margin:0">Who has an account, how much they've booked, and what's been paid.</p>
+      </div>
+    </div>
+    <div class="grid stat-grid" id="crm-stats"></div>
+    <div class="card" style="overflow-x:auto;margin-top:18px">
+      <table class="data" id="crm-customers"></table>
+      <p class="muted small" id="crm-empty" hidden style="margin:12px 0 4px">No customer accounts yet —
+        they'll appear here as soon as someone signs up on the site.</p>
+    </div>
+    <div class="dash-title">
+      <h3 style="margin:0">Invoices</h3>
+      <div class="window-pills" id="invoice-filter">
+        <button data-f="" class="on">All</button>
+        <button data-f="sent">Unpaid</button>
+        <button data-f="paid">Paid</button>
+        <button data-f="void">Voided</button>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="crm-invoices"></table>
+    </div>
+
     <!-- data & export -->
     <div class="dash-title"><h2 style="font-size:1.8rem">Business data</h2></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">

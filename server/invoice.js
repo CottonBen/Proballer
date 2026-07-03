@@ -61,8 +61,17 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focusLabel) {
     <tr class="total"><td>Total due</td><td>${eur(booking.total_cents)}</td></tr>
   </table>
   <p class="muted">${esc(config.pricing.vatNote)}</p>
-  <p>Payment instructions will be confirmed by your coach. Questions? Reply to
-     ${esc(config.invoice.replyEmail)}.</p>
+  <h3>How to pay</h3>
+  <table>
+    <tr><td>Payment method</td><td>${esc(config.payment.method)} (only payment method)</td></tr>
+    <tr><td>Payee</td><td>${esc(config.payment.payee)}</td></tr>
+    <tr><td>IBAN</td><td><strong>${esc(config.payment.iban)}</strong></td></tr>
+    <tr><td>Reference / message</td><td><strong>${esc(inv.number)}</strong></td></tr>
+    <tr><td>Amount</td><td><strong>${eur(booking.total_cents)}</strong></td></tr>
+    <tr><td>Due date</td><td>${esc(inv.due_date)}</td></tr>
+  </table>
+  <p class="muted">${esc(config.payment.referenceHint)} so we can match your payment.
+     Questions? Reply to ${esc(config.invoice.replyEmail)}.</p>
   <p class="muted">Thank you for training with us — see you on the pitch!</p>
 </body></html>`;
 }

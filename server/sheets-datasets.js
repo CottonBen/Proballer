@@ -30,5 +30,20 @@ module.exports = function datasets() {
     Customers: q(`SELECT name, email, created_at,
         (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id) AS bookings
       FROM users u WHERE role='customer' ORDER BY created_at DESC`),
+    CoachPayouts: (() => {
+      const tiers = require('./tiers');
+      return db.prepare('SELECT id, name FROM coaches WHERE active = 1 ORDER BY display_order').all()
+        .map(c => {
+          const status = tiers.coachTierStatus(c.id);
+          const pay = tiers.coachMonthPayouts(c.id);
+          return {
+            coach: c.name, month: status.month,
+            sessions_this_month: status.sessionsThisMonth,
+            tier: `${status.tierIndex + 1} — ${status.tier.name}`,
+            commission_percent: status.tier.percent,
+            payout_eur: pay.payoutCents / 100,
+          };
+        });
+    })(),
   };
 };

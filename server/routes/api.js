@@ -8,6 +8,7 @@ const { db, nowISO, helsinkiNow, helsinkiDateOffset, autoCompleteBookings } = re
 const { createSession, destroySession, requireRole, loginThrottle } = require('../auth');
 const { createInvoiceForBooking, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
+const tiers = require('../tiers');
 
 const router = express.Router();
 const WINDOWS = { d7: 7, d30: 30, d90: 90 };
@@ -86,6 +87,7 @@ router.get('/config', (req, res) => {
     hours: { start: config.dayStartHour, end: config.dayEndHour },
     bookingHorizonDays: config.bookingHorizonDays,
     emailDelivery: require('../mailer').smtpConfigured(),
+    payment: config.payment,
   });
 });
 
@@ -179,7 +181,9 @@ router.get('/me', (req, res) => {
     'SELECT COUNT(*) n FROM credits WHERE customer_id = ? AND used_by_booking_id IS NULL').get(req.user.id).n;
   const unreadNotifications = db.prepare(
     'SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read = 0').get(req.user.id).n;
-  res.json({ user: req.user, freeCredits, unreadNotifications });
+  // Dual roles: an admin can also have a coach profile (e.g. Kalle, Ben).
+  const coachProfile = Boolean(db.prepare('SELECT 1 FROM coaches WHERE user_id = ?').get(req.user.id));
+  res.json({ user: req.user, freeCredits, unreadNotifications, coachProfile });
 });
 
 router.get('/my-notifications', requireRole('customer', 'admin', 'coach'), (req, res) => {
@@ -314,14 +318,14 @@ function myCoach(req) {
   return db.prepare('SELECT * FROM coaches WHERE user_id = ?').get(req.user.id);
 }
 
-router.get('/coach/me', requireRole('coach'), (req, res) => {
+router.get('/coach/me', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
   res.json(coachPublic(coach));
 });
 
 // Own calendar for a date range: published slots + which of them are booked.
-router.get('/coach/availability', requireRole('coach'), (req, res) => {
+router.get('/coach/availability', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
   autoCompleteBookings();
@@ -337,13 +341,12 @@ router.get('/coach/availability', requireRole('coach'), (req, res) => {
   res.json({ from, to, slots, bookings });
 });
 
-// Save button on the coach calendar sends adds/removes as a diff.
-router.put('/coach/availability', requireRole('coach'), (req, res) => {
-  const coach = myCoach(req);
-  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
-  const adds = Array.isArray(req.body?.adds) ? req.body.adds : [];
-  const removes = Array.isArray(req.body?.removes) ? req.body.removes : [];
-  if (adds.length + removes.length > 2000) return res.status(400).json({ error: 'Too many changes at once.' });
+// Applies an availability diff for a coach — used by the coach's own Save
+// button and by the admin editing any coach's calendar.
+function applyAvailabilityChanges(coachId, body) {
+  const adds = Array.isArray(body?.adds) ? body.adds : [];
+  const removes = Array.isArray(body?.removes) ? body.removes : [];
+  if (adds.length + removes.length > 2000) return { error: 'Too many changes at once.' };
 
   const now = helsinkiNow();
   const horizon = helsinkiDateOffset(config.bookingHorizonDays);
@@ -364,12 +367,12 @@ router.put('/coach/availability', requireRole('coach'), (req, res) => {
   try {
     for (const s of adds) {
       if (!valid(s)) { rejected.push(s); continue; }
-      added += insSlot.run(coach.id, s.date, s.hour, nowISO()).changes;
+      added += insSlot.run(coachId, s.date, s.hour, nowISO()).changes;
     }
     for (const s of removes) {
       if (!s || !/^\d{4}-\d{2}-\d{2}$/.test(String(s.date)) || !Number.isInteger(s.hour)) { rejected.push(s); continue; }
-      if (hasBooking.get(coach.id, s.date, s.hour)) { conflicts.push(s); continue; }
-      removed += delSlot.run(coach.id, s.date, s.hour).changes;
+      if (hasBooking.get(coachId, s.date, s.hour)) { conflicts.push(s); continue; }
+      removed += delSlot.run(coachId, s.date, s.hour).changes;
     }
     db.exec('COMMIT');
   } catch (err) {
@@ -377,10 +380,19 @@ router.put('/coach/availability', requireRole('coach'), (req, res) => {
     throw err;
   }
   sheets.scheduleSync();
-  res.json({ added, removed, conflicts, rejected });
+  return { added, removed, conflicts, rejected };
+}
+
+// Save button on the coach calendar sends adds/removes as a diff.
+router.put('/coach/availability', requireRole('coach', 'admin'), (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  const result = applyAvailabilityChanges(coach.id, req.body);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json(result);
 });
 
-router.put('/coach/filters', requireRole('coach'), (req, res) => {
+router.put('/coach/filters', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
   const locations = Array.isArray(req.body?.locations)
@@ -396,22 +408,70 @@ router.put('/coach/filters', requireRole('coach'), (req, res) => {
   res.json({ locations, positions });
 });
 
-router.get('/coach/bookings', requireRole('coach'), (req, res) => {
+router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
   autoCompleteBookings();
   const rows = db.prepare(`
     SELECT b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
-           b.total_cents, b.credit_applied, u.name AS customer, u.email AS customer_email
+           b.price_cents, b.total_cents, b.credit_applied, u.name AS customer, u.email AS customer_email
     FROM bookings b JOIN users u ON u.id = b.customer_id
     WHERE b.coach_id = ?
     ORDER BY b.date DESC, b.hour DESC LIMIT 200`).all(coach.id);
+
+  // Attach what the coach earns, in euros only (tier math stays server-side):
+  // exact for completed sessions, an estimate at the current rate for upcoming.
+  const months = [...new Set(rows.filter(r => r.status === 'completed').map(r => tiers.monthOf(r.date)))];
+  const payoutByMonth = new Map(months.map(m => [m, tiers.coachMonthPayouts(coach.id, m).byCode]));
+  const currentTier = tiers.coachTierStatus(coach.id).tier;
+  for (const r of rows) {
+    if (r.status === 'completed') {
+      r.earn_cents = payoutByMonth.get(tiers.monthOf(r.date))?.get(r.code) ?? null;
+      r.earn_estimated = false;
+    } else if (r.status === 'confirmed') {
+      r.earn_cents = Math.round(tiers.payoutBasisCents(r) * currentTier.percent / 100);
+      r.earn_estimated = true;
+    } else {
+      r.earn_cents = null;
+      r.earn_estimated = false;
+    }
+    delete r.price_cents; // internal to the payout basis calc
+  }
   res.json(rows);
+});
+
+// Coach's tier & earnings view. Deliberately contains NO percentages —
+// only euro amounts, session counts and benefits.
+router.get('/coach/tier', requireRole('coach', 'admin'), (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  autoCompleteBookings();
+  const status = tiers.coachTierStatus(coach.id);
+  const monthPay = tiers.coachMonthPayouts(coach.id);
+  res.json({
+    month: status.month,
+    sessionsThisMonth: status.sessionsThisMonth,
+    tierNumber: status.tierIndex + 1,
+    tierName: status.tier.name,
+    sessionLabel: status.tier.sessionLabel,
+    sessionsToNextTier: status.sessionsToNextTier,
+    nextTierName: status.nextTierName,
+    earnPerSession: tiers.perSessionEarningsCents(status.tier),
+    earnedThisMonthCents: monthPay.payoutCents,
+    benefits: status.tier.benefits,
+    allTiers: config.coachTiers.map((t, i) => ({
+      number: i + 1,
+      name: t.name,
+      sessions: t.sessionLabel,
+      earnPerSession: tiers.perSessionEarningsCents(t),
+      benefits: t.benefits,
+    })),
+  });
 });
 
 // The status buttons on the coach's client list: current / completed / cancelled.
 // Cancelling notifies the customer and grants them a free-session credit.
-router.post('/coach/bookings/:code/status', requireRole('coach'), (req, res) => {
+router.post('/coach/bookings/:code/status', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
   const to = String(req.body?.status || '');
@@ -507,11 +567,20 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
       const bookedNext14 = one(
         "SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status != 'cancelled' AND date BETWEEN ? AND ?",
         c.id, today, horizon14);
+      const tierStatus = tiers.coachTierStatus(c.id);
+      const monthPay = tiers.coachMonthPayouts(c.id);
       return {
         id: c.id, name: c.name, slug: c.slug,
         locations: parseJSON(c.locations, []), positions: parseJSON(c.positions, []),
         completed, upcoming, revenueCompletedCents, bookedValueCents, slotsNext14, bookedNext14,
         utilization: slotsNext14 ? Math.min(100, Math.round(bookedNext14 / slotsNext14 * 100)) : null,
+        // Admin-only commission view (percentages allowed here).
+        tier: {
+          number: tierStatus.tierIndex + 1, name: tierStatus.tier.name,
+          percent: tierStatus.tier.percent,
+          sessionsThisMonth: tierStatus.sessionsThisMonth,
+          payoutThisMonthCents: monthPay.payoutCents,
+        },
       };
     });
 
@@ -559,6 +628,16 @@ router.get('/admin/coaches/:id/calendar', requireRole('admin'), (req, res) => {
   res.json({ coach: coachPublic(coach), from, to, slots, bookings });
 });
 
+// The admin can edit any coach's availability (same rules as the coach's own
+// editor: only future slots within 8-20, booked slots can't be closed).
+router.put('/admin/coaches/:id/availability', requireRole('admin'), (req, res) => {
+  const coach = db.prepare('SELECT id FROM coaches WHERE id = ?').get(Number(req.params.id));
+  if (!coach) return res.status(404).json({ error: 'Coach not found.' });
+  const result = applyAvailabilityChanges(coach.id, req.body);
+  if (result.error) return res.status(400).json({ error: result.error });
+  res.json(result);
+});
+
 router.get('/admin/bookings', requireRole('admin'), (req, res) => {
   autoCompleteBookings();
   const status = ['confirmed', 'completed', 'cancelled'].includes(String(req.query.status))
@@ -600,6 +679,42 @@ router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
   }
   sheets.scheduleSync();
   res.json({ ok: true });
+});
+
+// CRM: every customer account with their booking history and money status,
+// plus the full invoice ledger (paid / sent / void).
+router.get('/admin/crm', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  const customers = db.prepare(`
+    SELECT u.id, u.name, u.email, substr(u.created_at, 1, 10) AS signed_up,
+      COUNT(b.id) AS bookings,
+      SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END) AS completed,
+      SUM(CASE WHEN b.status = 'confirmed' THEN 1 ELSE 0 END) AS upcoming,
+      SUM(CASE WHEN b.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
+      COALESCE(SUM(CASE WHEN i.status = 'paid' THEN i.amount_cents ELSE 0 END), 0) AS paid_cents,
+      COALESCE(SUM(CASE WHEN i.status = 'sent' THEN i.amount_cents ELSE 0 END), 0) AS outstanding_cents,
+      (SELECT COUNT(*) FROM credits c WHERE c.customer_id = u.id AND c.used_by_booking_id IS NULL) AS free_credits,
+      MAX(b.date) AS last_session
+    FROM users u
+    LEFT JOIN bookings b ON b.customer_id = u.id
+    LEFT JOIN invoices i ON i.booking_id = b.id
+    WHERE u.role = 'customer'
+    GROUP BY u.id
+    ORDER BY u.created_at DESC`).all();
+  const invoices = db.prepare(`
+    SELECT i.number, i.amount_cents, substr(i.issued_at, 1, 10) AS issued, i.due_date, i.status,
+      u.name AS customer, u.email AS customer_email, b.code AS booking_code, c.name AS coach
+    FROM invoices i
+    JOIN bookings b ON b.id = i.booking_id
+    JOIN users u ON u.id = b.customer_id
+    JOIN coaches c ON c.id = b.coach_id
+    ORDER BY i.id DESC LIMIT 300`).all();
+  const totals = {
+    paidCents: invoices.filter(i => i.status === 'paid').reduce((s, i) => s + i.amount_cents, 0),
+    outstandingCents: invoices.filter(i => i.status === 'sent').reduce((s, i) => s + i.amount_cents, 0),
+    overdue: invoices.filter(i => i.status === 'sent' && i.due_date < helsinkiNow().date).length,
+  };
+  res.json({ customers, invoices, totals });
 });
 
 router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => {
