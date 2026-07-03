@@ -48,6 +48,7 @@ const mondayOf = (iso) => {
   await loadWeek();
   await loadSessions();
   await loadTier();
+  await loadReviews();
 
   document.getElementById('prev-week').addEventListener('click', () => moveWeek(-7));
   document.getElementById('next-week').addEventListener('click', () => moveWeek(7));
@@ -158,13 +159,12 @@ async function loadTier() {
   const progress = t.sessionsToNextTier !== null
     ? `<div class="small muted" style="margin-top:4px">${t.sessionsToNextTier} more completed
         session${t.sessionsToNextTier === 1 ? '' : 's'} and you move up to
-        <strong style="color:var(--lime)">${esc(t.nextTierName)}</strong></div>`
+        <strong style="color:var(--lime)">Tier ${t.nextTierNumber}</strong></div>`
     : '<div class="small" style="margin-top:4px;color:var(--lime)">Top tier — maximum earnings per session 🏆</div>';
 
   box.innerHTML = `
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
-      <div class="display" style="font-size:1.5rem;color:var(--lime)">
-        Tier ${t.tierNumber} — ${esc(t.tierName)}</div>
+      <div class="display" style="font-size:1.5rem;color:var(--lime)">Tier ${t.tierNumber}</div>
       <span class="chip gray">${esc(t.sessionLabel)}</span>
     </div>
     <div class="small muted">${t.sessionsThisMonth} session${t.sessionsThisMonth === 1 ? '' : 's'}
@@ -176,17 +176,26 @@ async function loadTier() {
       <strong>${eur(t.earnPerSession.onlineCents)}</strong></div>
     <div class="review-row"><span class="muted">Earned in ${esc(monthName)}</span>
       <strong>${eur(t.earnedThisMonthCents)}</strong></div>
-    <div class="small muted" style="margin:12px 0 4px;text-transform:uppercase;letter-spacing:.08em">Your benefits</div>
-    ${t.benefits.map((b) => `<div>✔ ${esc(b)}</div>`).join('')}
     <div class="small muted" style="margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">All tiers</div>
     ${t.allTiers.map((x) => `
       <div style="padding:8px 0;border-top:1px dashed var(--line);${x.number === t.tierNumber ? '' : 'opacity:.65'}">
-        <strong>${x.number}. ${esc(x.name)}</strong>
+        <strong>Tier ${x.number}</strong>
         <span class="muted">· ${esc(x.sessions)}</span><br>
         <span class="muted">Per session:</span> ${eur(x.earnPerSession.onPitchCents)}
-        <span class="muted">on-pitch ·</span> ${eur(x.earnPerSession.onlineCents)} <span class="muted">online</span><br>
-        <span class="muted">${x.benefits.map(esc).join(' · ')}</span>
+        <span class="muted">on-pitch ·</span> ${eur(x.earnPerSession.onlineCents)} <span class="muted">online</span>
       </div>`).join('')}`;
+}
+
+// --- reviews (read-only for the coach) ---------------------------------------
+async function loadReviews() {
+  const box = document.getElementById('reviews-body');
+  let data;
+  try { data = await API.get('/coach/reviews'); }
+  catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; return; }
+  const header = `<div class="rating-line" style="margin-bottom:10px">${ratingLine(data.rating)}</div>`;
+  box.innerHTML = header + (data.reviews.length
+    ? data.reviews.map(reviewHTML).join('')
+    : '<p class="muted">No reviews yet — they’ll appear here once your clients leave one.</p>');
 }
 
 // --- filters ----------------------------------------------------------------

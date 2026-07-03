@@ -95,6 +95,34 @@ function requireLoginRedirect() {
   location.href = '/login?next=' + encodeURIComponent(location.pathname + location.search);
 }
 
+// Star rating display. `avg` is a number (e.g. 4.5) or null. Renders five stars
+// with a gold overlay clipped to the fractional value, so 4.5 shows as 4½ stars.
+function starsHTML(avg) {
+  const val = Math.max(0, Math.min(5, Number(avg) || 0));
+  const pct = (val / 5 * 100).toFixed(1);
+  return `<span class="stars" role="img" aria-label="${val ? val + ' out of 5 stars' : 'no rating yet'}">`
+    + `<span class="stars-fill" style="width:${pct}%">★★★★★</span>★★★★★</span>`;
+}
+
+// Stars + "4.5 (12)" line. Falls back to a muted "No reviews yet" when count = 0.
+function ratingLine(rating) {
+  if (!rating || !rating.count) {
+    return `<span class="rating-line muted">${starsHTML(0)}<span class="small">No reviews yet</span></span>`;
+  }
+  return `<span class="rating-line">${starsHTML(rating.avg)}`
+    + `<span class="small"><strong>${rating.avg.toLocaleString('fi-FI')}</strong> `
+    + `<span class="muted">(${rating.count})</span></span></span>`;
+}
+
+// One review block: N gold stars, the body, and "— Author · date".
+function reviewHTML(r) {
+  return `<div class="review">
+      <div>${starsHTML(r.rating)}</div>
+      ${r.body ? `<p class="review-body">${esc(r.body)}</p>` : ''}
+      <div class="small muted">— ${esc(r.author_name || r.author || 'Anonymous')}${r.date ? ' · ' + esc(r.date) : ''}</div>
+    </div>`;
+}
+
 const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function fmtDate(iso) {
   // UTC-anchored so a calendar date renders the same weekday in every timezone.

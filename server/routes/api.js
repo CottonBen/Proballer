@@ -135,7 +135,72 @@ router.get('/config', (req, res) => {
 
 router.get('/coaches', (req, res) => {
   const rows = db.prepare('SELECT * FROM coaches WHERE active = 1 ORDER BY display_order, id').all();
-  res.json(rows.map(coachPublic));
+  const ratings = new Map(db.prepare(
+    'SELECT coach_id, COUNT(*) n, AVG(rating) avg FROM reviews GROUP BY coach_id')
+    .all().map(r => [r.coach_id, { avg: r.n ? Math.round(r.avg * 10) / 10 : null, count: r.n }]));
+  res.json(rows.map(c => ({ ...coachPublic(c), rating: ratings.get(c.id) || { avg: null, count: 0 } })));
+});
+
+// Public reviews for one coach, newest first.
+router.get('/coaches/:id/reviews', (req, res) => {
+  const coach = db.prepare('SELECT id FROM coaches WHERE id = ? AND active = 1').get(Number(req.params.id));
+  if (!coach) return res.status(404).json({ error: 'Coach not found.' });
+  const reviews = db.prepare(
+    `SELECT author_name, rating, body, substr(created_at,1,10) AS date
+     FROM reviews WHERE coach_id = ? ORDER BY created_at DESC, id DESC`).all(coach.id);
+  const agg = db.prepare('SELECT COUNT(*) n, AVG(rating) avg FROM reviews WHERE coach_id = ?').get(coach.id);
+  res.json({
+    rating: { avg: agg.n ? Math.round(agg.avg * 10) / 10 : null, count: agg.n },
+    reviews,
+  });
+});
+
+// A customer posts a review for a coach they've trained with. Requires at least
+// one COMPLETED session with that coach; one review per customer per coach.
+router.post('/coaches/:id/reviews', requireRole('customer', 'admin'), (req, res) => {
+  autoCompleteBookings();
+  const coach = db.prepare('SELECT id, name FROM coaches WHERE id = ? AND active = 1').get(Number(req.params.id));
+  if (!coach) return res.status(404).json({ error: 'Coach not found.' });
+  const rating = Math.trunc(Number(req.body?.rating));
+  if (!(rating >= 1 && rating <= 5)) return res.status(400).json({ error: 'Please give a rating from 1 to 5 stars.' });
+  const body = String(req.body?.body || '').trim().slice(0, 600);
+
+  const completed = db.prepare(
+    "SELECT 1 FROM bookings WHERE customer_id = ? AND coach_id = ? AND status = 'completed' LIMIT 1")
+    .get(req.user.id, coach.id);
+  if (!completed) return res.status(403).json({ error: 'You can review a coach only after a completed session with them.' });
+  const existing = db.prepare('SELECT 1 FROM reviews WHERE customer_id = ? AND coach_id = ?')
+    .get(req.user.id, coach.id);
+  if (existing) return res.status(409).json({ error: 'You have already reviewed this coach.' });
+
+  try {
+    db.prepare(`INSERT INTO reviews (coach_id, customer_id, author_name, rating, body, created_at)
+      VALUES (?,?,?,?,?,?)`).run(coach.id, req.user.id, req.user.name, rating, body, nowISO());
+  } catch (err) {
+    // The partial unique index is the real guard: two simultaneous posts can
+    // both pass the SELECT above, so turn the constraint hit into a clean 409.
+    if (String(err.message).includes('UNIQUE')) {
+      return res.status(409).json({ error: 'You have already reviewed this coach.' });
+    }
+    throw err;
+  }
+  res.json({ ok: true });
+});
+
+// Which coaches the logged-in customer can review (completed session, not yet
+// reviewed) plus the reviews they've already written.
+router.get('/my-reviews', requireRole('customer', 'admin'), (req, res) => {
+  autoCompleteBookings();
+  const reviewable = db.prepare(`
+    SELECT DISTINCT c.id, c.name FROM bookings b JOIN coaches c ON c.id = b.coach_id
+    WHERE b.customer_id = ? AND b.status = 'completed'
+      AND NOT EXISTS (SELECT 1 FROM reviews r WHERE r.customer_id = b.customer_id AND r.coach_id = c.id)
+    ORDER BY c.name`).all(req.user.id);
+  const mine = db.prepare(`
+    SELECT c.name AS coach, r.rating, r.body, substr(r.created_at,1,10) AS date
+    FROM reviews r JOIN coaches c ON c.id = r.coach_id
+    WHERE r.customer_id = ? ORDER BY r.created_at DESC`).all(req.user.id);
+  res.json({ reviewable, mine });
 });
 
 // Free bookable slots for one coach (availability minus active bookings, future only).
@@ -483,7 +548,7 @@ router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
 });
 
 // Coach's tier & earnings view. Deliberately contains NO percentages —
-// only euro amounts, session counts and benefits.
+// only euro amounts and session counts.
 router.get('/coach/tier', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
@@ -494,20 +559,30 @@ router.get('/coach/tier', requireRole('coach', 'admin'), (req, res) => {
     month: status.month,
     sessionsThisMonth: status.sessionsThisMonth,
     tierNumber: status.tierIndex + 1,
-    tierName: status.tier.name,
     sessionLabel: status.tier.sessionLabel,
     sessionsToNextTier: status.sessionsToNextTier,
-    nextTierName: status.nextTierName,
+    nextTierNumber: status.nextTierNumber,
     earnPerSession: tiers.perSessionEarningsCents(status.tier),
     earnedThisMonthCents: monthPay.payoutCents,
-    benefits: status.tier.benefits,
     allTiers: config.coachTiers.map((t, i) => ({
       number: i + 1,
-      name: t.name,
       sessions: t.sessionLabel,
       earnPerSession: tiers.perSessionEarningsCents(t),
-      benefits: t.benefits,
     })),
+  });
+});
+
+// The coach's own reviews (read-only), newest first, plus the average.
+router.get('/coach/reviews', requireRole('coach', 'admin'), (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  const reviews = db.prepare(
+    `SELECT author_name, rating, body, substr(created_at,1,10) AS date
+     FROM reviews WHERE coach_id = ? ORDER BY created_at DESC, id DESC`).all(coach.id);
+  const agg = db.prepare('SELECT COUNT(*) n, AVG(rating) avg FROM reviews WHERE coach_id = ?').get(coach.id);
+  res.json({
+    rating: { avg: agg.n ? Math.round(agg.avg * 10) / 10 : null, count: agg.n },
+    reviews,
   });
 });
 
@@ -621,7 +696,7 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
         utilization: slotsNext14 ? Math.min(100, Math.round(bookedNext14 / slotsNext14 * 100)) : null,
         // Admin-only commission view (percentages allowed here).
         tier: {
-          number: tierStatus.tierIndex + 1, name: tierStatus.tier.name,
+          number: tierStatus.tierIndex + 1,
           percent: tierStatus.tier.percent,
           sessionsThisMonth: tierStatus.sessionsThisMonth,
           payoutThisMonthCents: monthPay.payoutCents,
@@ -762,7 +837,19 @@ router.get('/admin/crm', requireRole('admin'), (req, res) => {
     outstandingCents: invoices.filter(i => i.status === 'sent').reduce((s, i) => s + i.amount_cents, 0),
     overdue: invoices.filter(i => i.status === 'sent' && i.due_date < helsinkiNow().date).length,
   };
-  res.json({ customers, invoices, totals });
+  const reviews = db.prepare(`
+    SELECT r.id, c.name AS coach, r.author_name, r.rating, r.body,
+      substr(r.created_at,1,10) AS date, r.demo
+    FROM reviews r JOIN coaches c ON c.id = r.coach_id
+    ORDER BY r.created_at DESC, r.id DESC LIMIT 300`).all();
+  res.json({ customers, invoices, totals, reviews });
+});
+
+// Admin moderation: remove a review outright.
+router.post('/admin/reviews/:id/delete', requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM reviews WHERE id = ?').run(Number(req.params.id));
+  if (!info.changes) return res.status(404).json({ error: 'Review not found.' });
+  res.json({ ok: true });
 });
 
 router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => {

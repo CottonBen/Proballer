@@ -120,15 +120,21 @@ function buildCoachGrid() {
   for (const c of COACHES) {
     const card = document.createElement('article');
     card.className = 'card coach-card reveal';
+    const reviewsToggle = c.rating && c.rating.count
+      ? `<button class="reviews-toggle small" data-reviews="${c.id}">Read reviews</button>` : '';
     card.innerHTML = `
       <div class="photo"><img src="${esc(c.photos[0] || '/assets/logo.svg')}" alt="Coach ${esc(c.name)}" loading="lazy"></div>
       <div class="body">
         <h3>${esc(c.name)}</h3>
+        <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
+          ${ratingLine(c.rating)} ${reviewsToggle}
+        </div>
         <div>
           ${c.positions.map((p) => `<span class="chip">${esc(cap(p))}</span>`).join(' ')}
           ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join(' ')}
         </div>
         <p class="bio">${esc(c.bio)}</p>
+        <div class="reviews-panel" id="reviews-${c.id}" hidden></div>
         <div class="foot">
           <span>${slidePriceHTML()}</span>
           <button class="btn btn-primary btn-sm" data-book="${c.id}">Book a session</button>
@@ -136,6 +142,31 @@ function buildCoachGrid() {
       </div>`;
     grid.appendChild(card);
   }
+}
+
+// Lazily fetch + toggle a coach's reviews panel on the landing grid.
+async function toggleReviews(coachId, btn) {
+  const panel = document.getElementById('reviews-' + coachId);
+  if (!panel) return;
+  if (!panel.hidden) { panel.hidden = true; btn.textContent = 'Read reviews'; return; }
+  if (!panel.dataset.loaded) {
+    panel.innerHTML = '<p class="small muted">Loading reviews…</p>';
+    panel.hidden = false;
+    try {
+      const { reviews } = await API.get(`/coaches/${coachId}/reviews`);
+      panel.innerHTML = reviews.length
+        ? reviews.map(reviewHTML).join('')
+        : '<p class="small muted">No reviews yet.</p>';
+      panel.dataset.loaded = '1';
+    } catch (err) {
+      panel.innerHTML = `<p class="small muted">${esc(err.message)}</p>`;
+      btn.textContent = 'Read reviews';
+      return;
+    }
+  } else {
+    panel.hidden = false;
+  }
+  btn.textContent = 'Hide reviews';
 }
 
 // --- init -------------------------------------------------------------------
@@ -154,12 +185,16 @@ function buildCoachGrid() {
   buildCoachGrid();
   initReveal();
 
-  // One handler for every "Book" button (hero + grid).
+  // One handler for every "Book" button (hero + grid) and the review toggles.
   document.body.addEventListener('click', (e) => {
-    const btn = e.target.closest('[data-book]');
-    if (!btn) return;
-    const coach = COACHES.find((c) => c.id === Number(btn.dataset.book));
-    if (coach) openWizard(coach, SITE);
+    const book = e.target.closest('[data-book]');
+    if (book) {
+      const coach = COACHES.find((c) => c.id === Number(book.dataset.book));
+      if (coach) openWizard(coach, SITE);
+      return;
+    }
+    const rev = e.target.closest('[data-reviews]');
+    if (rev) toggleReviews(Number(rev.dataset.reviews), rev);
   });
 })().catch((err) => {
   console.error(err);

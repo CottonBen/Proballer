@@ -67,32 +67,10 @@ module.exports = {
   // month: sessions #1-5 pay the Tier 1 rate, #6-15 Tier 2, #16+ Tier 3.
   // IMPORTANT: coaches are never shown the percentages — the UI only ever shows
   // euro amounts ("you earn 15,00 € for this session"). Percentages live here
-  // and in the admin views only. Each tier's physical perk costs ≤ ~20 €.
+  // and in the admin views only. Tiers are plain "Tier 1/2/3" — no perks.
   coachTiers: [
-    {
-      name: 'Match Fit', sessionLabel: '0–5 sessions / month',
-      minSessionIndex: 1, percent: 50,
-      benefits: [
-        'Proballers water bottle + ball pump kit',
-        'Access to the shared training equipment pool',
-      ],
-    },
-    {
-      name: 'First Team', sessionLabel: '5–15 sessions / month',
-      minSessionIndex: 6, percent: 60,
-      benefits: [
-        'Branded Proballers training top',
-        'Priority placement in the coach list on the site',
-      ],
-    },
-    {
-      name: 'Captain', sessionLabel: '15+ sessions / month',
-      minSessionIndex: 16, percent: 70,
-      benefits: [
-        '20 € monthly equipment allowance (cones, bibs, balls)',
-        'Featured spot in the homepage carousel',
-        '“Top coach” badge on your coach card',
-      ],
-    },
+    { sessionLabel: '0–5 sessions / month',  minSessionIndex: 1,  percent: 50 },
+    { sessionLabel: '5–15 sessions / month', minSessionIndex: 6,  percent: 60 },
+    { sessionLabel: '15+ sessions / month',  minSessionIndex: 16, percent: 70 },
   ],
 };

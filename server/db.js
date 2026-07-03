@@ -142,6 +142,23 @@ CREATE TABLE IF NOT EXISTS notifications (
   demo INTEGER NOT NULL DEFAULT 0
 );
 
+-- Coach reviews left by customers. A customer may review a coach only after a
+-- session with them has completed, and at most once per coach (enforced by the
+-- partial unique index below). Seeded demo reviews have a NULL customer_id.
+CREATE TABLE IF NOT EXISTS reviews (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES coaches(id) ON DELETE CASCADE,
+  customer_id INTEGER REFERENCES users(id),
+  author_name TEXT NOT NULL,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  body TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL,
+  demo INTEGER NOT NULL DEFAULT 0
+);
+CREATE INDEX IF NOT EXISTS idx_reviews_coach ON reviews (coach_id);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_reviews_customer_coach
+  ON reviews (customer_id, coach_id) WHERE customer_id IS NOT NULL;
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL

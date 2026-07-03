@@ -373,11 +373,35 @@ function renderCRM() {
     toast('Invoice marked as paid.');
     await Promise.all([refresh(), loadCRM(), loadBookings('')]);
   }));
+
+  const reviews = CRM.reviews || [];
+  document.getElementById('crm-reviews-empty').hidden = reviews.length > 0;
+  document.getElementById('crm-reviews').innerHTML = reviews.length ? `
+    <tr><th>Coach</th><th>Rating</th><th>Reviewer</th><th>Review</th><th>Date</th><th></th></tr>` +
+    reviews.map((r) => `
+      <tr>
+        <td>${esc(r.coach)}</td>
+        <td>${starsHTML(r.rating)} <span class="muted small">${r.rating}</span></td>
+        <td>${esc(r.author_name)}${r.demo ? ' <span class="chip gray" style="font-size:.65rem">demo</span>' : ''}</td>
+        <td class="muted">${r.body ? esc(r.body) : '<em>no comment</em>'}</td>
+        <td class="muted">${esc(r.date)}</td>
+        <td><button class="btn btn-ghost btn-sm" data-del-review="${r.id}">Delete</button></td>
+      </tr>`).join('') : '';
+
+  document.querySelectorAll('[data-del-review]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!confirm('Delete this review permanently?')) return;
+    btn.disabled = true;
+    try {
+      await API.post(`/admin/reviews/${btn.dataset.delReview}/delete`, {});
+      toast('Review deleted.');
+      await loadCRM();
+    } catch (err) { btn.disabled = false; toast(err.message, true); }
+  }));
 }
 
 // --- data & export ------------------------------------------------------------
 function renderExports() {
-  const names = ['Bookings', 'Invoices', 'Coaches', 'CoachPayouts', 'Availability', 'VisitsDaily', 'Funnel', 'Customers'];
+  const names = ['Bookings', 'Invoices', 'Coaches', 'CoachPayouts', 'Availability', 'VisitsDaily', 'Funnel', 'Customers', 'Reviews'];
   document.getElementById('csv-links').innerHTML = names.map((n) =>
     `<a class="btn btn-ghost btn-sm" href="/api/admin/export/${n}.csv">${n}.csv</a>`).join('');
   const st = A.sheets;

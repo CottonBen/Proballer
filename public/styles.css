@@ -196,6 +196,24 @@ a { color: var(--lime); text-decoration: none; }
 .coach-card .bio { color: var(--muted); font-size: 0.92rem; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .coach-card .foot { margin-top: auto; display: flex; align-items: center; justify-content: space-between; gap: 10px; }
 
+/* ---------- star ratings & reviews ---------- */
+.stars { position: relative; display: inline-block; white-space: nowrap;
+  color: rgba(255,255,255,0.16); font-size: 1rem; letter-spacing: 2px; line-height: 1; }
+.stars-fill { position: absolute; left: 0; top: 0; overflow: hidden; white-space: nowrap;
+  color: #ffc93a; }
+.rating-line { display: inline-flex; align-items: center; gap: 8px; }
+.reviews-toggle { background: none; border: none; color: var(--lime); cursor: pointer;
+  font: inherit; padding: 0; text-decoration: underline; }
+.review { padding: 12px 0; border-top: 1px dashed var(--line); }
+.review:first-child { border-top: none; }
+.review-body { margin: 6px 0 4px; color: var(--text); font-size: 0.94rem; }
+.review-form { margin-top: 10px; }
+.star-pick { display: inline-flex; flex-direction: row-reverse; gap: 2px; font-size: 1.6rem; }
+.star-pick input { position: absolute; opacity: 0; width: 0; height: 0; }
+.star-pick label { color: rgba(255,255,255,0.18); cursor: pointer; transition: color .12s; }
+.star-pick label:hover, .star-pick label:hover ~ label,
+.star-pick input:checked ~ label { color: #ffc93a; }
+
 /* ---------- modal ---------- */
 .modal-backdrop {
   position: fixed; inset: 0; z-index: 100; background: rgba(0, 0, 0, 0.72);
@@ -248,11 +266,12 @@ a { color: var(--lime); text-decoration: none; }
 /* ---------- forms ---------- */
 label.f { display: block; margin-bottom: 14px; }
 label.f span { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
-input[type="text"], input[type="email"], input[type="password"], select {
+input[type="text"], input[type="email"], input[type="password"], select, textarea, .input {
   width: 100%; padding: 12px 14px; border-radius: 12px; font: inherit;
   background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--line);
 }
-input:focus { outline: 2px solid rgba(201, 247, 58, 0.5); border-color: transparent; }
+textarea { resize: vertical; }
+input:focus, textarea:focus { outline: 2px solid rgba(201, 247, 58, 0.5); border-color: transparent; }
 .form-error { color: var(--danger); font-size: 0.9rem; min-height: 1.3em; margin: 6px 0; }
 
 /* ---------- dashboard shared ---------- */

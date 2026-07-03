@@ -30,6 +30,9 @@ module.exports = function datasets() {
     Customers: q(`SELECT name, email, created_at,
         (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id) AS bookings
       FROM users u WHERE role='customer' ORDER BY created_at DESC`),
+    Reviews: q(`SELECT c.name AS coach, r.author_name AS reviewer, r.rating, r.body,
+        r.created_at FROM reviews r JOIN coaches c ON c.id=r.coach_id
+      ORDER BY r.created_at DESC`),
     CoachPayouts: (() => {
       const tiers = require('./tiers');
       return db.prepare('SELECT id, name FROM coaches WHERE active = 1 ORDER BY display_order').all()
@@ -39,7 +42,7 @@ module.exports = function datasets() {
           return {
             coach: c.name, month: status.month,
             sessions_this_month: status.sessionsThisMonth,
-            tier: `${status.tierIndex + 1} — ${status.tier.name}`,
+            tier: `Tier ${status.tierIndex + 1}`,
             commission_percent: status.tier.percent,
             payout_eur: pay.payoutCents / 100,
           };

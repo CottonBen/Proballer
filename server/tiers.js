@@ -85,7 +85,8 @@ function coachTierStatus(coachId) {
     tier,
     tierIndex,
     sessionsToNextTier: nextTier ? Math.max(0, nextTier.minSessionIndex - 1 - done) : null,
-    nextTierName: nextTier ? nextTier.name : null,
+    // Tiers are just numbered 1/2/3, so the "next tier" is this index + 2.
+    nextTierNumber: nextTier ? tierIndex + 2 : null,
   };
 }
 

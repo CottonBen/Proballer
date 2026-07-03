@@ -11,6 +11,55 @@ const path = require('node:path');
 const fs = require('node:fs');
 const config = require('../config');
 
+// Sample coach reviews, keyed by coach slug: [author, rating (1-5), body].
+// Seeded with customer_id NULL and demo=1 so the admin can clear them, and only
+// ever inserted once (guarded by the 'starter_reviews_v1' meta marker) so a
+// review the admin deletes never silently comes back on the next restart.
+const REVIEW_DAYS = [15, 34, 52, 71, 96]; // "days ago" spread, for realistic dates
+const REVIEWS_BY_SLUG = {
+  'kalle-sundman': [
+    ['Marko L.', 5, 'Kalle really knows the wing. My son’s 1v1 and crossing improved in a month.'],
+    ['Hanna R.', 5, 'Nuori mutta todella ammattimainen valmentaja. Poika odottaa aina seuraavaa treeniä.'],
+    ['Petri K.', 4, 'Great sessions, clear feedback. Punctual and well planned every time.'],
+  ],
+  'ben-cotton': [
+    ['Sanna M.', 5, 'Ben is fantastic with defenders — positioning and reading the game clicked for our daughter.'],
+    ['James T.', 5, 'Proper academy-level coaching. Calm, detailed, and my son loves the 1-on-1 focus.'],
+    ['Laura V.', 4, 'Very good technical work on the ball. Highly recommend for centre-backs.'],
+  ],
+  'eero-virtanen': [
+    ['Timo H.', 5, 'Best goalkeeper coach we’ve found. Footwork and shot-stopping night and day better.'],
+    ['Anni P.', 4, 'Patient with young keepers and builds real confidence between the posts.'],
+  ],
+  'sofia-laine': [
+    ['Katri S.', 5, 'Sofia’s scanning and passing drills are brilliant. Our midfielder plays with her head up now.'],
+    ['Ville N.', 5, 'Creative, positive sessions. You can tell she has played at a high level.'],
+    ['Emilia J.', 4, 'Great with attacking players — the final-third work is excellent.'],
+  ],
+  'mikko-korhonen': [
+    ['Juha A.', 4, 'No-nonsense defending sessions. Lots of duels and communication work.'],
+    ['Riikka L.', 5, 'Mikko turned my son into a composed defender. Great value for the 1-on-1 time.'],
+  ],
+};
+
+// Seed sample reviews for the given coach slugs, skipping any coach that already
+// has reviews (so it never duplicates on top of real ones).
+function seedReviews(db, helsinkiDateOffset, slugs) {
+  const getCoach = db.prepare('SELECT id FROM coaches WHERE slug = ?');
+  const countReviews = db.prepare('SELECT COUNT(*) AS n FROM reviews WHERE coach_id = ?');
+  const insReview = db.prepare(`INSERT INTO reviews
+    (coach_id, customer_id, author_name, rating, body, created_at, demo)
+    VALUES (?, NULL, ?, ?, ?, ?, 1)`);
+  for (const slug of slugs) {
+    const coach = getCoach.get(slug);
+    if (!coach || countReviews.get(coach.id).n > 0) continue;
+    (REVIEWS_BY_SLUG[slug] || []).forEach(([author, rating, body], i) => {
+      const day = helsinkiDateOffset(-(REVIEW_DAYS[i % REVIEW_DAYS.length]));
+      insReview.run(coach.id, author, rating, body, `${day}T18:00:00.000Z`);
+    });
+  }
+}
+
 // Idempotent structural migrations, run on every server start. Safe on both
 // fresh and existing databases.
 function migrate(db, nowISO) {
@@ -30,6 +79,14 @@ function migrate(db, nowISO) {
     } else {
       db.prepare("UPDATE coaches SET user_id = ? WHERE slug = 'ben-cotton' AND user_id IS NULL").run(owner.id);
     }
+  }
+
+  // One-time: give every existing coach a set of sample reviews (covers live
+  // databases where the demo data — and its reviews — was already removed).
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'starter_reviews_v1'").get()) {
+    const { helsinkiDateOffset } = require('../server/db');
+    seedReviews(db, helsinkiDateOffset, Object.keys(REVIEWS_BY_SLUG));
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v1', ?)").run(nowISO());
   }
 }
 
@@ -260,6 +317,10 @@ function seed({ demo = true, reset = false } = {}) {
     }
   }
 
+  // Sample reviews for every coach (real + fictional) so the cards look alive.
+  seedReviews(db, helsinkiDateOffset, Object.keys(REVIEWS_BY_SLUG));
+  db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v1', ?)").run(now);
+
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('demo_seeded', ?)").run(now);
   return { seeded: true, demo: true };
 }
@@ -270,6 +331,7 @@ function removeDemoData() {
     DELETE FROM invoices WHERE booking_id IN (SELECT id FROM bookings WHERE demo = 1);
     DELETE FROM credits WHERE demo = 1 OR customer_id IN (SELECT id FROM users WHERE demo = 1);
     DELETE FROM notifications WHERE demo = 1 OR user_id IN (SELECT id FROM users WHERE demo = 1);
+    DELETE FROM reviews WHERE demo = 1 OR customer_id IN (SELECT id FROM users WHERE demo = 1) OR coach_id IN (SELECT id FROM coaches WHERE demo = 1);
     DELETE FROM bookings WHERE demo = 1;
     DELETE FROM availability WHERE demo = 1;
     DELETE FROM visits WHERE demo = 1;
@@ -280,7 +342,9 @@ function removeDemoData() {
   `);
   // Leave a marker (instead of deleting the key) so a server restart does NOT
   // quietly reseed the demo data the admin just removed. `npm run reset`
-  // still brings the demo environment back on purpose.
+  // still brings the demo environment back on purpose. The 'starter_reviews_v1'
+  // marker is likewise left in place on purpose, so the sample reviews the admin
+  // just cleared don't reappear on the next boot.
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('demo_seeded', 'removed-by-admin')")
     .run();
 }
