@@ -13,7 +13,7 @@ const config = require('../config');
 
 // Sample coach reviews, keyed by coach slug: [author, rating (1-5), body].
 // Seeded with customer_id NULL and demo=1 so the admin can clear them, and only
-// ever inserted once (guarded by the 'starter_reviews_v1' meta marker) so a
+// ever inserted once (guarded by the 'starter_reviews_v2' meta marker) so a
 // review the admin deletes never silently comes back on the next restart.
 const REVIEW_DAYS = [15, 34, 52, 71, 96]; // "days ago" spread, for realistic dates
 const REVIEWS_BY_SLUG = {
@@ -40,7 +40,43 @@ const REVIEWS_BY_SLUG = {
     ['Juha A.', 4, 'No-nonsense defending sessions. Lots of duels and communication work.'],
     ['Riikka L.', 5, 'Mikko turned my son into a composed defender. Great value for the 1-on-1 time.'],
   ],
+  'otto-ukkonen': [
+    ['Petteri K.', 5, 'Otto on loistava maalivahtivalmentaja — pojan 1v1-tilanteet ja koppivarmuus paranivat huimasti.'],
+    ['Hanna V.', 5, 'Todella asiantunteva ja kärsivällinen. Selkeät harjoitteet ja hyvä ote nuoriin maalivahteihin.'],
+    ['Mikael R.', 4, 'Great goalkeeper sessions — footwork, positioning and handling all improved. Recommended.'],
+  ],
 };
+
+// Coaches added after launch. They have no login yet — the admin manages their
+// calendar (via the admin coach-calendar editor) until they get their own
+// account. Inserted idempotently by slug from both fresh seeds and migrate().
+const EXTRA_COACHES = [
+  {
+    name: 'Otto Ukkonen', slug: 'otto-ukkonen',
+    bio: 'Otto Ukkonen on 18-vuotias maalivahti, joka pelaa Puotinkylän Valtissa. ' +
+      'Pelikokemusta hänelle on kertynyt B- ja A-pojista sekä myös miesten Kolmosen ' +
+      'otteluista useiden vuosien ajalta. Hänen vahvuuksiaan maalivahtipelaamisessa ovat ' +
+      'selustan puolustaminen sekä 1 vastaan 1 -tilanteet. Otto on toiminut Puotinkylän ' +
+      'Valtin maalivahtivalmentajana toukokuusta 2025 lähtien, ja tällä hetkellä hän toimii ' +
+      'kahden joukkueen maalivahtivalmentajana. Lisäksi hän on suorittanut Suomen Palloliiton ' +
+      'järjestämän Maalivahti D -valmentajakoulutuksen.',
+    photos: ['/assets/otto-1.jpg', '/assets/otto-2.jpg', '/assets/otto-3.jpg'],
+    locations: ['Helsinki'],
+    positions: ['goalkeepers'],
+    featured: 1, order: 30,
+  },
+];
+
+// Insert any post-launch coaches that don't exist yet (idempotent by slug).
+function ensureExtraCoaches(db, nowStr) {
+  const ins = db.prepare(`INSERT OR IGNORE INTO coaches
+    (user_id, name, slug, bio, photos, locations, positions, featured, display_order, demo, created_at)
+    VALUES (NULL,?,?,?,?,?,?,?,?,0,?)`);
+  for (const c of EXTRA_COACHES) {
+    ins.run(c.name, c.slug, c.bio, JSON.stringify(c.photos),
+      JSON.stringify(c.locations), JSON.stringify(c.positions), c.featured, c.order, nowStr);
+  }
+}
 
 // Seed sample reviews for the given coach slugs, skipping any coach that already
 // has reviews (so it never duplicates on top of real ones).
@@ -81,12 +117,18 @@ function migrate(db, nowISO) {
     }
   }
 
-  // One-time: give every existing coach a set of sample reviews (covers live
-  // databases where the demo data — and its reviews — was already removed).
-  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'starter_reviews_v1'").get()) {
+  // Add any post-launch coaches to existing databases (idempotent by slug).
+  ensureExtraCoaches(db, nowISO());
+
+  // One-time: give every coach without reviews a set of sample reviews (covers
+  // live databases where the demo data was removed, and newly-added coaches).
+  // Bumped to v2 when Otto Ukkonen was added; seedReviews skips coaches that
+  // already have reviews, so existing coaches keep theirs and only new ones get
+  // seeded. A review the admin deletes never silently comes back.
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'starter_reviews_v2'").get()) {
     const { helsinkiDateOffset } = require('../server/db');
     seedReviews(db, helsinkiDateOffset, Object.keys(REVIEWS_BY_SLUG));
-    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v1', ?)").run(nowISO());
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v2', ?)").run(nowISO());
   }
 }
 
@@ -150,6 +192,10 @@ function seed({ demo = true, reset = false } = {}) {
       JSON.stringify(['attackers', 'defenders']),
       1, 10, 0, now);
   }
+
+  // Post-launch coaches (e.g. Otto Ukkonen). migrate() handles existing DBs;
+  // this covers a fresh seed, where migrate() is not run.
+  ensureExtraCoaches(db, now);
 
   // --- Demo data ------------------------------------------------------------
   if (!demo) return { seeded: true, demo: false };
@@ -319,7 +365,7 @@ function seed({ demo = true, reset = false } = {}) {
 
   // Sample reviews for every coach (real + fictional) so the cards look alive.
   seedReviews(db, helsinkiDateOffset, Object.keys(REVIEWS_BY_SLUG));
-  db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v1', ?)").run(now);
+  db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v2', ?)").run(now);
 
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('demo_seeded', ?)").run(now);
   return { seeded: true, demo: true };
@@ -342,7 +388,7 @@ function removeDemoData() {
   `);
   // Leave a marker (instead of deleting the key) so a server restart does NOT
   // quietly reseed the demo data the admin just removed. `npm run reset`
-  // still brings the demo environment back on purpose. The 'starter_reviews_v1'
+  // still brings the demo environment back on purpose. The 'starter_reviews_v2'
   // marker is likewise left in place on purpose, so the sample reviews the admin
   // just cleared don't reappear on the next boot.
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('demo_seeded', 'removed-by-admin')")
