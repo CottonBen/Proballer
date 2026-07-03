@@ -49,10 +49,10 @@ function seed({ demo = true, reset = false } = {}) {
       'Kalle Sundman', 'coach', 0, now);
     const kalleId = getUser.get(kalleEmail).id;
     insCoach.run(kalleId, 'Kalle Sundman', 'kalle-sundman',
-      'Kalle is a technical coach who has come up through the Finnish junior leagues. ' +
-      'He focuses on first touch, positioning and confidence on the ball, and loves working ' +
-      'with players taking their first steps towards competitive football.',
-      JSON.stringify(['/assets/coach-kalle.svg']),
+      'Kalle on 17 vuotias laitapuolustaja, joka on pelannut myös monia vuosia keskikentällä. ' +
+      'Kallella on alla monia kausia SM sarjassa ja hänellä on kokemusta ja tietoa siitä mitä ' +
+      'jatkuvaan kehitykseen tarvitaan.',
+      JSON.stringify(['/assets/kalle-1.jpg', '/assets/kalle-2.jpg', '/assets/kalle-3.jpg']),
       JSON.stringify(['Helsinki', 'Espoo']),
       JSON.stringify(['midfielders', 'attackers']),
       1, 20, 0, now);
@@ -209,6 +209,34 @@ function seed({ demo = true, reset = false } = {}) {
     }
   }
 
+  // Upcoming demo clients for the real coaches too, so their dashboards show
+  // the client list from day one (flagged demo, removable in the admin).
+  const realCoaches = [
+    { id: getCoach.get('kalle-sundman').id, positions: ['midfielders', 'attackers'], locations: ['Helsinki', 'Espoo'] },
+    { id: getCoach.get('ben-cotton').id, positions: ['attackers', 'defenders'], locations: ['Helsinki', 'Espoo', 'Vantaa'] },
+  ];
+  let realSeq = 1;
+  for (const rc of realCoaches) {
+    for (let i = 0; i < 3; i++) {
+      const n = realSeq++;
+      const d = 2 + Math.floor(rnd() * 9);
+      const date = helsinkiDateOffset(d);
+      const hour = config.dayStartHour + Math.floor(rnd() * (config.dayEndHour - config.dayStartHour));
+      const focus = pick(focusIds);
+      const online = focus === 'game-iq';
+      const price = (online ? config.pricing.onlineSessionPrice : config.pricing.sessionPrice) * 100;
+      const discount = Math.round(price * config.pricing.salePercent / 100);
+      const res = insBooking.run(`PBF-R${String(n).padStart(3, '0')}`, pick(customerIds), rc.id, date, hour,
+        online ? 'Online' : pick(rc.locations), pick(rc.positions), focus,
+        online ? 1 : 0, price, discount, price - discount, 'confirmed', now, null);
+      if (res.changes > 0) {
+        insAvail.run(rc.id, date, hour, now);
+        insInvoice.run(res.lastInsertRowid, `${config.invoice.numberPrefix}-R${String(n).padStart(3, '0')}`,
+          'demo.customer@example.com', price - discount, now, helsinkiDateOffset(d + 7), 'sent');
+      }
+    }
+  }
+
   db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('demo_seeded', ?)").run(now);
   return { seeded: true, demo: true };
 }
@@ -217,6 +245,8 @@ function removeDemoData() {
   const { db } = require('../server/db');
   db.exec(`
     DELETE FROM invoices WHERE booking_id IN (SELECT id FROM bookings WHERE demo = 1);
+    DELETE FROM credits WHERE demo = 1 OR customer_id IN (SELECT id FROM users WHERE demo = 1);
+    DELETE FROM notifications WHERE demo = 1 OR user_id IN (SELECT id FROM users WHERE demo = 1);
     DELETE FROM bookings WHERE demo = 1;
     DELETE FROM availability WHERE demo = 1;
     DELETE FROM visits WHERE demo = 1;

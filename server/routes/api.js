@@ -27,6 +27,51 @@ function recordEvent(req, type, meta = {}) {
     .run(req.visitorId || null, req.user ? req.user.id : null, type, JSON.stringify(meta), date, nowISO());
 }
 
+const escHtml = (s) => String(s).replace(/[&<>"']/g,
+  c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Cancelling a booking on the business side: void the invoice, give the
+// customer a free-session credit, and tell them (in-app + email when configured).
+function cancelWithCredit(booking, actorLabel) {
+  db.prepare("UPDATE bookings SET status = 'cancelled', completed_at = NULL WHERE id = ?").run(booking.id);
+  db.prepare("UPDATE invoices SET status = 'void' WHERE booking_id = ?").run(booking.id);
+  const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
+  const customer = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(booking.customer_id);
+  db.prepare('INSERT INTO credits (customer_id, reason, created_at) VALUES (?,?,?)')
+    .run(customer.id, `cancelled:${booking.code}`, nowISO());
+  const msg = `Your session with ${coach.name} on ${booking.date} at ` +
+    `${String(booking.hour).padStart(2, '0')}:00 was cancelled by ${actorLabel}. We're sorry! ` +
+    'To make it right, your next session with ANY coach is free — the credit is applied ' +
+    'automatically when you book.';
+  db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+    .run(customer.id, msg, nowISO());
+  require('../mailer').sendMail({
+    to: customer.email,
+    subject: `${config.siteName} — session cancelled, your next one is on us`,
+    html: `<p>Hi ${escHtml(customer.name)},</p><p>${escHtml(msg)}</p>`,
+  }).catch(err => console.error('[mailer]', err.message));
+}
+
+// Bringing a cancelled booking back: restore the invoice and withdraw the
+// free-session credit if it hasn't been spent yet. Returns an error string
+// if the slot has been taken by someone else in the meantime.
+function reactivateBooking(booking) {
+  const clash = db.prepare(`SELECT 1 FROM bookings
+    WHERE coach_id = ? AND date = ? AND hour = ? AND status != 'cancelled' AND id != ?`)
+    .get(booking.coach_id, booking.date, booking.hour, booking.id);
+  if (clash) return 'That slot has since been booked by someone else.';
+  db.prepare("UPDATE bookings SET status = 'confirmed', completed_at = NULL WHERE id = ?").run(booking.id);
+  db.prepare("UPDATE invoices SET status = 'sent' WHERE booking_id = ? AND status = 'void'").run(booking.id);
+  db.prepare('DELETE FROM credits WHERE reason = ? AND used_by_booking_id IS NULL')
+    .run(`cancelled:${booking.code}`);
+  const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
+  db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+    .run(booking.customer_id,
+      `Good news — your session with ${coach.name} on ${booking.date} at ` +
+      `${String(booking.hour).padStart(2, '0')}:00 is back on.`, nowISO());
+  return null;
+}
+
 // ---------------------------------------------------------------------------
 // Public
 // ---------------------------------------------------------------------------
@@ -130,7 +175,25 @@ router.post('/auth/change-password', (req, res) => {
 
 router.get('/me', (req, res) => {
   if (!req.user) return res.json({ user: null });
-  res.json({ user: req.user });
+  const freeCredits = db.prepare(
+    'SELECT COUNT(*) n FROM credits WHERE customer_id = ? AND used_by_booking_id IS NULL').get(req.user.id).n;
+  const unreadNotifications = db.prepare(
+    'SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read = 0').get(req.user.id).n;
+  res.json({ user: req.user, freeCredits, unreadNotifications });
+});
+
+router.get('/my-notifications', requireRole('customer', 'admin', 'coach'), (req, res) => {
+  const rows = db.prepare(
+    'SELECT id, message, created_at, read FROM notifications WHERE user_id = ? ORDER BY id DESC LIMIT 50')
+    .all(req.user.id);
+  const freeCredits = db.prepare(
+    'SELECT COUNT(*) n FROM credits WHERE customer_id = ? AND used_by_booking_id IS NULL').get(req.user.id).n;
+  res.json({ notifications: rows, freeCredits });
+});
+
+router.post('/my-notifications/read', requireRole('customer', 'admin', 'coach'), (req, res) => {
+  db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(req.user.id);
+  res.json({ ok: true });
 });
 
 // ---------------------------------------------------------------------------
@@ -175,23 +238,31 @@ router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
   if (!slotOpen) return fail('The coach is not available at that time.');
 
   const price = (focus.online ? config.pricing.onlineSessionPrice : config.pricing.sessionPrice) * 100;
-  const discount = Math.round(price * config.pricing.salePercent / 100);
+  let discount = Math.round(price * config.pricing.salePercent / 100);
+  // A free-session credit (from a cancelled booking) beats the sale: 100% off.
+  const credit = db.prepare(
+    'SELECT id FROM credits WHERE customer_id = ? AND used_by_booking_id IS NULL ORDER BY id LIMIT 1')
+    .get(req.user.id);
+  if (credit) discount = price;
   const code = 'PBF-' + require('node:crypto').randomBytes(3).toString('hex').toUpperCase();
 
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
-       price_cents, discount_cents, total_cents, status, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,'confirmed',?)`)
+       price_cents, discount_cents, total_cents, credit_applied, status, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed',?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus.id,
-        focus.online ? 1 : 0, price, discount, price - discount, nowISO());
+        focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, nowISO());
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       return fail('Someone just booked that slot — please pick another time.', 409);
     }
     throw err;
+  }
+  if (credit) {
+    db.prepare('UPDATE credits SET used_by_booking_id = ? WHERE id = ?').run(bookingId, credit.id);
   }
 
   const invoice = createInvoiceForBooking(bookingId);
@@ -203,6 +274,7 @@ router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
       code, date, hour, location, position, focus: focus.id, focusLabel: focus.label,
       online: focus.online, coach: coach.name,
       priceCents: price, discountCents: discount, totalCents: price - discount,
+      creditApplied: Boolean(credit),
     },
     invoice: { number: invoice.number, dueDate: invoice.due_date, amountCents: invoice.amount_cents },
   });
@@ -330,11 +402,40 @@ router.get('/coach/bookings', requireRole('coach'), (req, res) => {
   autoCompleteBookings();
   const rows = db.prepare(`
     SELECT b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
-           u.name AS customer
+           b.total_cents, b.credit_applied, u.name AS customer, u.email AS customer_email
     FROM bookings b JOIN users u ON u.id = b.customer_id
-    WHERE b.coach_id = ? AND b.status != 'cancelled'
+    WHERE b.coach_id = ?
     ORDER BY b.date DESC, b.hour DESC LIMIT 200`).all(coach.id);
   res.json(rows);
+});
+
+// The status buttons on the coach's client list: current / completed / cancelled.
+// Cancelling notifies the customer and grants them a free-session credit.
+router.post('/coach/bookings/:code/status', requireRole('coach'), (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  const to = String(req.body?.status || '');
+  if (!['confirmed', 'completed', 'cancelled'].includes(to)) return res.status(400).json({ error: 'Bad status.' });
+  const booking = db.prepare('SELECT * FROM bookings WHERE code = ? AND coach_id = ?')
+    .get(String(req.params.code), coach.id);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (booking.status === to) return res.json({ ok: true, status: to });
+
+  if (to === 'cancelled') {
+    cancelWithCredit(booking, 'your coach');
+  } else if (booking.status === 'cancelled') {
+    const err = reactivateBooking(booking);
+    if (err) return res.status(409).json({ error: err });
+    if (to === 'completed') {
+      db.prepare("UPDATE bookings SET status = 'completed', completed_at = ? WHERE id = ?")
+        .run(nowISO(), booking.id);
+    }
+  } else {
+    db.prepare('UPDATE bookings SET status = ?, completed_at = ? WHERE id = ?')
+      .run(to, to === 'completed' ? nowISO() : null, booking.id);
+  }
+  sheets.scheduleSync();
+  res.json({ ok: true, status: to });
 });
 
 // ---------------------------------------------------------------------------
@@ -481,18 +582,21 @@ router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
   if (!['completed', 'cancelled', 'confirmed'].includes(to)) return res.status(400).json({ error: 'Bad status.' });
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(Number(req.params.id));
   if (!booking) return res.status(404).json({ error: 'Booking not found.' });
-  // Re-activating a cancelled booking can collide with another booking that
-  // took the slot in the meantime — check before hitting the unique index.
-  if (to !== 'cancelled' && booking.status === 'cancelled') {
-    const clash = db.prepare(`SELECT 1 FROM bookings
-      WHERE coach_id = ? AND date = ? AND hour = ? AND status != 'cancelled' AND id != ?`)
-      .get(booking.coach_id, booking.date, booking.hour, booking.id);
-    if (clash) return res.status(409).json({ error: 'That slot has since been booked by someone else.' });
-  }
-  db.prepare('UPDATE bookings SET status = ?, completed_at = ? WHERE id = ?')
-    .run(to, to === 'completed' ? nowISO() : null, booking.id);
+  if (booking.status === to) return res.json({ ok: true });
+
   if (to === 'cancelled') {
-    db.prepare("UPDATE invoices SET status = 'void' WHERE booking_id = ?").run(booking.id);
+    // Same customer treatment as a coach cancel: void invoice, credit, notify.
+    cancelWithCredit(booking, 'the Proballers team');
+  } else if (booking.status === 'cancelled') {
+    const err = reactivateBooking(booking);
+    if (err) return res.status(409).json({ error: err });
+    if (to === 'completed') {
+      db.prepare("UPDATE bookings SET status = 'completed', completed_at = ? WHERE id = ?")
+        .run(nowISO(), booking.id);
+    }
+  } else {
+    db.prepare('UPDATE bookings SET status = ?, completed_at = ? WHERE id = ?')
+      .run(to, to === 'completed' ? nowISO() : null, booking.id);
   }
   sheets.scheduleSync();
   res.json({ ok: true });

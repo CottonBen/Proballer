@@ -17,19 +17,21 @@ if (process.env.SMTP_HOST) {
   });
 }
 
-async function sendInvoiceEmail({ to, number, html }) {
+async function sendMail({ to, subject, html }) {
   if (!transport) {
-    console.log(`[mailer] SMTP not configured — invoice ${number} for ${to} saved to data/outbox/`);
+    console.log(`[mailer] SMTP not configured — "${subject}" for ${to} not emailed (see data/outbox/)`);
     return { delivered: false, reason: 'smtp-not-configured' };
   }
   await transport.sendMail({
     from: process.env.SMTP_FROM || `${config.siteName} <${config.invoice.replyEmail}>`,
-    to,
-    subject: `${config.siteName} — invoice ${number}`,
-    html,
+    to, subject, html,
   });
-  console.log(`[mailer] Invoice ${number} emailed to ${to}`);
+  console.log(`[mailer] "${subject}" emailed to ${to}`);
   return { delivered: true };
 }
 
-module.exports = { sendInvoiceEmail, smtpConfigured: () => Boolean(transport) };
+function sendInvoiceEmail({ to, number, html }) {
+  return sendMail({ to, subject: `${config.siteName} — invoice ${number}`, html });
+}
+
+module.exports = { sendMail, sendInvoiceEmail, smtpConfigured: () => Boolean(transport) };

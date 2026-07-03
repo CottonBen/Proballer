@@ -54,7 +54,9 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focusLabel) {
     <tr><td>1-on-1 coaching session — ${esc(focusLabel)} (${esc(booking.position)})<br>
       <span class="muted">${esc(coachName)} · ${esc(booking.date)} ${String(booking.hour).padStart(2, '0')}:00–${String(booking.hour + 1).padStart(2, '0')}:00 · ${esc(booking.location)}</span></td>
       <td>${eur(booking.price_cents)}</td></tr>
-    ${sale ? `<tr><td><span class="badge">${esc(config.pricing.saleLabel)} −${config.pricing.salePercent}%</span></td>
+    ${sale ? `<tr><td><span class="badge">${booking.credit_applied
+        ? 'FREE SESSION — credit from a cancelled booking'
+        : esc(config.pricing.saleLabel) + ' −' + config.pricing.salePercent + '%'}</span></td>
       <td>−${eur(booking.discount_cents)}</td></tr>` : ''}
     <tr class="total"><td>Total due</td><td>${eur(booking.total_cents)}</td></tr>
   </table>

@@ -204,12 +204,19 @@ async function renderReview() {
   const focus = W.site.focusTypes.find((f) => f.id === W.focus);
   const p = W.site.pricing;
   const price = (focus.online ? p.onlineSessionPrice : p.sessionPrice) * 100;
-  const discount = Math.round(price * p.salePercent / 100);
 
   let me = { user: null };
   try { me = await API.get('/me'); } catch { /* anonymous */ }
   W.user = me.user;
   const needsAuth = !W.user || (W.user.role !== 'customer' && W.user.role !== 'admin');
+
+  // A free-session credit (from a cancelled booking) makes this booking free;
+  // otherwise the launch sale applies. The server enforces the same rule.
+  const hasCredit = !needsAuth && (me.freeCredits || 0) > 0;
+  const discount = hasCredit ? price : Math.round(price * p.salePercent / 100);
+  const priceChip = hasCredit
+    ? '<span class="chip" style="font-size:.68rem">FREE — credit from a cancelled session</span>'
+    : (discount ? `<span class="chip" style="font-size:.68rem">${p.saleLabel} −${p.salePercent}%</span>` : '');
 
   body().innerHTML = header(STEP_TITLES[4]) + `
     <div class="review-row"><span class="muted">Coach</span><strong>${esc(W.coach.name)}</strong></div>
@@ -221,10 +228,10 @@ async function renderReview() {
     <div class="review-row"><span class="muted">Price</span>
       <strong>${discount ? `<span class="price-old">${eur(price)}</span> ` : ''}
         <span class="price-new">${eur(price - discount)}</span>
-        ${discount ? `<span class="chip" style="font-size:.68rem">${p.saleLabel} −${p.salePercent}%</span>` : ''}</strong></div>
-    <p class="small muted" style="margin-top:12px">Confirming issues the invoice (${eur(price - discount)},
-      due in 7 days)${W.site.emailDelivery ? ' to your email' : ', viewable in My bookings'}.
-      Pay by the due date — details are on the invoice.</p>
+        ${priceChip}</strong></div>
+    <p class="small muted" style="margin-top:12px">${hasCredit
+      ? 'This session is free — your credit is applied automatically and the 0,00 € invoice is just for your records.'
+      : `Confirming issues the invoice (${eur(price - discount)}, due in 7 days)${W.site.emailDelivery ? ' to your email' : ', viewable in My bookings'}. Pay by the due date — details are on the invoice.`}</p>
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -336,7 +343,8 @@ function renderSuccess({ booking, invoice }) {
       <p>Booking reference <strong>${esc(booking.code)}</strong></p>
       <div class="card" style="text-align:left;margin:18px 0">
         <div class="review-row"><span class="muted">Invoice</span><strong>${esc(invoice.number)}</strong></div>
-        <div class="review-row"><span class="muted">Amount</span><strong>${eur(invoice.amountCents)}</strong></div>
+        <div class="review-row"><span class="muted">Amount</span><strong>${eur(invoice.amountCents)}
+          ${booking.creditApplied ? '<span class="chip" style="font-size:.68rem">FREE — credit used</span>' : ''}</strong></div>
         <div class="review-row" style="border:none"><span class="muted">Due</span><strong>${esc(invoice.dueDate)}</strong></div>
       </div>
       <p class="small muted">${W.site.emailDelivery

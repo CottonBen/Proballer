@@ -68,6 +68,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   discount_cents INTEGER NOT NULL DEFAULT 0,
   total_cents INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed','completed','cancelled')),
+  credit_applied INTEGER NOT NULL DEFAULT 0,  -- 1 = paid with a free-session credit
   demo INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   completed_at TEXT             -- ISO timestamp of the session end, set on completion
@@ -120,11 +121,36 @@ CREATE TABLE IF NOT EXISTS sessions (
   expires_at TEXT NOT NULL
 );
 
+-- Free-session credits, granted when a coach cancels a customer's booking.
+-- used_by_booking_id NULL = still available; it makes the next booking free.
+CREATE TABLE IF NOT EXISTS credits (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  customer_id INTEGER NOT NULL REFERENCES users(id),
+  reason TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  used_by_booking_id INTEGER REFERENCES bookings(id),
+  demo INTEGER NOT NULL DEFAULT 0
+);
+
+-- In-app messages for customers (e.g. "your session was cancelled").
+CREATE TABLE IF NOT EXISTS notifications (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  message TEXT NOT NULL,
+  created_at TEXT NOT NULL,
+  read INTEGER NOT NULL DEFAULT 0,
+  demo INTEGER NOT NULL DEFAULT 0
+);
+
 CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
 `);
+
+// Migration for databases created before the credits feature existed.
+try { db.exec('ALTER TABLE bookings ADD COLUMN credit_applied INTEGER NOT NULL DEFAULT 0'); }
+catch { /* column already exists */ }
 
 // ---------------------------------------------------------------------------
 // Europe/Helsinki time helpers. All business dates/hours are Helsinki-local.

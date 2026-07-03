@@ -171,23 +171,60 @@ async function saveFilters() {
   }
 }
 
-// --- sessions list ----------------------------------------------------------
+// --- clients & sessions list --------------------------------------------------
+// Every booking shows the client's details plus three status buttons:
+// Current (confirmed) · Completed · Cancelled. Cancelling notifies the client
+// and gives them their next session free.
 async function loadSessions() {
   const list = document.getElementById('sessions-list');
   const rows = await API.get('/coach/bookings');
   if (!rows.length) { list.innerHTML = '<p class="muted">No sessions booked yet.</p>'; return; }
-  const upcoming = rows.filter((r) => r.status === 'confirmed').reverse();
-  const done = rows.filter((r) => r.status === 'completed');
+
+  const upcoming = rows.filter((r) => r.status === 'confirmed').slice().reverse();
+  const past = rows.filter((r) => r.status !== 'confirmed');
+
+  const statusBtns = (r) => ['confirmed', 'completed', 'cancelled'].map((s) => {
+    const label = s === 'confirmed' ? 'Current' : cap(s);
+    const on = r.status === s;
+    return `<button class="btn btn-sm ${on ? 'btn-primary' : s === 'cancelled' ? 'btn-danger' : 'btn-ghost'}"
+      data-status="${s}" data-code="${esc(r.code)}" ${on ? 'disabled' : ''}>${label}</button>`;
+  }).join(' ');
+
   const item = (r) => `
-    <div class="review-row">
-      <span>${esc(fmtDate(r.date))} ${String(r.hour).padStart(2, '0')}:00
-        <span class="muted">· ${esc(r.customer)} · ${esc(cap(r.position))} · ${esc(r.focus)}
-        ${r.is_online ? '· online' : '· ' + esc(r.location)}</span></span>
-      <span class="status-tag status-${esc(r.status)}">${esc(r.status)}</span>
+    <div class="client-row" style="border-bottom:1px dashed var(--line);padding:12px 0">
+      <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
+        <strong>${esc(fmtDate(r.date))} ${String(r.hour).padStart(2, '0')}:00–${String(r.hour + 1).padStart(2, '0')}:00</strong>
+        <span class="status-tag status-${esc(r.status)}">${r.status === 'confirmed' ? 'current' : esc(r.status)}</span>
+      </div>
+      <div style="margin:4px 0 2px"><strong>${esc(r.customer)}</strong>
+        <a class="small" href="mailto:${esc(r.customer_email)}">${esc(r.customer_email)}</a></div>
+      <div class="small muted">${esc(cap(r.position))} · ${esc(r.focus)} ·
+        ${r.is_online ? 'online' : esc(r.location)} ·
+        ${r.credit_applied ? 'FREE (credit)' : eur(r.total_cents)}</div>
+      <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${statusBtns(r)}</div>
     </div>`;
+
   list.innerHTML =
-    `<div class="small muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Upcoming (${upcoming.length})</div>` +
+    `<div class="small muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Upcoming clients (${upcoming.length})</div>` +
     (upcoming.map(item).join('') || '<p class="muted">Nothing upcoming.</p>') +
-    `<div class="small muted" style="margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">Completed (${done.length})</div>` +
-    done.slice(0, 8).map(item).join('');
+    `<div class="small muted" style="margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">Past & cancelled (${past.length})</div>` +
+    past.slice(0, 10).map(item).join('');
+
+  list.querySelectorAll('[data-status]').forEach((btn) => btn.addEventListener('click', async () => {
+    const to = btn.dataset.status;
+    if (to === 'cancelled' && !confirm(
+      'Cancel this session? The client will be notified and their next booking with any coach will be FREE.')) return;
+    btn.disabled = true;
+    try {
+      await API.post(`/coach/bookings/${encodeURIComponent(btn.dataset.code)}/status`, { status: to });
+      toast(to === 'cancelled'
+        ? 'Session cancelled — the client has been notified and got a free-session credit.'
+        : `Marked as ${to === 'confirmed' ? 'current' : to}.`);
+      await loadSessions();
+      await loadWeek(); // a cancelled slot becomes bookable again
+    } catch (err) {
+      btn.disabled = false;
+      toast(err.message, true);
+    }
+  }));
 }
