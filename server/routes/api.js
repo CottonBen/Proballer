@@ -185,7 +185,9 @@ router.get('/config', (req, res) => {
     hours: { start: config.dayStartHour, end: config.dayEndHour },
     bookingHorizonDays: config.bookingHorizonDays,
     emailDelivery: require('../mailer').smtpConfigured(),
-    payment: config.payment,
+    // Only the method NAME is public; the IBAN / MobilePay number live on the
+    // invoice (auth-gated) so they aren't scraped from the open config endpoint.
+    payment: { method: config.payment.method },
   });
 });
 

@@ -73,6 +73,9 @@ module.exports = {
     method: 'Bank transfer',
     payee: process.env.PAYMENT_PAYEE || 'Proballers Coaching Finland',
     iban: process.env.PAYMENT_IBAN || 'FI00 0000 0000 0000 00',
+    // Optional MobilePay number (Finnish mobile payment). Blank = not offered;
+    // set PAYMENT_MOBILEPAY to a phone number to add it to invoices.
+    mobilepay: process.env.PAYMENT_MOBILEPAY || '',
     // Customers use the invoice number as the payment reference (viestikenttä).
     referenceHint: 'Use the invoice number as the message/reference',
   },

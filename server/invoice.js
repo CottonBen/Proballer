@@ -63,9 +63,10 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focusLabel) {
   <p class="muted">${esc(config.pricing.vatNote)}</p>
   <h3>How to pay</h3>
   <table>
-    <tr><td>Payment method</td><td>${esc(config.payment.method)} (only payment method)</td></tr>
+    <tr><td>Payment method</td><td>${esc(config.payment.method)}${config.payment.mobilepay ? ' or MobilePay' : ' (only payment method)'}</td></tr>
     <tr><td>Payee</td><td>${esc(config.payment.payee)}</td></tr>
-    <tr><td>IBAN</td><td><strong>${esc(config.payment.iban)}</strong></td></tr>
+    <tr><td>Bank transfer — IBAN</td><td><strong>${esc(config.payment.iban)}</strong></td></tr>
+    ${config.payment.mobilepay ? `<tr><td>MobilePay — number</td><td><strong>${esc(config.payment.mobilepay)}</strong></td></tr>` : ''}
     <tr><td>Reference / message</td><td><strong>${esc(inv.number)}</strong></td></tr>
     <tr><td>Amount</td><td><strong>${eur(booking.total_cents)}</strong></td></tr>
     <tr><td>Due date</td><td>${esc(inv.due_date)}</td></tr>
