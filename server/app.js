@@ -95,7 +95,12 @@ app.use(express.static(PUBLIC_DIR, {
       /\.(html|js|css)$/.test(filePath) ? 'no-cache' : 'public, max-age=604800');
   },
 }));
-const page = (file) => (req, res) => res.sendFile(path.join(PUBLIC_DIR, file));
+// sendFile bypasses the static middleware's setHeaders, so set the same
+// no-cache policy here — pages must revalidate after every deploy.
+const page = (file) => (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.sendFile(path.join(PUBLIC_DIR, file));
+};
 app.get('/login', page('login.html'));
 app.get('/coach', page('coach.html'));
 app.get('/admin', page('admin.html'));
@@ -104,7 +109,10 @@ app.get('/my-bookings', page('my-bookings.html'));
 // resolves the slug; an unknown slug renders its own not-found state).
 app.get('/coaches/:slug', page('coach-profile.html'));
 
-app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC_DIR, '404.html')));
+app.use((req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.status(404).sendFile(path.join(PUBLIC_DIR, '404.html'));
+});
 
 // Central error handler — never leak stack traces to visitors.
 // eslint-disable-next-line no-unused-vars

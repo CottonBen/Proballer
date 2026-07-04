@@ -408,9 +408,9 @@ async function openCoachCalendar(id) {
       <div class="cal-scroll">${grid}</div>
       <div class="cal-legend">
         <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>Not available</span>
-        <span><i style="background:rgba(201,247,58,0.25)"></i>Open for booking</span>
+        <span><i style="background:rgba(62,229,134,0.25)"></i>Open for booking</span>
         <span><i style="background:var(--lime)"></i>Booked (hover for details)</span>
-        <span><i style="background:rgba(201,247,58,0.5)"></i>Unsaved change</span>
+        <span><i style="background:rgba(62,229,134,0.5)"></i>Unsaved change</span>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:14px">
         <button class="btn btn-primary btn-sm" id="cal-save" ${pending.size ? '' : 'disabled'}>

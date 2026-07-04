@@ -143,7 +143,9 @@ function migrate(db, nowISO) {
 
   // One-time: give coaches without reviews a set of sample reviews — but ONLY
   // in demo/dev environments. A production site (DEMO_DATA=0) must never grow
-  // fabricated reviews; the marker is still set so this stays settled.
+  // fabricated reviews. INTENTIONAL: the marker is set even when seeding is
+  // skipped, so a production DB stays permanently settled — flipping DEMO_DATA
+  // later can never retroactively inject fake reviews into a live business.
   if (!db.prepare("SELECT 1 FROM meta WHERE key = 'starter_reviews_v2'").get()) {
     if (process.env.DEMO_DATA !== '0') {
       const { helsinkiDateOffset } = require('../server/db');
@@ -217,8 +219,15 @@ function seed({ demo = true, reset = false } = {}) {
   }
 
   // Post-launch coaches (e.g. Otto Ukkonen). migrate() handles existing DBs;
-  // this covers a fresh seed, where migrate() is not run.
+  // this covers a fresh seed, where migrate() did not run above.
   ensureExtraCoaches(db, now);
+
+  // A FRESH database must also run migrate() once now that the core rows
+  // exist: it sets the one-time markers (spotlight_v1, starter_reviews_v2).
+  // Without this, the first restart would treat the markers as pending and
+  // re-shuffle featured flags the admin may have changed in between. Every
+  // step inside migrate() is idempotent, so running it here is safe.
+  if (userCount === 0) migrate(db, nowISO);
 
   // --- Demo data ------------------------------------------------------------
   if (!demo) return { seeded: true, demo: false };
