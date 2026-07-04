@@ -15,7 +15,12 @@ services:
       - key: DATA_DIR
         value: /var/data
       # Set these in the Render dashboard (marked sync:false so they are not in git).
-      # Initial admin/coach credentials — override the source defaults on first boot:
+      # Bank-transfer details printed on invoices (kept out of the source):
+      - key: PAYMENT_IBAN
+        sync: false
+      - key: PAYMENT_PAYEE
+        sync: false
+      # Initial admin/coach credentials — set these before the first boot:
       - key: ADMIN_EMAIL
         sync: false
       - key: ADMIN_PASSWORD

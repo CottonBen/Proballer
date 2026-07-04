@@ -3,8 +3,9 @@ const express = require('express');
 const bcrypt = require('bcryptjs');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const config = require('../../config');
-const { db, nowISO, helsinkiNow, helsinkiDateOffset, autoCompleteBookings } = require('../db');
+const { db, DATA_DIR, nowISO, helsinkiNow, helsinkiDateOffset, autoCompleteBookings } = require('../db');
 const { createSession, destroySession, requireRole, loginThrottle } = require('../auth');
 const { createInvoiceForBooking, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
@@ -30,6 +31,61 @@ function recordEvent(req, type, meta = {}) {
 
 const escHtml = (s) => String(s).replace(/[&<>"']/g,
   c => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+
+// Coach photos uploaded through the admin UI live on the persistent data disk
+// (not in the bundled public/ folder, which is wiped on every redeploy), served
+// read-only at /uploads by app.js.
+const UPLOADS_DIR = path.join(DATA_DIR, 'uploads');
+fs.mkdirSync(UPLOADS_DIR, { recursive: true });
+const IMG_EXT = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+
+const slugify = (name) => String(name).toLowerCase().normalize('NFKD')
+  .replace(/[^\w\s-]/g, '').trim().replace(/[\s_]+/g, '-').replace(/-+/g, '-').slice(0, 40) || 'coach';
+function uniqueSlug(base) {
+  let slug = base, n = 1;
+  while (db.prepare('SELECT 1 FROM coaches WHERE slug = ?').get(slug)) slug = `${base}-${++n}`;
+  return slug;
+}
+
+// Save one base64 data-URL image to the uploads disk, returning its /uploads path.
+// Throws a 400-tagged error on an unsupported format or oversized file.
+function savePhotoDataUrl(dataUrl, slug) {
+  const m = /^data:(image\/(?:jpeg|png|webp));base64,([A-Za-z0-9+/=]+)$/.exec(String(dataUrl));
+  if (!m) throw Object.assign(new Error('Unsupported image — use JPG, PNG or WebP.'), { status: 400 });
+  const buf = Buffer.from(m[2], 'base64');
+  if (!buf.length) throw Object.assign(new Error('That image looks empty.'), { status: 400 });
+  if (buf.length > 6 * 1024 * 1024) throw Object.assign(new Error('Each image must be under 6 MB.'), { status: 400 });
+  const name = `${slug}-${crypto.randomBytes(6).toString('hex')}.${IMG_EXT[m[1]]}`;
+  fs.writeFileSync(path.join(UPLOADS_DIR, name), buf);
+  return `/uploads/${name}`;
+}
+
+// Turn a desired photo list (mix of existing internal paths to keep + new
+// data-URLs to save) into a clean list of internal paths. Anything else is
+// dropped, so a caller can never point a coach photo at an external/arbitrary URL.
+function resolvePhotos(list, slug) {
+  const out = [];
+  for (const item of Array.isArray(list) ? list.slice(0, 5) : []) {
+    const s = String(item);
+    if (s.startsWith('data:')) out.push(savePhotoDataUrl(s, slug));
+    else if (/^\/(uploads|assets)\/[\w.\-]+$/.test(s)) out.push(s);
+  }
+  return out;
+}
+
+// Validate + normalise the editable coach fields shared by create and update.
+function readCoachFields(body) {
+  const name = String(body?.name || '').trim();
+  const bio = String(body?.bio || '').trim().slice(0, 1200);
+  const positions = Array.isArray(body?.positions)
+    ? [...new Set(body.positions.filter(p => config.positions.includes(p)))] : [];
+  const locations = Array.isArray(body?.locations)
+    ? [...new Set(body.locations.filter(l => config.locations.includes(l)))] : [];
+  if (name.length < 2 || name.length > 60) return { error: 'Coach name must be 2–60 characters.' };
+  if (!positions.length) return { error: 'Pick at least one position group.' };
+  if (!locations.length) return { error: 'Pick at least one city.' };
+  return { name, bio, positions, locations, featured: body?.featured ? 1 : 0 };
+}
 
 // Has a session's slot already ended (in Helsinki time)? Only ended sessions
 // may be marked "completed" — otherwise a coach could complete future sessions
@@ -756,6 +812,148 @@ router.put('/admin/coaches/:id/availability', requireRole('admin'), (req, res) =
   const result = applyAvailabilityChanges(coach.id, req.body);
   if (result.error) return res.status(400).json({ error: result.error });
   res.json(result);
+});
+
+// Full editable detail for one coach (admin coach-management modal).
+router.get('/admin/coaches/:id', requireRole('admin'), (req, res) => {
+  const c = db.prepare('SELECT * FROM coaches WHERE id = ?').get(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Coach not found.' });
+  const user = c.user_id ? db.prepare('SELECT email, role FROM users WHERE id = ?').get(c.user_id) : null;
+  res.json({
+    id: c.id, name: c.name, slug: c.slug, bio: c.bio,
+    photos: parseJSON(c.photos, []),
+    positions: parseJSON(c.positions, []),
+    locations: parseJSON(c.locations, []),
+    featured: Boolean(c.featured),
+    account: { hasLogin: !!user, email: user ? user.email : null, isAdmin: user ? user.role === 'admin' : false },
+  });
+});
+
+// Create a coach from the admin UI: details + photos, and optionally a login.
+router.post('/admin/coaches', requireRole('admin'), (req, res) => {
+  const v = readCoachFields(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+  const images = Array.isArray(req.body?.photos) ? req.body.photos.filter(Boolean) : [];
+  if (!images.length) return res.status(400).json({ error: 'Add at least one photo (2–3 recommended).' });
+
+  // Validate an optional login BEFORE writing any files, so a bad password
+  // doesn't leave orphan images on disk.
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+  const wantsLogin = !!(email || password);
+  if (wantsLogin) {
+    if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'That email address does not look right.' });
+    if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+    if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
+      return res.status(409).json({ error: 'An account with this email already exists.' });
+    }
+  }
+
+  const slug = uniqueSlug(slugify(v.name));
+  let photos;
+  try { photos = resolvePhotos(images, slug); }
+  catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+  if (!photos.length) return res.status(400).json({ error: 'Add at least one photo (2–3 recommended).' });
+
+  // Create the login (if any) and the coach in one transaction, so a failure can
+  // never leave a half-made coach (user row without a coach, or vice-versa).
+  db.exec('BEGIN');
+  try {
+    let userId = null;
+    if (wantsLogin) {
+      // SECURITY: role is hardcoded to 'coach' — never take it from the request,
+      // or an admin could mint another admin. The users CHECK constraint backs this up.
+      userId = Number(db.prepare('INSERT INTO users (email, password_hash, name, role, created_at) VALUES (?,?,?,?,?)')
+        .run(email, bcrypt.hashSync(password, 10), v.name, 'coach', nowISO()).lastInsertRowid);
+    }
+    const order = db.prepare('SELECT COALESCE(MAX(display_order),0)+10 AS n FROM coaches').get().n;
+    const info = db.prepare(`INSERT INTO coaches
+      (user_id, name, slug, bio, photos, locations, positions, featured, display_order, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(userId, v.name, slug, v.bio, JSON.stringify(photos),
+        JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured, order, nowISO());
+    db.exec('COMMIT');
+    sheets.scheduleSync();
+    return res.json({ ok: true, id: Number(info.lastInsertRowid), slug });
+  } catch (err) {
+    db.exec('ROLLBACK');
+    // The DB write failed — delete the images we just wrote for this coach so
+    // they don't pile up as orphans on the disk.
+    for (const p of photos) {
+      if (p.startsWith('/uploads/')) { try { fs.unlinkSync(path.join(UPLOADS_DIR, path.basename(p))); } catch { /* ignore */ } }
+    }
+    if (String(err.message).includes('UNIQUE')) {
+      return res.status(409).json({ error: 'That coach clashed with an existing one — please try again.' });
+    }
+    throw err;
+  }
+});
+
+// Update a coach's details, filters, photos and featured flag.
+router.put('/admin/coaches/:id', requireRole('admin'), (req, res) => {
+  const c = db.prepare('SELECT * FROM coaches WHERE id = ?').get(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Coach not found.' });
+  const v = readCoachFields(req.body);
+  if (v.error) return res.status(400).json({ error: v.error });
+
+  let photos = parseJSON(c.photos, []);
+  if (Array.isArray(req.body?.photos)) {
+    let resolved;
+    try { resolved = resolvePhotos(req.body.photos, c.slug); }
+    catch (e) { return res.status(e.status || 400).json({ error: e.message }); }
+    if (!resolved.length) return res.status(400).json({ error: 'A coach needs at least one photo.' });
+    photos = resolved;
+  }
+  db.prepare('UPDATE coaches SET name=?, bio=?, locations=?, positions=?, featured=?, photos=? WHERE id=?')
+    .run(v.name, v.bio, JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured,
+      JSON.stringify(photos), c.id);
+  if (c.user_id) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(v.name, c.user_id); // keep login name in sync
+  sheets.scheduleSync();
+  res.json({ ok: true });
+});
+
+// Set or change a coach's login email / password. Creates a login for a
+// coach that doesn't have one yet (e.g. one added without an account).
+router.put('/admin/coaches/:id/account', requireRole('admin'), (req, res) => {
+  const c = db.prepare('SELECT * FROM coaches WHERE id = ?').get(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Coach not found.' });
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const password = String(req.body?.password || '');
+  if (email && !/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'That email address does not look right.' });
+  if (password && password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+
+  if (c.user_id) {
+    if (!email && !password) return res.status(400).json({ error: 'Nothing to change.' });
+    if (email) {
+      if (db.prepare('SELECT 1 FROM users WHERE email = ? AND id != ?').get(email, c.user_id)) {
+        return res.status(409).json({ error: 'Another account already uses that email.' });
+      }
+      db.prepare('UPDATE users SET email = ? WHERE id = ?').run(email, c.user_id);
+    }
+    if (password) {
+      db.prepare('UPDATE users SET password_hash = ? WHERE id = ?').run(bcrypt.hashSync(password, 10), c.user_id);
+      if (c.user_id === req.user.id) {
+        // Admin changing their OWN linked account (e.g. Ben on the owner login):
+        // drop other sessions but keep the current one so they aren't locked out.
+        db.prepare('DELETE FROM sessions WHERE user_id = ? AND token != ?').run(c.user_id, req.sessionToken || '');
+      } else {
+        // Changing another coach's password signs them out so the new one takes
+        // hold, and leaves them a note explaining why.
+        db.prepare('DELETE FROM sessions WHERE user_id = ?').run(c.user_id);
+        db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+          .run(c.user_id, 'An administrator updated your login password — please sign in with the new password.', nowISO());
+      }
+    }
+    return res.json({ ok: true, created: false });
+  }
+  // No login yet — create one (both fields required).
+  if (!email || !password) return res.status(400).json({ error: 'Set both an email and a password to create a login.' });
+  if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
+    return res.status(409).json({ error: 'An account with this email already exists.' });
+  }
+  const userId = Number(db.prepare('INSERT INTO users (email, password_hash, name, role, created_at) VALUES (?,?,?,?,?)')
+    .run(email, bcrypt.hashSync(password, 10), c.name, 'coach', nowISO()).lastInsertRowid);
+  db.prepare('UPDATE coaches SET user_id = ? WHERE id = ?').run(userId, c.id);
+  res.json({ ok: true, created: true });
 });
 
 router.get('/admin/bookings', requireRole('admin'), (req, res) => {

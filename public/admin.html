@@ -46,11 +46,14 @@
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:18px" id="charts"></div>
 
     <!-- coaches -->
-    <div class="dash-title"><h2 style="font-size:1.8rem">How the coaches are doing</h2></div>
+    <div class="dash-title">
+      <h2 style="font-size:1.8rem">How the coaches are doing</h2>
+      <button class="btn btn-primary btn-sm" id="add-coach">+ Add coach</button>
+    </div>
     <div class="card" style="overflow-x:auto">
       <table class="data" id="coach-table"></table>
-      <p class="small muted" style="margin:10px 0 0">Click a coach to see their live calendar
-        (what they've opened + what's booked).</p>
+      <p class="small muted" style="margin:10px 0 0">Click a coach's name to see their live calendar,
+        or <strong>Manage</strong> to edit their photos, bio, cities/positions and login.</p>
     </div>
 
     <!-- bookings -->
@@ -121,6 +124,14 @@
     <div class="modal" style="max-width:900px" role="dialog" aria-modal="true">
       <button class="close" id="cal-close" aria-label="Close">×</button>
       <div id="cal-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- coach add/manage modal -->
+  <div class="modal-backdrop" id="coach-backdrop">
+    <div class="modal" style="max-width:640px" role="dialog" aria-modal="true">
+      <button class="close" id="coach-close" aria-label="Close">×</button>
+      <div id="coach-modal-body"></div>
     </div>
   </div>
 

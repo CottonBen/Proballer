@@ -5,7 +5,7 @@ const express = require('express');
 const path = require('node:path');
 const crypto = require('node:crypto');
 const config = require('../config');
-const { db, helsinkiNow, nowISO } = require('./db');
+const { db, DATA_DIR, helsinkiNow, nowISO } = require('./db');
 const { sessionMiddleware, parseCookies } = require('./auth');
 const sheets = require('./sheets');
 
@@ -15,7 +15,6 @@ require('../scripts/seed').seed({ demo: process.env.DEMO_DATA !== '0' });
 const app = express();
 app.set('trust proxy', 1); // correct req.ip behind Render/Fly/nginx
 app.disable('x-powered-by');
-app.use(express.json({ limit: '64kb' }));
 
 app.use((req, res, next) => {
   res.set({
@@ -29,7 +28,21 @@ app.use((req, res, next) => {
   next();
 });
 
+// Identify the user (from the session cookie) BEFORE parsing the body, so the
+// large-body allowance below can be limited to authenticated admins.
 app.use(sessionMiddleware);
+
+// Most requests carry tiny JSON; only an ADMIN creating/updating a coach carries
+// base64 photos, so only those get the larger limit (images are downscaled
+// client-side first). Everyone else — including anonymous callers hitting the
+// same path — is capped at 64kb, so the big limit can't be used to exhaust memory.
+const jsonSmall = express.json({ limit: '64kb' });
+const jsonLarge = express.json({ limit: '12mb' });
+app.use((req, res, next) => {
+  const isAdmin = req.user && req.user.role === 'admin';
+  const needsLarge = isAdmin && req.method !== 'GET' && /^\/api\/admin\/coaches(\/\d+)?$/.test(req.path);
+  return (needsLarge ? jsonLarge : jsonSmall)(req, res, next);
+});
 
 // ---------------------------------------------------------------------------
 // Visitor tracking: anonymous cookie + one row per page view. Only public
@@ -66,6 +79,9 @@ app.use((req, res, next) => {
 
 app.use('/api', require('./routes/api'));
 
+// Admin-uploaded coach photos, served from the persistent data disk.
+app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { maxAge: '1h' }));
+
 // Static assets + the four pages (kept as clean paths).
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, { maxAge: '1h', extensions: ['html'] }));
@@ -80,6 +96,10 @@ app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC_DIR, '404.html')
 // Central error handler — never leak stack traces to visitors.
 // eslint-disable-next-line no-unused-vars
 app.use((err, req, res, next) => {
+  // Oversized / malformed request bodies are the caller's fault, not a server
+  // fault — answer 413/400 rather than a generic 500.
+  if (err.type === 'entity.too.large') return res.status(413).json({ error: 'That upload is too large.' });
+  if (err.type === 'entity.parse.failed') return res.status(400).json({ error: 'Malformed request.' });
   console.error('[error]', err);
   res.status(500).json({ error: 'Something went wrong on our side. Please try again.' });
 });

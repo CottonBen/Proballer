@@ -9,7 +9,19 @@
 const bcrypt = require('bcryptjs');
 const path = require('node:path');
 const fs = require('node:fs');
+const crypto = require('node:crypto');
 const config = require('../config');
+
+// The initial password for a core account: the env var if set, otherwise a
+// freshly generated strong one, printed to the log so the operator can grab it.
+// No password is ever hardcoded in the source.
+function initialPassword(envVar, label) {
+  if (process.env[envVar]) return process.env[envVar];
+  const generated = crypto.randomBytes(12).toString('base64url').slice(0, 16);
+  console.log(`[seed] ${envVar} not set — generated a password for ${label}: ${generated}`);
+  console.log(`[seed] Save it now, or set ${envVar} to choose your own before the first run.`);
+  return generated;
+}
 
 // Sample coach reviews, keyed by coach slug: [author, rating (1-5), body].
 // Seeded with customer_id NULL and demo=1 so the admin can clear them, and only
@@ -157,18 +169,20 @@ function seed({ demo = true, reset = false } = {}) {
   const getCoach = db.prepare('SELECT id FROM coaches WHERE slug = ?');
 
   // --- Core accounts -------------------------------------------------------
-  // Passwords come from env vars in production (set ADMIN_PASSWORD etc. on the
-  // host); the values you specified are the local/dev defaults. Either way the
-  // DB only ever stores a bcrypt hash, and any account can be rotated later via
-  // the authenticated /api/auth/change-password endpoint.
+  // Initial passwords come from env vars (ADMIN_PASSWORD / COACH_PASSWORD), set
+  // in .env locally or in the host environment in production. NO password is
+  // hardcoded in the source; if an env var is missing on a fresh seed a strong
+  // random one is generated and printed to the log once. The DB only ever stores
+  // a bcrypt hash, and any account can be rotated later via the admin UI or
+  // /api/auth/change-password.
   if (userCount === 0) {
-    const adminEmail = (process.env.ADMIN_EMAIL || 'cottonbenjaminmik@gmail.com').toLowerCase();
-    insUser.run(adminEmail, bcrypt.hashSync(process.env.ADMIN_PASSWORD || 'Castagne20!', 10),
+    const adminEmail = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
+    insUser.run(adminEmail, bcrypt.hashSync(initialPassword('ADMIN_PASSWORD', `admin (${adminEmail})`), 10),
       'Benjamin Cotton', 'admin', 0, now);
 
     // Kalle is both an admin and a coach: admin role + a linked coach profile.
-    const kalleEmail = (process.env.COACH_EMAIL || 'kalle.sundman@icloud.com').toLowerCase();
-    insUser.run(kalleEmail, bcrypt.hashSync(process.env.COACH_PASSWORD || 'Kaakeli.09', 10),
+    const kalleEmail = (process.env.COACH_EMAIL || 'coach@example.com').toLowerCase();
+    insUser.run(kalleEmail, bcrypt.hashSync(initialPassword('COACH_PASSWORD', `Kalle (${kalleEmail})`), 10),
       'Kalle Sundman', 'admin', 0, now);
     const kalleId = getUser.get(kalleEmail).id;
     insCoach.run(kalleId, 'Kalle Sundman', 'kalle-sundman',

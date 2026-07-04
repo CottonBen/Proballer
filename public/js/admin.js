@@ -2,6 +2,7 @@
 'use strict';
 
 let A = null;              // analytics payload
+let CONFIG = null;         // /config payload (positions, cities)
 let WIN = 'd30';           // selected window
 const WIN_LABEL = { d7: 'past 7 days', d30: 'past 30 days', d90: 'past 90 days', all: 'all time' };
 
@@ -29,6 +30,13 @@ const WIN_LABEL = { d7: 'past 7 days', d30: 'past 30 days', d90: 'past 90 days',
     if (e.target.id === 'cal-backdrop') e.currentTarget.classList.remove('open');
   });
 
+  document.getElementById('coach-close').addEventListener('click', () =>
+    document.getElementById('coach-backdrop').classList.remove('open'));
+  document.getElementById('coach-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'coach-backdrop') e.currentTarget.classList.remove('open');
+  });
+  document.getElementById('add-coach').addEventListener('click', () => openCoachEditor(null));
+
   document.getElementById('sheets-sync').addEventListener('click', syncSheets);
   document.getElementById('remove-demo').addEventListener('click', removeDemo);
 
@@ -39,6 +47,7 @@ const WIN_LABEL = { d7: 'past 7 days', d30: 'past 30 days', d90: 'past 90 days',
       renderCRM();
     }));
 
+  CONFIG = await API.get('/config');
   await refresh();
   await loadBookings('');
   await loadCRM();
@@ -138,10 +147,10 @@ function renderCoachTable() {
       <th>Tier<br><span style="font-weight:400">this month</span></th>
       <th>Coach payout<br><span style="font-weight:400">this month</span></th>
       <th>Earned<br><span style="font-weight:400">completed</span></th>
-      <th>Booked value<br><span style="font-weight:400">incl. upcoming</span></th></tr>` +
+      <th>Booked value<br><span style="font-weight:400">incl. upcoming</span></th><th></th></tr>` +
     A.coaches.map((c) => `
-      <tr data-coach="${c.id}" style="cursor:pointer">
-        <td><strong>${esc(c.name)}</strong></td>
+      <tr data-coach="${c.id}">
+        <td><a href="#" data-cal="${c.id}"><strong>${esc(c.name)}</strong></a></td>
         <td>${c.positions.map((p) => esc(cap(p).slice(0, 3))).join(', ')}</td>
         <td>${c.locations.map(esc).join(', ')}</td>
         <td>${c.completed.d7} / ${c.completed.d30} / ${c.completed.d90} / <strong>${c.completed.all}</strong></td>
@@ -153,12 +162,202 @@ function renderCoachTable() {
         <td>${eur(c.tier.payoutThisMonthCents)}</td>
         <td>${eur(c.revenueCompletedCents)}</td>
         <td class="muted">${eur(c.bookedValueCents)}</td>
+        <td style="white-space:nowrap">
+          <button class="btn btn-ghost btn-sm" data-cal="${c.id}">Calendar</button>
+          <button class="btn btn-ghost btn-sm" data-manage="${c.id}">Manage</button></td>
       </tr>`).join('');
-  t.querySelectorAll('tr[data-coach]').forEach((row) =>
-    row.addEventListener('click', () => openCoachCalendar(Number(row.dataset.coach)).catch((err) => {
-      document.getElementById('cal-backdrop').classList.remove('open');
-      toast(err.message, true);
-    })));
+  const openCal = (id) => openCoachCalendar(id).catch((err) => {
+    document.getElementById('cal-backdrop').classList.remove('open');
+    toast(err.message, true);
+  });
+  t.querySelectorAll('[data-cal]').forEach((el) => el.addEventListener('click', (e) => {
+    e.preventDefault(); openCal(Number(el.dataset.cal));
+  }));
+  t.querySelectorAll('[data-manage]').forEach((btn) => btn.addEventListener('click', () =>
+    openCoachEditor(Number(btn.dataset.manage))));
+}
+
+// --- add / manage a coach ----------------------------------------------------
+const COACH_MAX_PHOTOS = 5;
+
+// Downscale a picked image to a modest JPEG data-URL so uploads stay small
+// (a few hundred KB) and the payload fits comfortably in the request. Reads via
+// FileReader (a data: URL) rather than URL.createObjectURL, because the page CSP
+// allows img-src 'self' data: but not blob:.
+function fileToResizedDataURL(file, maxDim = 1600, quality = 0.82) {
+  return new Promise((resolve, reject) => {
+    if (!/^image\//.test(file.type)) return reject(new Error('That file is not an image.'));
+    const reader = new FileReader();
+    reader.onerror = () => reject(new Error('Could not read that image.'));
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        let { width, height } = img;
+        const scale = Math.min(1, maxDim / Math.max(width, height));
+        width = Math.round(width * scale); height = Math.round(height * scale);
+        const canvas = document.createElement('canvas');
+        canvas.width = width; canvas.height = height;
+        canvas.getContext('2d').drawImage(img, 0, 0, width, height);
+        resolve(canvas.toDataURL('image/jpeg', quality));
+      };
+      img.onerror = () => reject(new Error('Could not read that image.'));
+      img.src = reader.result; // data: URL — allowed by the CSP
+    };
+    reader.readAsDataURL(file);
+  });
+}
+
+// Add (id = null) or manage (id set) a coach: photos, bio, cities/positions,
+// featured flag, and — for existing coaches — the login email/password.
+async function openCoachEditor(id) {
+  const bd = document.getElementById('coach-backdrop');
+  const box = document.getElementById('coach-modal-body');
+  bd.classList.add('open');
+  box.innerHTML = '<p class="muted">Loading…</p>';
+
+  let coach = { name: '', bio: '', positions: [], locations: [], featured: false, photos: [],
+    account: { hasLogin: false, email: null, isAdmin: false } };
+  if (id) {
+    try { coach = await API.get(`/admin/coaches/${id}`); }
+    catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; return; }
+  }
+  const overview = id && A ? A.coaches.find((c) => c.id === id) : null;
+  const photos = coach.photos.slice(); // working list: existing paths and/or new data URLs
+
+  const pickOn = (sel) => [...box.querySelectorAll(`${sel} .chip-toggle.on`)].map((c) => c.dataset.v);
+
+  function renderPhotos() {
+    const wrap = box.querySelector('#ce-photos');
+    wrap.innerHTML = photos.map((src, i) => `
+      <div style="position:relative">
+        <img src="${esc(src)}" alt="" style="width:64px;height:64px;object-fit:cover;border-radius:8px;border:1px solid var(--line)">
+        <button data-rm="${i}" title="Remove" style="position:absolute;top:-7px;right:-7px;width:20px;height:20px;border-radius:50%;border:none;background:var(--danger);color:#fff;cursor:pointer;line-height:1;font-size:.85rem">×</button>
+      </div>`).join('') || '<span class="small muted">No photos yet — add 2–3.</span>';
+    wrap.querySelectorAll('[data-rm]').forEach((b) => b.addEventListener('click', () => {
+      photos.splice(Number(b.dataset.rm), 1); renderPhotos();
+    }));
+  }
+
+  function accountSection() {
+    const a = coach.account;
+    return `
+      <div style="border-top:1px dashed var(--line);margin-top:18px;padding-top:14px">
+        <div class="small muted" style="text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">Login</div>
+        ${a.isAdmin ? '<p class="small" style="color:#f7a13a;margin:0 0 8px">⚠ This coach is also an admin — changing these credentials changes an admin login.</p>' : ''}
+        ${a.hasLogin
+          ? `<input type="email" id="ce-acc-email" value="${esc(a.email)}" autocomplete="off">
+             <input type="password" id="ce-acc-pass" placeholder="new password (leave blank to keep)" autocomplete="new-password" style="margin-top:8px">`
+          : `<p class="small muted" style="margin:0 0 8px">No login yet — set an email + password so this coach can sign in and manage their own calendar.</p>
+             <input type="email" id="ce-acc-email" placeholder="coach email" autocomplete="off">
+             <input type="password" id="ce-acc-pass" placeholder="password (min 8 characters)" autocomplete="new-password" style="margin-top:8px">`}
+        <div class="form-error" id="ce-acc-msg"></div>
+        <button class="btn btn-ghost btn-sm" id="ce-acc-save" style="margin-top:6px">${a.hasLogin ? 'Update login' : 'Create login'}</button>
+      </div>`;
+  }
+
+  function render() {
+    const chip = (val, label, on) => `<span class="chip chip-toggle ${on ? 'on' : ''}" data-v="${esc(val)}">${esc(label)}</span>`;
+    const posSet = new Set(coach.positions), locSet = new Set(coach.locations);
+    box.innerHTML = `
+      <h2 style="font-size:1.5rem;margin-bottom:4px">${id ? 'Manage ' + esc(coach.name) : 'Add a coach'}</h2>
+      ${overview ? `<p class="small muted" style="margin:0 0 12px">
+        ${overview.completed.all} sessions all-time · ${overview.upcoming} upcoming ·
+        ${overview.utilization === null ? 'no open slots' : overview.utilization + '% booked'} ·
+        tier T${overview.tier.number} · payout this month ${eur(overview.tier.payoutThisMonthCents)}
+        <button class="btn btn-ghost btn-sm" id="ce-cal" style="margin-left:6px">Edit calendar →</button></p>` : ''}
+
+      <label class="small muted">Photos <span style="opacity:.7">(2–3 recommended)</span></label>
+      <div id="ce-photos" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0"></div>
+      <input type="file" id="ce-file" accept="image/*" multiple style="margin-bottom:14px">
+
+      <label class="small muted">Name</label>
+      <input type="text" id="ce-name" value="${esc(coach.name)}" maxlength="60" style="margin:4px 0 12px">
+
+      <label class="small muted">Bio</label>
+      <textarea id="ce-bio" rows="4" maxlength="1200" style="margin:4px 0 12px">${esc(coach.bio)}</textarea>
+
+      <label class="small muted">Positions they coach</label>
+      <div id="ce-pos" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px">
+        ${CONFIG.positions.map((p) => chip(p, cap(p), posSet.has(p))).join('')}</div>
+
+      <label class="small muted">Cities</label>
+      <div id="ce-loc" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px">
+        ${CONFIG.locations.map((l) => chip(l, l, locSet.has(l))).join('')}</div>
+
+      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer">
+        <input type="checkbox" id="ce-featured" ${coach.featured ? 'checked' : ''} style="width:auto">
+        <span class="small">Feature in the homepage hero carousel</span></label>
+
+      ${!id ? `<div class="small muted" style="border-top:1px dashed var(--line);padding-top:12px;margin-bottom:6px">
+          Give them a login (optional — you can add it later)</div>
+        <input type="email" id="ce-email" placeholder="coach email" autocomplete="off" style="margin-bottom:8px">
+        <input type="password" id="ce-pass" placeholder="password (min 8 characters)" autocomplete="new-password" style="margin-bottom:12px">` : ''}
+
+      <div class="form-error" id="ce-msg"></div>
+      <button class="btn btn-primary" id="ce-save" style="width:100%">${id ? 'Save details' : 'Create coach'}</button>
+      ${id ? accountSection() : ''}`;
+
+    renderPhotos();
+    box.querySelectorAll('.chip-toggle').forEach((c) => c.addEventListener('click', () => c.classList.toggle('on')));
+
+    box.querySelector('#ce-file').addEventListener('change', async (e) => {
+      const files = [...e.target.files]; e.target.value = '';
+      for (const f of files) {
+        if (photos.length >= COACH_MAX_PHOTOS) { toast(`Up to ${COACH_MAX_PHOTOS} photos.`, true); break; }
+        try { photos.push(await fileToResizedDataURL(f)); } catch (err) { toast(err.message, true); }
+      }
+      renderPhotos();
+    });
+
+    const calBtn = box.querySelector('#ce-cal');
+    if (calBtn) calBtn.addEventListener('click', () => {
+      bd.classList.remove('open');
+      openCoachCalendar(id).catch((err) => toast(err.message, true));
+    });
+
+    box.querySelector('#ce-save').addEventListener('click', async () => {
+      const msg = box.querySelector('#ce-msg'); msg.textContent = '';
+      const payload = {
+        name: box.querySelector('#ce-name').value.trim(),
+        bio: box.querySelector('#ce-bio').value.trim(),
+        positions: pickOn('#ce-pos'),
+        locations: pickOn('#ce-loc'),
+        featured: box.querySelector('#ce-featured').checked,
+        photos,
+      };
+      if (!id) {
+        const email = box.querySelector('#ce-email').value.trim();
+        const pass = box.querySelector('#ce-pass').value;
+        if (email || pass) { payload.email = email; payload.password = pass; }
+      }
+      const btn = box.querySelector('#ce-save'); btn.disabled = true;
+      const orig = btn.textContent; btn.textContent = 'Saving…';
+      try {
+        if (id) await API.put(`/admin/coaches/${id}`, payload);
+        else await API.post('/admin/coaches', payload);
+        toast(id ? 'Coach updated.' : 'Coach added.');
+        bd.classList.remove('open');
+        await refresh();
+      } catch (err) { msg.textContent = err.message; btn.disabled = false; btn.textContent = orig; }
+    });
+
+    if (id) box.querySelector('#ce-acc-save').addEventListener('click', async () => {
+      const msg = box.querySelector('#ce-acc-msg'); msg.textContent = '';
+      const email = box.querySelector('#ce-acc-email').value.trim();
+      const pass = box.querySelector('#ce-acc-pass').value;
+      const body = {}; if (email) body.email = email; if (pass) body.password = pass;
+      const btn = box.querySelector('#ce-acc-save'); btn.disabled = true;
+      try {
+        const r = await API.put(`/admin/coaches/${id}/account`, body);
+        toast(r.created ? 'Login created.' : 'Login updated.');
+        coach.account.hasLogin = true;
+        if (email) coach.account.email = email;
+        render();
+      } catch (err) { msg.textContent = err.message; btn.disabled = false; }
+    });
+  }
+
+  render();
 }
 
 // Editable two-week calendar for one coach: the admin can open and close

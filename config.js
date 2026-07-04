@@ -1,6 +1,21 @@
 // Central business configuration for Proballers Coaching Finland (working title).
 // Change values here — the rest of the app reads everything from this file.
 
+// Load a local, gitignored .env file (KEY=value per line) so secrets — the
+// payment IBAN, the initial admin/coach passwords, SMTP, etc. — stay OUT of the
+// committed source. On a real host (Render) these are set as real env vars, so
+// the .env is optional there. Values already present in process.env win.
+(function loadDotEnv() {
+  try {
+    const fs = require('node:fs'), path = require('node:path');
+    const text = fs.readFileSync(path.join(__dirname, '.env'), 'utf8');
+    for (const line of text.split('\n')) {
+      const m = /^\s*([A-Z0-9_]+)\s*=\s*(.*?)\s*$/.exec(line);
+      if (m && !(m[1] in process.env)) process.env[m[1]] = m[2].replace(/^["']|["']$/g, '');
+    }
+  } catch { /* no .env file — rely on real environment variables */ }
+})();
+
 module.exports = {
   siteName: 'Proballers Coaching Finland',
   tagline: 'Pro-level 1-on-1 coaching for young footballers',
@@ -52,10 +67,12 @@ module.exports = {
   },
 
   // The one and only payment method: bank transfer to the owner's account.
+  // The IBAN comes from the PAYMENT_IBAN env var (kept out of the source); set
+  // it in .env locally and in the host's environment in production.
   payment: {
     method: 'Bank transfer',
-    payee: 'Benjamin Cotton / Proballers Coaching Finland',
-    iban: 'FI07 5723 0220 8149 53',
+    payee: process.env.PAYMENT_PAYEE || 'Proballers Coaching Finland',
+    iban: process.env.PAYMENT_IBAN || 'FI00 0000 0000 0000 00',
     // Customers use the invoice number as the payment reference (viestikenttä).
     referenceHint: 'Use the invoice number as the message/reference',
   },

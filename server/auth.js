@@ -34,16 +34,18 @@ function destroySession(req, res) {
   res.append('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
-// Attaches req.user = {id,email,name,role} (or null) to every request.
+// Attaches req.user = {id,email,name,role} (or null) and req.sessionToken to
+// every request.
 function sessionMiddleware(req, res, next) {
   req.user = null;
+  req.sessionToken = null;
   const token = parseCookies(req)[SESSION_COOKIE];
   if (token) {
     const row = db.prepare(`
       SELECT u.id, u.email, u.name, u.role FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token = ? AND s.expires_at > ?`).get(token, nowISO());
-    if (row) req.user = row;
+    if (row) { req.user = row; req.sessionToken = token; }
   }
   next();
 }
