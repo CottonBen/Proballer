@@ -1,5 +1,6 @@
 /* ProBallers Coaching Finland — design system
-   Dark pitch aesthetic: near-black greens, electric lime accent, glass cards. */
+   Stadium-night aesthetic: deep emerald greens, bright spring-green accent,
+   warm gold highlights, glass cards. Brighter than v1 but still professional. */
 
 @font-face {
   font-family: 'Big Shoulders';
@@ -23,17 +24,18 @@
 }
 
 :root {
-  --bg: #070b09;
-  --bg-2: #0b120e;
-  --card: rgba(255, 255, 255, 0.045);
-  --card-solid: #101812;
-  --line: rgba(255, 255, 255, 0.09);
-  --text: #eef3ee;
-  --muted: #94a49a;
-  --lime: #c9f73a;
-  --lime-dark: #9ac916;
-  --pitch: #14532d;
-  --danger: #ff6b6b;
+  --bg: #08211a;
+  --bg-2: #0c2b21;
+  --card: rgba(255, 255, 255, 0.06);
+  --card-solid: #0f2e23;
+  --line: rgba(255, 255, 255, 0.13);
+  --text: #f2fbf6;
+  --muted: #9cc0ad;
+  --lime: #3ee586;
+  --lime-dark: #1fc468;
+  --gold: #ffd166;
+  --pitch: #12704a;
+  --danger: #ff7a7a;
   --ok: #4ade80;
   --radius: 16px;
   --display: 'Big Shoulders', 'Arial Narrow', sans-serif;
@@ -48,12 +50,13 @@ body {
   font-family: var(--body); font-size: 16px; line-height: 1.55;
   -webkit-font-smoothing: antialiased;
 }
-body::before { /* ambient glow */
+body::before { /* ambient glow — floodlights over the pitch */
   content: ''; position: fixed; inset: 0; pointer-events: none; z-index: 0;
   background:
-    radial-gradient(700px 400px at 85% -5%, rgba(201, 247, 58, 0.09), transparent 60%),
-    radial-gradient(900px 500px at -10% 30%, rgba(20, 83, 45, 0.35), transparent 65%),
-    radial-gradient(600px 500px at 60% 110%, rgba(20, 83, 45, 0.28), transparent 60%);
+    radial-gradient(700px 400px at 85% -5%, rgba(62, 229, 134, 0.14), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(18, 112, 74, 0.45), transparent 65%),
+    radial-gradient(600px 500px at 60% 110%, rgba(18, 112, 74, 0.35), transparent 60%),
+    radial-gradient(500px 300px at 30% -10%, rgba(255, 209, 102, 0.06), transparent 60%);
 }
 main, header, footer { position: relative; z-index: 1; }
 
@@ -74,7 +77,7 @@ a { color: var(--lime); text-decoration: none; }
 /* ---------- header / nav ---------- */
 .site-header {
   position: sticky; top: 0; z-index: 50;
-  background: rgba(7, 11, 9, 0.75); backdrop-filter: blur(14px);
+  background: rgba(8, 33, 26, 0.8); backdrop-filter: blur(14px);
   border-bottom: 1px solid var(--line);
 }
 .site-header .wrap {
@@ -88,6 +91,20 @@ a { color: var(--lime); text-decoration: none; }
   text-transform: uppercase; letter-spacing: 0.06em;
 }
 .brand em { color: var(--lime); font-style: normal; }
+/* Auth actions (Admin / My calendar / Log out) stay on ONE compact row — on
+   phones the buttons shrink instead of stacking out of the frame. */
+#auth-box { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; flex-shrink: 0; }
+@media (max-width: 640px) {
+  .site-header .wrap { height: 56px; gap: 8px; }
+  .brand img { width: 26px; height: 26px; }
+  .brand span { font-size: 0.95rem; letter-spacing: 0.04em; }
+  #auth-box { gap: 5px; }
+  #auth-box .btn { padding: 7px 10px; font-size: 0.74rem; white-space: nowrap; }
+}
+@media (max-width: 380px) {
+  .brand span em { display: none; } /* just "Proballers" on the smallest screens */
+  #auth-box .btn { padding: 6px 8px; font-size: 0.7rem; }
+}
 
 /* ---------- buttons ---------- */
 .btn {
@@ -100,9 +117,9 @@ a { color: var(--lime); text-decoration: none; }
 .btn:active { transform: scale(0.97); }
 .btn-primary {
   background: var(--lime); color: #10160a;
-  box-shadow: 0 0 24px rgba(201, 247, 58, 0.25);
+  box-shadow: 0 0 24px rgba(62, 229, 134, 0.25);
 }
-.btn-primary:hover { box-shadow: 0 0 38px rgba(201, 247, 58, 0.45); transform: translateY(-1px); }
+.btn-primary:hover { box-shadow: 0 0 38px rgba(62, 229, 134, 0.45); transform: translateY(-1px); }
 .btn-ghost { background: transparent; color: var(--text); border-color: var(--line); }
 .btn-ghost:hover { border-color: var(--lime); color: var(--lime); }
 .btn-danger { background: transparent; color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }
@@ -121,8 +138,8 @@ a { color: var(--lime); text-decoration: none; }
 .chip {
   display: inline-flex; align-items: center; gap: 6px;
   padding: 4px 12px; border-radius: 999px; font-size: 0.8rem; font-weight: 700;
-  background: rgba(201, 247, 58, 0.12); color: var(--lime);
-  border: 1px solid rgba(201, 247, 58, 0.25);
+  background: rgba(62, 229, 134, 0.12); color: var(--lime);
+  border: 1px solid rgba(62, 229, 134, 0.25);
 }
 .chip.gray { background: rgba(255,255,255,0.06); color: var(--muted); border-color: var(--line); }
 .chip-toggle {
@@ -131,14 +148,14 @@ a { color: var(--lime); text-decoration: none; }
   padding: 9px 18px; font-size: 0.9rem;
 }
 .chip-toggle.on {
-  background: rgba(201, 247, 58, 0.16); color: var(--lime);
+  background: rgba(62, 229, 134, 0.16); color: var(--lime);
   border-color: var(--lime);
 }
 
 /* ---------- sale ribbon ---------- */
 .sale-banner {
-  background: linear-gradient(90deg, var(--lime), #8fe32a 60%, var(--lime));
-  color: #101607; text-align: center; font-weight: 700; font-size: 0.92rem;
+  background: linear-gradient(90deg, var(--gold), var(--lime) 45%, var(--gold));
+  color: #0b2013; text-align: center; font-weight: 700; font-size: 0.92rem;
   padding: 8px 14px; letter-spacing: 0.03em;
 }
 .price-old { text-decoration: line-through; color: var(--muted); font-weight: 400; }
@@ -165,7 +182,7 @@ a { color: var(--lime); text-decoration: none; }
 .slide-photo {
   position: relative; aspect-ratio: 4/4.6; border-radius: 24px; overflow: hidden;
   border: 1px solid var(--line);
-  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 60px rgba(201, 247, 58, 0.07);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.55), 0 0 60px rgba(62, 229, 134, 0.07);
 }
 .slide-photo img {
   position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover;
@@ -242,7 +259,7 @@ a { color: var(--lime); text-decoration: none; }
 }
 .date-cell .dow { font-size: 0.72rem; color: var(--muted); text-transform: uppercase; letter-spacing: 0.08em; }
 .date-cell .num { font-family: var(--display); font-size: 1.3rem; font-weight: 700; }
-.date-cell.sel { border-color: var(--lime); background: rgba(201,247,58,0.12); }
+.date-cell.sel { border-color: var(--lime); background: rgba(62, 229, 134,0.12); }
 .date-cell.none { opacity: 0.35; cursor: default; }
 .slot-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 8px; margin-top: 14px; }
 .slot-btn {
@@ -256,8 +273,8 @@ a { color: var(--lime); text-decoration: none; }
   padding: 16px; border-radius: 14px; border: 1px solid var(--line);
   background: rgba(255,255,255,0.03); cursor: pointer; transition: border-color 0.15s;
 }
-.opt-card:hover { border-color: rgba(201,247,58,0.5); }
-.opt-card.sel { border-color: var(--lime); background: rgba(201,247,58,0.09); }
+.opt-card:hover { border-color: rgba(62, 229, 134,0.5); }
+.opt-card.sel { border-color: var(--lime); background: rgba(62, 229, 134,0.09); }
 .opt-card .t { font-weight: 700; }
 .opt-card .d { color: var(--muted); font-size: 0.85rem; }
 .review-row { display: flex; justify-content: space-between; padding: 9px 0; border-bottom: 1px dashed var(--line); }
@@ -271,7 +288,7 @@ input[type="text"], input[type="email"], input[type="password"], select, textare
   background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--line);
 }
 textarea { resize: vertical; }
-input:focus, textarea:focus { outline: 2px solid rgba(201, 247, 58, 0.5); border-color: transparent; }
+input:focus, textarea:focus { outline: 2px solid rgba(62, 229, 134, 0.5); border-color: transparent; }
 .form-error { color: var(--danger); font-size: 0.9rem; min-height: 1.3em; margin: 6px 0; }
 
 /* ---------- dashboard shared ---------- */
@@ -317,9 +334,9 @@ table.data tr:hover td { background: rgba(255,255,255,0.025); }
   background: rgba(255,255,255,0.025); cursor: pointer; position: relative;
   transition: background 0.1s, border-color 0.1s;
 }
-.cal-cell:hover { border-color: rgba(201,247,58,0.6); }
-.cal-cell.avail { background: rgba(201, 247, 58, 0.22); border-color: rgba(201,247,58,0.55); }
-.cal-cell.pending-add { background: rgba(201, 247, 58, 0.45); border-color: var(--lime); }
+.cal-cell:hover { border-color: rgba(62, 229, 134,0.6); }
+.cal-cell.avail { background: rgba(62, 229, 134, 0.22); border-color: rgba(62, 229, 134,0.55); }
+.cal-cell.pending-add { background: rgba(62, 229, 134, 0.45); border-color: var(--lime); }
 .cal-cell.pending-remove { background: rgba(255,107,107,0.18); border-color: rgba(255,107,107,0.5); }
 .cal-cell.booked {
   background: var(--lime); border-color: var(--lime); cursor: default;
@@ -363,4 +380,24 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
   .opt-grid { grid-template-columns: 1fr; }
   .section-head { flex-direction: column; align-items: flex-start; }
   .dash-cols { grid-template-columns: 1fr; }
+}
+
+/* ---------- coach profile page ---------- */
+.profile-hero { display: grid; grid-template-columns: 0.9fr 1.1fr; gap: 44px; align-items: start; padding: 44px 0 20px; }
+.profile-gallery .main {
+  aspect-ratio: 4/4.2; border-radius: 24px; overflow: hidden; border: 1px solid var(--line);
+  box-shadow: 0 30px 80px rgba(0, 0, 0, 0.5), 0 0 60px rgba(62, 229, 134, 0.08);
+}
+.profile-gallery .main img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.profile-thumbs { display: flex; gap: 10px; margin-top: 12px; }
+.profile-thumbs img {
+  width: 72px; height: 72px; object-fit: cover; border-radius: 12px; cursor: pointer;
+  border: 2px solid transparent; opacity: 0.7; transition: opacity .15s, border-color .15s;
+}
+.profile-thumbs img.on { border-color: var(--lime); opacity: 1; }
+.profile-price { display: flex; align-items: baseline; gap: 10px; margin: 18px 0 8px; }
+.coach-card { cursor: pointer; }
+@media (max-width: 860px) {
+  .profile-hero { grid-template-columns: 1fr; gap: 24px; padding-top: 24px; }
+  .profile-gallery .main { aspect-ratio: 4/3.2; }
 }

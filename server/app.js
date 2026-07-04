@@ -79,17 +79,30 @@ app.use((req, res, next) => {
 
 app.use('/api', require('./routes/api'));
 
-// Admin-uploaded coach photos, served from the persistent data disk.
-app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { maxAge: '1h' }));
+// Admin-uploaded coach photos, served from the persistent data disk. Uploads
+// get a unique random filename each time, so they are safe to cache for long.
+app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { maxAge: '7d' }));
 
-// Static assets + the four pages (kept as clean paths).
+// Static assets + the pages (kept as clean paths). Code files (html/js/css)
+// use no-cache: the browser keeps a copy but revalidates on every load (a cheap
+// 304 when unchanged), so a deploy is visible immediately instead of visitors
+// running up to an hour of stale JS. Heavy rarely-changing assets cache 7 days.
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
-app.use(express.static(PUBLIC_DIR, { maxAge: '1h', extensions: ['html'] }));
+app.use(express.static(PUBLIC_DIR, {
+  extensions: ['html'],
+  setHeaders(res, filePath) {
+    res.setHeader('Cache-Control',
+      /\.(html|js|css)$/.test(filePath) ? 'no-cache' : 'public, max-age=604800');
+  },
+}));
 const page = (file) => (req, res) => res.sendFile(path.join(PUBLIC_DIR, file));
 app.get('/login', page('login.html'));
 app.get('/coach', page('coach.html'));
 app.get('/admin', page('admin.html'));
 app.get('/my-bookings', page('my-bookings.html'));
+// Public coach profile pages, e.g. /coaches/otto-ukkonen (the client script
+// resolves the slug; an unknown slug renders its own not-found state).
+app.get('/coaches/:slug', page('coach-profile.html'));
 
 app.use((req, res) => res.status(404).sendFile(path.join(PUBLIC_DIR, '404.html')));
 

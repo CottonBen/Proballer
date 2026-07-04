@@ -132,14 +132,23 @@ function migrate(db, nowISO) {
   // Add any post-launch coaches to existing databases (idempotent by slug).
   ensureExtraCoaches(db, nowISO());
 
-  // One-time: give every coach without reviews a set of sample reviews (covers
-  // live databases where the demo data was removed, and newly-added coaches).
-  // Bumped to v2 when Otto Ukkonen was added; seedReviews skips coaches that
-  // already have reviews, so existing coaches keep theirs and only new ones get
-  // seeded. A review the admin deletes never silently comes back.
+  // One-time spotlight re-shuffle: every coach EXCEPT Ben and Kalle appears in
+  // the homepage hero carousel. Marker-guarded so the admin's later manual
+  // featured-flag choices (in Manage coach) are never overridden on restart.
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'spotlight_v1'").get()) {
+    db.prepare("UPDATE coaches SET featured = 0 WHERE slug IN ('ben-cotton','kalle-sundman')").run();
+    db.prepare("UPDATE coaches SET featured = 1 WHERE slug NOT IN ('ben-cotton','kalle-sundman')").run();
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('spotlight_v1', ?)").run(nowISO());
+  }
+
+  // One-time: give coaches without reviews a set of sample reviews — but ONLY
+  // in demo/dev environments. A production site (DEMO_DATA=0) must never grow
+  // fabricated reviews; the marker is still set so this stays settled.
   if (!db.prepare("SELECT 1 FROM meta WHERE key = 'starter_reviews_v2'").get()) {
-    const { helsinkiDateOffset } = require('../server/db');
-    seedReviews(db, helsinkiDateOffset, Object.keys(REVIEWS_BY_SLUG));
+    if (process.env.DEMO_DATA !== '0') {
+      const { helsinkiDateOffset } = require('../server/db');
+      seedReviews(db, helsinkiDateOffset, Object.keys(REVIEWS_BY_SLUG));
+    }
     db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('starter_reviews_v2', ?)").run(nowISO());
   }
 }
@@ -192,7 +201,7 @@ function seed({ demo = true, reset = false } = {}) {
       JSON.stringify(['/assets/kalle-1.jpg', '/assets/kalle-2.jpg', '/assets/kalle-3.jpg']),
       JSON.stringify(['Helsinki', 'Espoo']),
       JSON.stringify(['midfielders', 'attackers']),
-      1, 20, 0, now);
+      0, 20, 0, now); // featured=0: Ben & Kalle stay out of the hero spotlight
 
     // Ben — first face of the site. His coach profile lives on the owner's
     // own (admin) account, so one login covers both roles.
@@ -204,7 +213,7 @@ function seed({ demo = true, reset = false } = {}) {
       JSON.stringify(['/assets/ben-1.jpg', '/assets/ben-2.jpg']),
       JSON.stringify(['Helsinki', 'Espoo', 'Vantaa']),
       JSON.stringify(['attackers', 'defenders']),
-      1, 10, 0, now);
+      0, 10, 0, now); // featured=0: Ben & Kalle stay out of the hero spotlight
   }
 
   // Post-launch coaches (e.g. Otto Ukkonen). migrate() handles existing DBs;

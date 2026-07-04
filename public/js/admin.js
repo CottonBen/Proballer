@@ -123,8 +123,8 @@ function renderCharts() {
   document.getElementById('charts').innerHTML = `
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">Visitors — last 90 days</h3></div>
-      ${legend([['#c9f73a', 'page views per day']])}
-      ${lineChart([s.pageviews], range, ['#c9f73a'])}
+      ${legend([['#3ee586', 'page views per day']])}
+      ${lineChart([s.pageviews], range, ['#3ee586'])}
     </div>
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">Sessions completed</h3></div>
@@ -133,8 +133,8 @@ function renderCharts() {
     </div>
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">Booking funnel</h3></div>
-      ${legend([['#7fb5fb', 'started booking'], ['#c9f73a', 'finished booking']])}
-      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#7fb5fb', '#c9f73a'])}
+      ${legend([['#7fb5fb', 'started booking'], ['#3ee586', 'finished booking']])}
+      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#7fb5fb', '#3ee586'])}
     </div>`;
 }
 
@@ -215,7 +215,8 @@ async function openCoachEditor(id) {
   bd.classList.add('open');
   box.innerHTML = '<p class="muted">Loading…</p>';
 
-  let coach = { name: '', bio: '', positions: [], locations: [], featured: false, photos: [],
+  // New coaches default INTO the hero spotlight (featured) — untick to hide.
+  let coach = { name: '', bio: '', positions: [], locations: [], featured: true, photos: [],
     account: { hasLogin: false, email: null, isAdmin: false } };
   if (id) {
     try { coach = await API.get(`/admin/coaches/${id}`); }

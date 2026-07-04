@@ -24,13 +24,16 @@ function buildSlides() {
       html: `
         <div>
           <div class="kicker">Coach spotlight</div>
-          <h1>${esc(c.name)}</h1>
+          <h1><a href="/coaches/${encodeURIComponent(c.slug)}" style="color:inherit">${esc(c.name)}</a></h1>
           <div class="slide-tags">
             ${c.positions.map((p) => `<span class="chip">${esc(cap(p))}</span>`).join('')}
             ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join('')}
           </div>
           <p class="bio">${esc(c.bio)}</p>
-          <button class="btn btn-primary" data-book="${c.id}">Book a session with ${esc(c.name.split(' ')[0])}</button>
+          <div style="display:flex;gap:10px;flex-wrap:wrap">
+            <button class="btn btn-primary" data-book="${c.id}">Book a session with ${esc(c.name.split(' ')[0])}</button>
+            <a class="btn btn-ghost" href="/coaches/${encodeURIComponent(c.slug)}">Full profile</a>
+          </div>
         </div>`,
     });
   }
@@ -134,12 +137,19 @@ function buildCoachGrid() {
           ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join(' ')}
         </div>
         <p class="bio">${esc(c.bio)}</p>
+        <a class="small" href="/coaches/${encodeURIComponent(c.slug)}">Full profile →</a>
         <div class="reviews-panel" id="reviews-${c.id}" hidden></div>
         <div class="foot">
           <span>${slidePriceHTML()}</span>
           <button class="btn btn-primary btn-sm" data-book="${c.id}">Book a session</button>
         </div>
       </div>`;
+    // The whole card opens the coach's profile — except the interactive bits
+    // (Book, Read reviews, links), which keep their own behavior.
+    card.addEventListener('click', (e) => {
+      if (e.target.closest('a,button,.reviews-panel')) return;
+      location.href = '/coaches/' + encodeURIComponent(c.slug);
+    });
     grid.appendChild(card);
   }
 }

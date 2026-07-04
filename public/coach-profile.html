@@ -1,0 +1,52 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Coach — Proballers Coaching Finland</title>
+  <meta name="description" content="Coach profile — book a 1-on-1 football session.">
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="sale-banner" id="sale-banner" hidden></div>
+
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main>
+    <div class="wrap" id="profile-root">
+      <p class="muted" style="padding:40px 0">Loading coach…</p>
+    </div>
+  </main>
+
+  <footer>
+    <div class="wrap">
+      <div>
+        <strong>Proballers Coaching Finland</strong><br>
+        Helsinki · Espoo · Vantaa
+      </div>
+      <div>1-on-1 coaching for young footballers.<br>Working name — official name coming soon.</div>
+    </div>
+  </footer>
+
+  <!-- Booking wizard modal (same markup as the landing page) -->
+  <div class="modal-backdrop" id="wizard-backdrop">
+    <div class="modal" role="dialog" aria-modal="true" aria-label="Book a session">
+      <button class="close" id="wizard-close" aria-label="Close">×</button>
+      <div id="wizard-body"></div>
+    </div>
+  </div>
+
+  <script src="/js/common.js"></script>
+  <script src="/js/coach-profile.js"></script>
+  <script src="/js/booking.js"></script>
+</body>
+</html>
