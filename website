@@ -1,0 +1,4 @@
+cd /Users/user/Downloads/proballers-coaching-finland
+git remote add origin https://github.com/CottonBen/Proballer.git
+git branch -M main
+git push -u origin main
