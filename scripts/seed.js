@@ -221,6 +221,25 @@ function migrate(db, nowISO) {
     db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('bios_bilingual_v1', ?)").run(nowISO());
   }
 
+  // One-time: English bios for coaches whose Finnish bio was customised in the
+  // admin UI (so bios_bilingual_v1 above skipped them) or who were added through
+  // the admin panel (no seed row). Only fills bio_en where it is still empty —
+  // never overwrites an English bio the admin has since typed in. Keyed by slug,
+  // NOT by matching the Finnish text, so it works regardless of later edits.
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'bios_en_backfill_v2'").get()) {
+    const fill = db.prepare("UPDATE coaches SET bio_en = ? WHERE slug = ? AND bio_en = ''");
+    fill.run(
+      'Kalle is a full-back who plays for Valtti 1946 and has also spent many years ' +
+      'in midfield. He has several seasons in the national championship league ' +
+      '(SM-sarja) behind him, along with the experience and know-how of what ' +
+      'continuous development takes.', 'kalle-sundman');
+    fill.run(
+      "Aarni plays for EPS's men's first team in Ykkönen, the men's First Division. " +
+      'A young centre-back, he has previously also played in midfield in Honka\'s ' +
+      'BSM and P15 academy.', 'aarni-kanerva');
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('bios_en_backfill_v2', ?)").run(nowISO());
+  }
+
   // One-time spotlight re-shuffle: every coach EXCEPT Ben and Kalle appears in
   // the homepage hero carousel. Marker-guarded so the admin's later manual
   // featured-flag choices (in Manage coach) are never overridden on restart.

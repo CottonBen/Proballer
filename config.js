@@ -46,9 +46,9 @@ module.exports = {
 
   pricing: {
     currency: 'EUR',
-    sessionPrice: 60,       // one-hour on-pitch session, full price
-    onlineSessionPrice: 60, // Game IQ video session — same price as on-pitch
-    salePercent: 50,        // launch sale — set to 0 to end the sale
+    sessionPrice: 80,       // one-hour on-pitch session, full price
+    onlineSessionPrice: 80, // Game IQ video session — same price as on-pitch
+    salePercent: 50,        // launch sale (half price = 40 €) — set to 0 to end
     saleLabel: 'LAUNCH OFFER',
     // Small-business VAT exemption (arvonlisäverolaki 3 §). If the business
     // registers for VAT, set vatPercent to the current rate (25.5).
