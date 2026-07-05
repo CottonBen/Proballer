@@ -7,6 +7,12 @@ services:
     plan: starter          # small paid plan => persistent disk for the database
     buildCommand: npm ci
     startCommand: npm start
+    # Custom domain. Adding it here (or in the Render dashboard → Settings →
+    # Custom Domains) makes Render provision a free Let's Encrypt certificate
+    # once the DNS records below point at Render. See DOMAIN-SETUP.md.
+    domains:
+      - proballers.fi
+      - www.proballers.fi
     envVars:
       - key: NODE_ENV
         value: production
