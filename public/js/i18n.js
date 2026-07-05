@@ -308,6 +308,61 @@ const I18N_DICT = {
   "coachdash.reviews.intro": { fi: "Mitä pelaajat ja huoltajat sanovat treeneistäsi.", en: "What players and parents say about your sessions." },
   "coachdash.reviews.empty": { fi: "Ei vielä arvosteluja — ne ilmestyvät tähän, kun asiakkaasi jättävät ensimmäisen.", en: "No reviews yet — they’ll appear here once your clients leave one." },
 
+  // --- coach mobile app (/app) ---
+  "app.title": { fi: "Valmentajasovellus — Proballers Coaching", en: "Coach app — Proballers Coaching" },
+  "app.brand": { fi: "PROBALLERS", en: "PROBALLERS" },
+  "app.greeting": { fi: "Hei, {name} 👋", en: "Hey, {name} 👋" },
+  "app.loading": { fi: "Ladataan…", en: "Loading…" },
+  "app.error": { fi: "Tietojen lataus epäonnistui. Vedä alas päivittääksesi.", en: "Couldn’t load your data. Pull down to retry." },
+  "app.notcoach.title": { fi: "Vain valmentajille", en: "Coaches only" },
+  "app.notcoach.body": { fi: "Tämä sovellus on Proballers-valmentajille. Kirjaudu sisään valmentajatunnuksillasi.", en: "This app is for Proballers coaches. Sign in with your coach account." },
+  "app.notcoach.login": { fi: "Kirjaudu sisään", en: "Log in" },
+  // nav
+  "app.nav.home": { fi: "Koti", en: "Home" },
+  "app.nav.sessions": { fi: "Treenit", en: "Sessions" },
+  "app.nav.calendar": { fi: "Kalenteri", en: "Calendar" },
+  "app.nav.alerts": { fi: "Ilmoitukset", en: "Alerts" },
+  "app.nav.profile": { fi: "Profiili", en: "Profile" },
+  // stats
+  "app.stat.upcoming": { fi: "Tulevat", en: "Upcoming" },
+  "app.stat.completed": { fi: "Pidetyt", en: "Completed" },
+  "app.stat.cancelled": { fi: "Perutut", en: "Cancelled" },
+  // home
+  "app.home.upcoming_title": { fi: "Tulevat treenit", en: "Upcoming sessions" },
+  "app.home.upcoming_empty": { fi: "Ei tulevia treenejä", en: "No upcoming sessions" },
+  "app.home.upcoming_empty_sub": { fi: "Uudet varaukset ilmestyvät tänne", en: "New bookings will appear here" },
+  "app.home.seeall": { fi: "Näytä kaikki treenit →", en: "See all sessions →" },
+  // sessions
+  "app.sessions.title": { fi: "Treenit", en: "Sessions" },
+  "app.sessions.empty": { fi: "Ei treenejä täällä", en: "No sessions here" },
+  "app.session.earn": { fi: "Ansaitset {amount}", en: "You earn {amount}" },
+  "app.session.earn_est": { fi: "Ansaitset n. {amount}", en: "You earn ~{amount}" },
+  "app.session.online": { fi: "Etätreeni", en: "Online session" },
+  "app.session.mark_done": { fi: "Merkitse pidetyksi", en: "Mark completed" },
+  "app.session.cancel": { fi: "Peru treeni", en: "Cancel session" },
+  "app.session.cancel_confirm": { fi: "Perutaanko tämä treeni? Asiakkaalle ilmoitetaan ja hän saa ilmaisen treenikerran.", en: "Cancel this session? The client is notified and gets a free-session credit." },
+  "app.session.done_future": { fi: "Voit merkitä pidetyksi vasta, kun treeni on ollut.", en: "You can mark it completed once the session has taken place." },
+  "app.session.done_toast": { fi: "Merkitty pidetyksi.", en: "Marked as completed." },
+  "app.session.cancel_toast": { fi: "Treeni peruttu — asiakkaalle ilmoitettu.", en: "Session cancelled — the client has been notified." },
+  // calendar
+  "app.calendar.no_sessions": { fi: "Ei treenejä tänä päivänä", en: "No sessions on this day" },
+  "app.calendar.legend": { fi: "Vihreä piste = treeni", en: "Green dot = a session" },
+  // alerts
+  "app.alerts.title": { fi: "Ilmoitukset", en: "Notifications" },
+  "app.alerts.unread": { fi: "{n} lukematta", en: "{n} unread" },
+  "app.alerts.markall": { fi: "Merkitse kaikki luetuiksi", en: "Mark all read" },
+  "app.alerts.empty": { fi: "Ei ilmoituksia vielä", en: "No notifications yet" },
+  "app.alerts.view": { fi: "Näytä treenit →", en: "View sessions →" },
+  // profile
+  "app.profile.stats": { fi: "Treenitilastot", en: "Session stats" },
+  "app.profile.tier_title": { fi: "Taso ja ansiot", en: "Tier & earnings" },
+  "app.profile.tier": { fi: "Taso {n}", en: "Tier {n}" },
+  "app.profile.earned_month": { fi: "Ansaittu {month}", en: "Earned in {month}" },
+  "app.profile.per_session": { fi: "{amount} / treeni", en: "{amount} / session" },
+  "app.profile.manage": { fi: "Hallitse kalenteria ja vapaita aikoja", en: "Manage calendar & availability" },
+  "app.profile.website": { fi: "Proballers-verkkosivusto", en: "Proballers website" },
+  "app.profile.logout": { fi: "Kirjaudu ulos", en: "Log out" },
+
   // --- admin dashboard ---
   "admin.title": { fi: "Ylläpito — Proballers Coaching Finland", en: "Admin — Proballers Coaching Finland" },
   "admin.heading": { fi: "Komentokeskus", en: "Mission control" },

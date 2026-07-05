@@ -599,7 +599,7 @@ router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
   autoCompleteBookings();
   const rows = db.prepare(`
-    SELECT b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
+    SELECT b.id, b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
            b.price_cents, b.total_cents, b.credit_applied, u.name AS customer, u.email AS customer_email
     FROM bookings b JOIN users u ON u.id = b.customer_id
     WHERE b.coach_id = ?
@@ -622,6 +622,7 @@ router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
       r.earn_estimated = false;
     }
     delete r.price_cents; // internal to the payout basis calc
+    delete r.id;          // internal row id — only needed for the estimate tiebreak above
   }
   res.json(rows);
 });
