@@ -9,10 +9,11 @@ services:
     startCommand: npm start
     # Custom domain. Adding it here (or in the Render dashboard → Settings →
     # Custom Domains) makes Render provision a free Let's Encrypt certificate
-    # once the DNS records below point at Render. See DOMAIN-SETUP.md.
+    # once the DNS records point at Render. Registered at Gandi; DNS managed in
+    # Gandi's free LiveDNS. See DOMAIN-SETUP.md.
     domains:
-      - proballers.fi
-      - www.proballers.fi
+      - proballerscoaching.com
+      - www.proballerscoaching.com
     envVars:
       - key: NODE_ENV
         value: production
