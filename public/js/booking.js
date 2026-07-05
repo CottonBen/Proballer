@@ -272,6 +272,7 @@ async function renderReview() {
       const result = await API.post('/bookings', {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
         position: W.position, focus: W.focus, location: W.location,
+        lang: I18N.lang, // the invoice is generated in this language
       });
       W.step = 5;
       renderSuccess(result);
@@ -333,7 +334,8 @@ function renderAuthPanel() {
     const err = panel.querySelector('#auth-error');
     err.textContent = '';
     try {
-      const payload = { email: fd.get('email'), password: fd.get('password') };
+      // lang: invoices + emails follow the language the customer uses the site in
+      const payload = { email: fd.get('email'), password: fd.get('password'), lang: I18N.lang };
       if (mode === 'signup') payload.name = fd.get('name');
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       if (res.user.role !== 'customer' && res.user.role !== 'admin') {

@@ -30,8 +30,9 @@ async function sendMail({ to, subject, html }) {
   return { delivered: true };
 }
 
-function sendInvoiceEmail({ to, number, html }) {
-  return sendMail({ to, subject: `${config.siteName} — invoice ${number}`, html });
+function sendInvoiceEmail({ to, number, html, lang }) {
+  const { tr } = require('./i18n');
+  return sendMail({ to, subject: tr(lang, 'email.invoiceSubject', { siteName: config.siteName, number }), html });
 }
 
 module.exports = { sendMail, sendInvoiceEmail, smtpConfigured: () => Boolean(transport) };

@@ -183,6 +183,13 @@ function migrate(db, nowISO) {
     db.exec("ALTER TABLE coaches ADD COLUMN bio_en TEXT NOT NULL DEFAULT ''");
   }
 
+  // Per-user language for invoices/emails ('fi' default — Finnish-first site).
+  // Updated from the client on signup, login and booking.
+  const userCols = db.prepare('PRAGMA table_info(users)').all().map(c => c.name);
+  if (!userCols.includes('lang')) {
+    db.exec("ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'fi'");
+  }
+
   // Kalle is both an admin and a coach (his coach profile stays linked).
   db.prepare("UPDATE users SET role = 'admin' WHERE email = 'kalle.sundman@icloud.com' AND role = 'coach'").run();
 

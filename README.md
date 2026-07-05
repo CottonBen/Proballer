@@ -45,15 +45,18 @@ clearly banner-flagged in the admin) so every screen has something to show.
 | Coach | `/coach` — availability calendar + filters |
 | Customer | `/my-bookings` — self-signup on the site |
 
-The two configured accounts (owner + Kalle) use the credentials you specified.
-An extra coach login exists for Ben: `ben@proballers.fi` / `ChangeMe123!` — **change it**.
+The two configured accounts (owner + Kalle) use the credentials from the
+`ADMIN_*` / `COACH_*` env vars. Ben's coach profile lives on the owner's own
+login — there is no separate account for it.
 
 ### Credentials & security (read before going live)
 
-- **Change the passwords for production.** The defaults are baked into the source for
-  local convenience. On the server, set `ADMIN_EMAIL` / `ADMIN_PASSWORD` and
-  `COACH_EMAIL` / `COACH_PASSWORD` env vars *before the first boot* so the seeded
-  accounts use your real secrets (the database only ever stores bcrypt hashes).
+- **No password lives in the source.** Set `ADMIN_EMAIL` / `ADMIN_PASSWORD` and
+  `COACH_EMAIL` / `COACH_PASSWORD` env vars (in `.env` locally, in the host's
+  environment in production) *before the first boot* so the seeded accounts use
+  your real secrets. If a password var is missing, a strong random one is
+  generated and printed to the server log once. The database only ever stores
+  bcrypt hashes.
 - **Rotate any time from inside the app:** any logged-in user can `POST /api/auth/change-password`
   with `{currentPassword, newPassword}` (this also signs out other sessions).
 - Because you pasted your Google account password into a chat, change that password too —

@@ -28,7 +28,8 @@ function safeNext(raw) {
     const err = document.getElementById('auth-error');
     err.textContent = '';
     try {
-      const payload = { email: fd.get('email'), password: fd.get('password') };
+      // lang: invoices + emails follow the language the customer uses the site in
+      const payload = { email: fd.get('email'), password: fd.get('password'), lang: I18N.lang };
       if (mode === 'signup') payload.name = fd.get('name');
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       location.href = next || DASH_FOR_ROLE[res.user.role] || '/';

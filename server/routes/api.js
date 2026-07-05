@@ -10,6 +10,10 @@ const { createSession, destroySession, requireRole, loginThrottle } = require('.
 const { createInvoiceForBooking, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
 const tiers = require('../tiers');
+const i18n = require('../i18n');
+
+// Language preference sent by the client ('fi' | 'en'); anything else -> null.
+const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
 
 const router = express.Router();
 const WINDOWS = { d7: 7, d30: 30, d90: 90 };
@@ -104,35 +108,43 @@ function slotHasEnded(date, hour) {
 //  - a PAID booking cancelled -> grant ONE new goodwill credit (deduped by code)
 //  - a FREE (credit-funded) booking cancelled -> return the credit that paid for
 //    it to "unused" instead of minting a second one (no free-session farming).
-function cancelWithCredit(booking, actorLabel) {
+function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
   db.prepare("UPDATE bookings SET status = 'cancelled', completed_at = NULL WHERE id = ?").run(booking.id);
   // Remember the pre-void invoice status so reactivation can restore paid vs sent.
   db.prepare("UPDATE invoices SET prev_status = status, status = 'void' WHERE booking_id = ? AND status != 'void'")
     .run(booking.id);
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
-  const customer = db.prepare('SELECT id, name, email FROM users WHERE id = ?').get(booking.customer_id);
+  const customer = db.prepare('SELECT id, name, email, lang FROM users WHERE id = ?').get(booking.customer_id);
 
-  let creditMsg;
+  let creditKey;
   if (booking.credit_applied) {
     // Free session cancelled — hand the customer's credit back, don't create one.
     db.prepare('UPDATE credits SET used_by_booking_id = NULL WHERE used_by_booking_id = ?').run(booking.id);
-    creditMsg = 'Your free-session credit is available again — use it on any coach.';
+    creditKey = 'email.credit.returned';
   } else {
     // Paid session cancelled — one goodwill credit, but never a duplicate.
     db.prepare(`INSERT INTO credits (customer_id, reason, created_at)
       SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM credits WHERE reason = ?)`)
       .run(customer.id, `cancelled:${booking.code}`, nowISO(), `cancelled:${booking.code}`);
-    creditMsg = 'To make it right, your next session with ANY coach is free — the credit is ' +
-      'applied automatically when you book.';
+    creditKey = 'email.credit.granted';
   }
-  const msg = `Your session with ${coach.name} on ${booking.date} at ` +
-    `${String(booking.hour).padStart(2, '0')}:00 was cancelled by ${actorLabel}. We're sorry! ${creditMsg}`;
+  // The stored notification stays ENGLISH-canonical: the frontend translates it
+  // at display time (pattern match in public/js/i18n.js), so it always follows
+  // the language the customer is CURRENTLY browsing in.
+  const msgFor = (lang) => i18n.tr(lang, 'email.cancelledBody', {
+    actor: i18n.tr(lang, actorKey === 'coach' ? 'email.actor.coach' : 'email.actor.team'),
+    coach: coach.name, date: i18n.localDate(lang, booking.date),
+    hour: String(booking.hour).padStart(2, '0'),
+    creditMsg: i18n.tr(lang, creditKey),
+  });
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-    .run(customer.id, msg, nowISO());
+    .run(customer.id, msgFor('en'), nowISO());
+  // The email is a one-shot document — send it in the customer's language.
   require('../mailer').sendMail({
     to: customer.email,
-    subject: `${config.siteName} — session cancelled`,
-    html: `<p>Hi ${escHtml(customer.name)},</p><p>${escHtml(msg)}</p>`,
+    subject: i18n.tr(customer.lang, 'email.cancelledSubject', { siteName: config.siteName }),
+    html: `<p>${escHtml(i18n.tr(customer.lang, 'email.greeting', { name: customer.name }))}</p>`
+      + `<p>${escHtml(msgFor(customer.lang))}</p>`,
   }).catch(err => console.error('[mailer]', err.message));
 }
 
@@ -303,8 +315,8 @@ router.post('/auth/signup', loginThrottle, (req, res) => {
   if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
-  const info = db.prepare('INSERT INTO users (email, password_hash, name, role, created_at) VALUES (?,?,?,?,?)')
-    .run(email, bcrypt.hashSync(password, 10), name, 'customer', nowISO());
+  const info = db.prepare('INSERT INTO users (email, password_hash, name, role, lang, created_at) VALUES (?,?,?,?,?,?)')
+    .run(email, bcrypt.hashSync(password, 10), name, 'customer', readLang(req.body) || 'fi', nowISO());
   createSession(res, Number(info.lastInsertRowid));
   recordEvent(req, 'signup', {});
   res.json({ user: { id: Number(info.lastInsertRowid), name, email, role: 'customer' } });
@@ -318,6 +330,8 @@ router.post('/auth/login', loginThrottle, (req, res) => {
     return res.status(401).json({ error: 'Wrong email or password.' });
   }
   createSession(res, user.id);
+  const lang = readLang(req.body);
+  if (lang && lang !== user.lang) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(lang, user.id);
   recordEvent(req, 'login', { role: user.role });
   res.json({ user: { id: user.id, name: user.name, email: user.email, role: user.role } });
 });
@@ -436,6 +450,10 @@ router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
   if (credit) {
     db.prepare('UPDATE credits SET used_by_booking_id = ? WHERE id = ?').run(bookingId, credit.id);
   }
+
+  // The invoice renders in the language the customer is booking in (fi|en).
+  const langPref = readLang(req.body);
+  if (langPref) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(langPref, req.user.id);
 
   const invoice = createInvoiceForBooking(bookingId);
   recordEvent(req, 'booking_completed', { coachId, code });
@@ -663,7 +681,7 @@ router.post('/coach/bookings/:code/status', requireRole('coach', 'admin'), (req,
   }
 
   if (to === 'cancelled') {
-    cancelWithCredit(booking, 'your coach');
+    cancelWithCredit(booking, 'coach');
   } else if (booking.status === 'cancelled') {
     const err = reactivateBooking(booking);
     if (err) return res.status(409).json({ error: err });
@@ -992,7 +1010,7 @@ router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
 
   if (to === 'cancelled') {
     // Same customer treatment as a coach cancel: void invoice, credit, notify.
-    cancelWithCredit(booking, 'the Proballers team');
+    cancelWithCredit(booking, 'team');
   } else if (booking.status === 'cancelled') {
     const err = reactivateBooking(booking);
     if (err) return res.status(409).json({ error: err });
