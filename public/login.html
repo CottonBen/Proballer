@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="fi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Log in — Proballers Coaching Finland</title>
+  <title data-i18n="login.title">Kirjaudu sisään — Proballers Coaching Finland</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -21,32 +21,32 @@
   <main>
     <section class="section" style="min-height:70vh;display:flex;align-items:center">
       <div class="wrap" style="max-width:460px;width:100%">
-        <h1 style="font-size:2.6rem">Welcome back</h1>
-        <p class="muted">One door for everyone — players, coaches and admin.
-          You'll land on your own page.</p>
+        <h1 style="font-size:2.6rem" data-i18n="login.heading">Tervetuloa takaisin</h1>
+        <p class="muted" data-i18n="login.intro">Yksi ovi kaikille — pelaajille, valmentajille ja
+          ylläpidolle. Päädyt suoraan omalle sivullesi.</p>
         <div class="card">
           <div style="display:flex;gap:8px;margin-bottom:16px">
-            <button class="btn btn-sm btn-primary" data-tab="login">Log in</button>
-            <button class="btn btn-sm btn-ghost" data-tab="signup">Create account</button>
+            <button class="btn btn-sm btn-primary" data-tab="login" data-i18n="login.action.login">Kirjaudu sisään</button>
+            <button class="btn btn-sm btn-ghost" data-tab="signup" data-i18n="login.action.signup">Luo tili</button>
           </div>
           <form id="auth-form">
-            <label class="f" id="f-name" hidden><span>Player / parent name</span>
+            <label class="f" id="f-name" hidden><span data-i18n="login.form.name">Pelaajan / huoltajan nimi</span>
               <input type="text" name="name" autocomplete="name"></label>
-            <label class="f"><span>Email</span>
+            <label class="f"><span data-i18n="login.form.email">Sähköposti</span>
               <input type="email" name="email" required autocomplete="email"></label>
-            <label class="f"><span>Password</span>
+            <label class="f"><span data-i18n="login.form.password">Salasana</span>
               <input type="password" name="password" required autocomplete="current-password"></label>
             <div class="form-error" id="auth-error"></div>
-            <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn">Log in</button>
+            <button class="btn btn-primary" type="submit" style="width:100%" id="submit-btn" data-i18n="login.action.login">Kirjaudu sisään</button>
           </form>
         </div>
-        <p class="small muted" style="margin-top:14px">New players: creating an account takes ten
-          seconds and lets you book sessions and see your invoices.</p>
+        <p class="small muted" style="margin-top:14px" data-i18n="login.signup.note">Uusille pelaajille:
+          tilin luominen vie kymmenen sekuntia, ja sen jälkeen voit varata treenejä ja nähdä laskusi.</p>
       </div>
     </section>
   </main>
 
-  <script src="/js/common.js"></script>
+  <script src="/js/i18n.js"></script>  <script src="/js/common.js"></script>
   <script src="/js/login.js"></script>
 </body>
 </html>

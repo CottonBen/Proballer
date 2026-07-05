@@ -72,6 +72,13 @@ const EXTRA_COACHES = [
       'Valtin maalivahtivalmentajana toukokuusta 2025 lähtien, ja tällä hetkellä hän toimii ' +
       'kahden joukkueen maalivahtivalmentajana. Lisäksi hän on suorittanut Suomen Palloliiton ' +
       'järjestämän Maalivahti D -valmentajakoulutuksen.',
+    bio_en: 'Otto Ukkonen is an 18-year-old goalkeeper who plays for Puotinkylän Valtti. ' +
+      'He has gathered playing experience over several years in the B and A junior age groups ' +
+      'as well as in men\'s Kolmonen (Third Division) matches. His strengths as a goalkeeper ' +
+      'are covering the space behind the defensive line and 1-on-1 situations. Otto has worked ' +
+      'as Puotinkylän Valtti\'s goalkeeper coach since May 2025, and he currently coaches the ' +
+      'goalkeepers of two teams. He has also completed the Goalkeeper D coaching course run by ' +
+      'the Football Association of Finland.',
     photos: ['/assets/otto-1.jpg', '/assets/otto-2.jpg', '/assets/otto-3.jpg'],
     locations: ['Helsinki'],
     positions: ['goalkeepers'],
@@ -82,13 +89,70 @@ const EXTRA_COACHES = [
 // Insert any post-launch coaches that don't exist yet (idempotent by slug).
 function ensureExtraCoaches(db, nowStr) {
   const ins = db.prepare(`INSERT OR IGNORE INTO coaches
-    (user_id, name, slug, bio, photos, locations, positions, featured, display_order, demo, created_at)
-    VALUES (NULL,?,?,?,?,?,?,?,?,0,?)`);
+    (user_id, name, slug, bio, bio_en, photos, locations, positions, featured, display_order, demo, created_at)
+    VALUES (NULL,?,?,?,?,?,?,?,?,?,0,?)`);
   for (const c of EXTRA_COACHES) {
-    ins.run(c.name, c.slug, c.bio, JSON.stringify(c.photos),
+    ins.run(c.name, c.slug, c.bio, c.bio_en || '', JSON.stringify(c.photos),
       JSON.stringify(c.locations), JSON.stringify(c.positions), c.featured, c.order, nowStr);
   }
 }
+
+// Bilingual bio texts for coaches that were seeded before the bio_en column
+// existed. `source` must EXACTLY match the stored bio — if the admin has edited
+// a bio since seeding, we leave it alone (a stale translation is worse than the
+// automatic fall-back to the Finnish text). `fi`/`en` are the two versions.
+const BIO_I18N = [
+  { slug: 'kalle-sundman',
+    source: 'Kalle on 17 vuotias laitapuolustaja, joka on pelannut myös monia vuosia keskikentällä. ' +
+      'Kallella on alla monia kausia SM sarjassa ja hänellä on kokemusta ja tietoa siitä mitä ' +
+      'jatkuvaan kehitykseen tarvitaan.',
+    en: 'Kalle is a 17-year-old full-back who has also played in midfield for many years. ' +
+      'He has several seasons in the Finnish national junior league behind him, and he has ' +
+      'first-hand experience and knowledge of what continuous development takes.' },
+  { slug: 'otto-ukkonen',
+    source: EXTRA_COACHES[0].bio,
+    en: EXTRA_COACHES[0].bio_en },
+  { slug: 'ben-cotton',
+    source: 'Ben plays football in Somerset for Millfield School. He has previously played for ' +
+      'FC Honka before his move to the UK. Ben is a central defender and mainly coaches ' +
+      'attackers and defenders.',
+    fi: 'Ben pelaa jalkapalloa Somersetissa Millfield Schoolin joukkueessa. Ennen muuttoaan ' +
+      'Isoon-Britanniaan hän pelasi FC Hongassa. Ben on toppari, ja hän valmentaa pääasiassa ' +
+      'hyökkääjiä ja puolustajia.',
+    en: 'Ben plays football in Somerset for Millfield School. He has previously played for ' +
+      'FC Honka before his move to the UK. Ben is a central defender and mainly coaches ' +
+      'attackers and defenders.' },
+  { slug: 'eero-virtanen',
+    source: 'Eero is a goalkeeper specialist with ten seasons between the posts in the ' +
+      'Finnish lower divisions. His sessions build shot-stopping, footwork and the ' +
+      'bravery every young keeper needs.',
+    fi: 'Eero on maalivahtien erikoisvalmentaja, jolla on kymmenen kauden kokemus tolppien ' +
+      'välistä Suomen alemmilta sarjatasoilta. Hänen treeneissään rakennetaan torjuntoja, ' +
+      'jalkatyötä ja sitä rohkeutta, jota jokainen nuori maalivahti tarvitsee.',
+    en: 'Eero is a goalkeeper specialist with ten seasons between the posts in the ' +
+      'Finnish lower divisions. His sessions build shot-stopping, footwork and the ' +
+      'bravery every young keeper needs.' },
+  { slug: 'sofia-laine',
+    source: 'Sofia is an attacking midfielder who has represented Finland at youth level. ' +
+      'She coaches creative players — scanning, receiving between the lines and making ' +
+      'the final pass count.',
+    fi: 'Sofia on hyökkäävä keskikenttäpelaaja, joka on edustanut Suomea nuorisomaajoukkueissa. ' +
+      'Hän valmentaa luovia pelaajia — havainnointia, pallon vastaanottamista linjojen välissä ' +
+      'ja viimeisen syötön onnistumista.',
+    en: 'Sofia is an attacking midfielder who has represented Finland at youth level. ' +
+      'She coaches creative players — scanning, receiving between the lines and making ' +
+      'the final pass count.' },
+  { slug: 'mikko-korhonen',
+    source: 'Mikko spent his playing career as a no-nonsense centre back and now turns ' +
+      'promising juniors into composed defenders. Expect duels, defending the box and ' +
+      'plenty of communication.',
+    fi: 'Mikko pelasi uransa suoraviivaisena topparina ja tekee nyt lupaavista junioreista ' +
+      'rauhallisia puolustajia. Luvassa on kaksinkamppailuja, boksin puolustamista ja ' +
+      'runsaasti kommunikaatiota.',
+    en: 'Mikko spent his playing career as a no-nonsense centre back and now turns ' +
+      'promising juniors into composed defenders. Expect duels, defending the box and ' +
+      'plenty of communication.' },
+];
 
 // Seed sample reviews for the given coach slugs, skipping any coach that already
 // has reviews (so it never duplicates on top of real ones).
@@ -111,6 +175,14 @@ function seedReviews(db, helsinkiDateOffset, slugs) {
 // Idempotent structural migrations, run on every server start. Safe on both
 // fresh and existing databases.
 function migrate(db, nowISO) {
+  // Bilingual bios: `bio` is the Finnish canonical text, `bio_en` the English
+  // version ('' = frontend falls back to `bio`). Older databases predate the
+  // column, so add it here; fresh ones get it from the CREATE TABLE in db.js.
+  const coachCols = db.prepare('PRAGMA table_info(coaches)').all().map(c => c.name);
+  if (!coachCols.includes('bio_en')) {
+    db.exec("ALTER TABLE coaches ADD COLUMN bio_en TEXT NOT NULL DEFAULT ''");
+  }
+
   // Kalle is both an admin and a coach (his coach profile stays linked).
   db.prepare("UPDATE users SET role = 'admin' WHERE email = 'kalle.sundman@icloud.com' AND role = 'coach'").run();
 
@@ -131,6 +203,16 @@ function migrate(db, nowISO) {
 
   // Add any post-launch coaches to existing databases (idempotent by slug).
   ensureExtraCoaches(db, nowISO());
+
+  // One-time: backfill bio translations for coaches seeded before bio_en
+  // existed. Each entry only applies while the stored bio still EXACTLY
+  // matches the seeded source text — an admin-edited bio is never overwritten,
+  // and its bio_en stays empty (the UI then falls back to the Finnish bio).
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'bios_bilingual_v1'").get()) {
+    const upd = db.prepare('UPDATE coaches SET bio = ?, bio_en = ? WHERE slug = ? AND bio = ? AND bio_en = \'\'');
+    for (const b of BIO_I18N) upd.run(b.fi || b.source, b.en, b.slug, b.source);
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('bios_bilingual_v1', ?)").run(nowISO());
+  }
 
   // One-time spotlight re-shuffle: every coach EXCEPT Ben and Kalle appears in
   // the homepage hero carousel. Marker-guarded so the admin's later manual
@@ -175,8 +257,8 @@ function seed({ demo = true, reset = false } = {}) {
     'INSERT OR IGNORE INTO users (email, password_hash, name, role, demo, created_at) VALUES (?,?,?,?,?,?)');
   const getUser = db.prepare('SELECT id FROM users WHERE email = ?');
   const insCoach = db.prepare(`INSERT OR IGNORE INTO coaches
-    (user_id, name, slug, bio, photos, locations, positions, featured, display_order, demo, created_at)
-    VALUES (?,?,?,?,?,?,?,?,?,?,?)`);
+    (user_id, name, slug, bio, bio_en, photos, locations, positions, featured, display_order, demo, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`);
   const getCoach = db.prepare('SELECT id FROM coaches WHERE slug = ?');
 
   // --- Core accounts -------------------------------------------------------
@@ -200,6 +282,7 @@ function seed({ demo = true, reset = false } = {}) {
       'Kalle on 17 vuotias laitapuolustaja, joka on pelannut myös monia vuosia keskikentällä. ' +
       'Kallella on alla monia kausia SM sarjassa ja hänellä on kokemusta ja tietoa siitä mitä ' +
       'jatkuvaan kehitykseen tarvitaan.',
+      BIO_I18N.find(b => b.slug === 'kalle-sundman').en,
       JSON.stringify(['/assets/kalle-1.jpg', '/assets/kalle-2.jpg', '/assets/kalle-3.jpg']),
       JSON.stringify(['Helsinki', 'Espoo']),
       JSON.stringify(['midfielders', 'attackers']),
@@ -209,9 +292,8 @@ function seed({ demo = true, reset = false } = {}) {
     // own (admin) account, so one login covers both roles.
     const benId = getUser.get(adminEmail).id;
     insCoach.run(benId, 'Ben Cotton', 'ben-cotton',
-      'Ben plays football in Somerset for Millfield School. He has previously played for ' +
-      'FC Honka before his move to the UK. Ben is a central defender and mainly coaches ' +
-      'attackers and defenders.',
+      BIO_I18N.find(b => b.slug === 'ben-cotton').fi,
+      BIO_I18N.find(b => b.slug === 'ben-cotton').en,
       JSON.stringify(['/assets/ben-1.jpg', '/assets/ben-2.jpg']),
       JSON.stringify(['Helsinki', 'Espoo', 'Vantaa']),
       JSON.stringify(['attackers', 'defenders']),
@@ -258,7 +340,10 @@ function seed({ demo = true, reset = false } = {}) {
     },
   ];
   for (const c of fictional) {
-    insCoach.run(null, c.name, c.slug, c.bio, JSON.stringify([c.photo]),
+    // Demo bios are written in English above (matching BIO_I18N sources);
+    // store the Finnish translation as canonical + English as bio_en.
+    const b = BIO_I18N.find(x => x.slug === c.slug);
+    insCoach.run(null, c.name, c.slug, b ? b.fi : c.bio, b ? b.en : '', JSON.stringify([c.photo]),
       JSON.stringify(c.locations), JSON.stringify(c.positions), 1, c.order, 1, now);
   }
 

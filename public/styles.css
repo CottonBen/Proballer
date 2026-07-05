@@ -95,15 +95,21 @@ a { color: var(--lime); text-decoration: none; }
    phones the buttons shrink instead of stacking out of the frame. */
 #auth-box { display: flex; align-items: center; gap: 8px; flex-wrap: nowrap; flex-shrink: 0; }
 @media (max-width: 640px) {
-  .site-header .wrap { height: 56px; gap: 8px; }
+  /* The row may hold up to five controls (CTA + role buttons + logout + FI/EN).
+     Let the actions drop onto a controlled second line instead of overflowing
+     past the right edge of the screen. */
+  .site-header .wrap { flex-wrap: wrap; height: auto; min-height: 52px; padding-top: 6px; padding-bottom: 6px; row-gap: 4px; gap: 8px; }
   .brand img { width: 26px; height: 26px; }
   .brand span { font-size: 0.95rem; letter-spacing: 0.04em; }
-  #auth-box { gap: 5px; }
+  #auth-box { gap: 5px; margin-left: auto; }
   #auth-box .btn { padding: 7px 10px; font-size: 0.74rem; white-space: nowrap; }
+  .lang-toggle { padding: 2px; }
+  .lang-opt { padding: 3px 7px; font-size: 0.66rem; }
 }
 @media (max-width: 380px) {
   .brand span em { display: none; } /* just "Proballers" on the smallest screens */
   #auth-box .btn { padding: 6px 8px; font-size: 0.7rem; }
+  .lang-opt { padding: 3px 6px; font-size: 0.62rem; }
 }
 
 /* ---------- buttons ---------- */
@@ -125,6 +131,21 @@ a { color: var(--lime); text-decoration: none; }
 .btn-danger { background: transparent; color: var(--danger); border-color: rgba(255, 107, 107, 0.4); }
 .btn-sm { padding: 8px 14px; font-size: 0.85rem; }
 .btn[disabled] { opacity: 0.45; cursor: not-allowed; box-shadow: none; }
+
+/* ---------- language toggle (FI | EN) ---------- */
+.lang-toggle {
+  display: inline-flex; align-items: center; gap: 2px;
+  border: 1px solid var(--line); border-radius: 999px; padding: 3px;
+  background: rgba(255, 255, 255, 0.04); flex-shrink: 0;
+}
+.lang-opt {
+  border: 0; background: transparent; color: var(--muted); cursor: pointer;
+  font-family: var(--body); font-weight: 700; font-size: 0.72rem;
+  padding: 4px 9px; border-radius: 999px; letter-spacing: 0.04em;
+  transition: background 0.2s, color 0.2s;
+}
+.lang-opt.on { background: rgba(62, 229, 134, 0.16); color: var(--lime); }
+.lang-opt:not(.on):hover { color: var(--text); }
 
 /* ---------- cards / layout ---------- */
 .card {

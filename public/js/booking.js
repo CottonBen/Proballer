@@ -10,6 +10,10 @@ const W = {
 const backdrop = () => document.getElementById('wizard-backdrop');
 const body = () => document.getElementById('wizard-body');
 
+// Hour labels per the copy rulings: FI '9.00', EN '9:00'; en dash in ranges.
+const fmtHour = (h) => `${h}${I18N.lang === 'fi' ? '.' : ':'}00`;
+const fmtHourRange = (h) => `${fmtHour(h)}–${fmtHour(h + 1)}`;
+
 function track(type, meta) { API.post('/track', { type, meta }).catch(() => {}); }
 
 async function openWizard(coach, site) {
@@ -19,7 +23,7 @@ async function openWizard(coach, site) {
   backdrop().classList.add('open');
   document.body.style.overflow = 'hidden';
   track('booking_started', { coachId: coach.id });
-  body().innerHTML = '<p class="muted">Loading calendar…</p>';
+  body().innerHTML = `<p class="muted">${t('booking.wizard.loading_calendar')}</p>`;
   try {
     const data = await API.get(`/coaches/${coach.id}/slots`);
     W.slots = data.slots;
@@ -45,21 +49,22 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-const STEP_TITLES = ['Pick a time', 'Your position', 'Session focus', 'Where do you train?', 'Confirm your booking'];
+const STEP_TITLE_KEYS = ['booking.step.time.title', 'booking.step.position.title',
+  'booking.step.focus.title', 'booking.step.location.title', 'booking.step.confirm.title'];
 
 function header(title, subtitle) {
   return `
     <div class="kicker" style="color:var(--lime);font-weight:700;letter-spacing:.18em;
-      text-transform:uppercase;font-size:.75rem">Book ${esc(W.coach.name)}</div>
+      text-transform:uppercase;font-size:.75rem">${t('booking.wizard.kicker', { coach: esc(W.coach.name) })}</div>
     <h2 style="font-size:1.9rem">${esc(title)}</h2>
     ${subtitle ? `<p class="muted small">${subtitle}</p>` : ''}
-    <div class="steps">${STEP_TITLES.map((_, i) =>
+    <div class="steps">${STEP_TITLE_KEYS.map((_, i) =>
       `<span class="step-pill ${i <= W.step ? 'done' : ''}"></span>`).join('')}</div>`;
 }
 
-function nav({ backOk = true, nextOk = false, nextLabel = 'Continue' } = {}) {
+function nav({ backOk = true, nextOk = false, nextLabel = t('booking.nav.continue') } = {}) {
   return `<div class="wizard-nav">
-    <button class="btn btn-ghost" data-nav="back" ${backOk ? '' : 'style="visibility:hidden"'}>Back</button>
+    <button class="btn btn-ghost" data-nav="back" ${backOk ? '' : 'style="visibility:hidden"'}>${t('booking.nav.back')}</button>
     <button class="btn btn-primary" data-nav="next" ${nextOk ? '' : 'disabled'}>${nextLabel}</button>
   </div>`;
 }
@@ -101,20 +106,19 @@ function renderSlot() {
   }
   const dates = [...byDate.keys()].sort();
   if (!dates.length) {
-    body().innerHTML = header(STEP_TITLES[0]) +
-      `<p class="muted">${esc(W.coach.name)} has not opened any bookable times right now —
-       check back soon or pick another coach.</p>` + nav({ backOk: false });
+    body().innerHTML = header(t(STEP_TITLE_KEYS[0])) +
+      `<p class="muted">${t('booking.slots.empty', { coach: esc(W.coach.name) })}</p>` +
+      nav({ backOk: false });
     return;
   }
   const selDate = W.slot?.date && byDate.has(W.slot.date) ? W.slot.date : dates[0];
 
-  body().innerHTML = header(STEP_TITLES[0],
-    'All times are one-hour sessions, Finnish time (8:00–20:00). Only times the coach has opened are shown.') +
+  body().innerHTML = header(t(STEP_TITLE_KEYS[0]), t('booking.step.time.subtitle')) +
     `<div class="date-strip">${dates.map((d) => `
       <div class="date-cell ${d === selDate ? 'sel' : ''}" data-date="${d}">
         <div class="dow">${fmtDate(d).split(' ')[0]}</div>
         <div class="num">${d.slice(8)}</div>
-        <div class="small muted">${byDate.get(d).length} free</div>
+        <div class="small muted">${t('booking.slots.free_count', { count: byDate.get(d).length })}</div>
       </div>`).join('')}</div>
     <div class="slot-grid" id="slot-grid"></div>` +
     nav({ backOk: false, nextOk: Boolean(W.slot) });
@@ -123,7 +127,7 @@ function renderSlot() {
     const grid = body().querySelector('#slot-grid');
     grid.innerHTML = byDate.get(date).sort((a, b) => a - b).map((h) => `
       <button class="slot-btn ${W.slot && W.slot.date === date && W.slot.hour === h ? 'sel' : ''}"
-        data-hour="${h}">${String(h).padStart(2, '0')}:00</button>`).join('');
+        data-hour="${h}">${fmtHourRange(h)}</button>`).join('');
     grid.querySelectorAll('.slot-btn').forEach((btn) => btn.addEventListener('click', () => {
       W.slot = { date, hour: Number(btn.dataset.hour) };
       grid.querySelectorAll('.slot-btn').forEach((b) => b.classList.remove('sel'));
@@ -141,30 +145,32 @@ function renderSlot() {
 
 // --- step 1: position (limited to what the coach trains) --------------------
 function renderPosition() {
-  body().innerHTML = header(STEP_TITLES[1],
-    `${esc(W.coach.name.split(' ')[0])} trains: ${W.coach.positions.map(cap).join(', ')}.`) +
+  body().innerHTML = header(t(STEP_TITLE_KEYS[1]),
+    t('booking.step.position.subtitle', {
+      coach: esc(W.coach.name.split(' ')[0]),
+      positions: W.coach.positions.map((p) => esc(posLabel(p))).join(', '),
+    })) +
     `<div class="opt-grid">${W.coach.positions.map((p) => `
       <div class="opt-card ${W.position === p ? 'sel' : ''}" data-val="${p}">
-        <div class="t">${esc(cap(p))}</div>
-        <div class="d">Session built for ${esc(p)}</div>
+        <div class="t">${esc(posLabel(p))}</div>
+        <div class="d">${t('booking.step.position.card_desc', { position: esc(posLabel(p).toLowerCase()) })}</div>
       </div>`).join('')}</div>` + nav({ nextOk: Boolean(W.position) });
   bindOptCards('position');
 }
 
 // --- step 2: focus ----------------------------------------------------------
-const FOCUS_HINTS = {
-  conditioning: 'Engine building — repeat sprints, stamina', physicality: 'Strength, duels, holding your ground',
-  agility: 'Feet, turns, first three steps', technical: 'Touch, control, both feet',
-  defending: '1v1s, blocks, body shape', finishing: 'Shots, headers, composure in the box',
-  passing: 'Short, long, breaking lines', 'game-iq': 'Video session — scanning, decisions, positioning',
-};
 function renderFocus() {
-  body().innerHTML = header(STEP_TITLES[2], 'What should the hour concentrate on?') +
-    `<div class="opt-grid">${W.site.focusTypes.map((f) => `
+  body().innerHTML = header(t(STEP_TITLE_KEYS[2]), t('booking.step.focus.subtitle')) +
+    `<div class="opt-grid">${W.site.focusTypes.map((f) => {
+      // Hint keys use underscores ('game-iq' -> booking.focus.hint.game_iq);
+      // unknown focus ids just render without a hint.
+      const hintKey = 'booking.focus.hint.' + f.id.replace(/-/g, '_');
+      return `
       <div class="opt-card ${W.focus === f.id ? 'sel' : ''}" data-val="${f.id}">
-        <div class="t">${esc(f.label)} ${f.online ? '<span class="chip" style="font-size:.68rem">ONLINE</span>' : ''}</div>
-        <div class="d">${esc(FOCUS_HINTS[f.id] || '')}</div>
-      </div>`).join('')}</div>` + nav({ nextOk: Boolean(W.focus) });
+        <div class="t">${esc(I18N.server(f.label))} ${f.online ? `<span class="chip" style="font-size:.68rem">${t('booking.focus.online_chip')}</span>` : ''}</div>
+        <div class="d">${I18N_DICT[hintKey] ? t(hintKey) : ''}</div>
+      </div>`;
+    }).join('')}</div>` + nav({ nextOk: Boolean(W.focus) });
   // Changing the focus can change whether a location is valid (online forces
   // 'Online'; on-pitch needs a real city), so drop any previously picked city.
   bindOptCards('focus', () => { W.location = null; });
@@ -172,11 +178,11 @@ function renderFocus() {
 
 // --- step 3: location -------------------------------------------------------
 function renderLocation() {
-  body().innerHTML = header(STEP_TITLES[3],
-    `${esc(W.coach.name.split(' ')[0])} coaches in these cities — pick what suits you.`) +
+  body().innerHTML = header(t(STEP_TITLE_KEYS[3]),
+    t('booking.step.location.subtitle', { coach: esc(W.coach.name.split(' ')[0]) })) +
     `<div class="opt-grid">${W.coach.locations.map((l) => `
       <div class="opt-card ${W.location === l ? 'sel' : ''}" data-val="${l}">
-        <div class="t">${esc(l)}</div><div class="d">Exact pitch confirmed with your coach</div>
+        <div class="t">${esc(I18N.server(l))}</div><div class="d">${t('booking.step.location.card_desc')}</div>
       </div>`).join('')}</div>` + nav({ nextOk: Boolean(W.location) });
   bindOptCards('location');
 }
@@ -215,29 +221,41 @@ async function renderReview() {
   const hasCredit = !needsAuth && (me.freeCredits || 0) > 0;
   const discount = hasCredit ? price : Math.round(price * p.salePercent / 100);
   const priceChip = hasCredit
-    ? '<span class="chip" style="font-size:.68rem">FREE — credit from a cancelled session</span>'
-    : (discount ? `<span class="chip" style="font-size:.68rem">${p.saleLabel} −${p.salePercent}%</span>` : '');
+    ? `<span class="chip" style="font-size:.68rem">${t('booking.review.credit_chip')}</span>`
+    : (discount ? `<span class="chip" style="font-size:.68rem">${t('booking.review.sale_chip',
+        { saleLabel: esc(I18N.server(p.saleLabel)), salePercent: p.salePercent })}</span>` : '');
 
-  body().innerHTML = header(STEP_TITLES[4]) + `
-    <div class="review-row"><span class="muted">Coach</span><strong>${esc(W.coach.name)}</strong></div>
-    <div class="review-row"><span class="muted">Time</span>
-      <strong>${esc(fmtDate(W.slot.date))} ${String(W.slot.hour).padStart(2, '0')}:00–${String(W.slot.hour + 1).padStart(2, '0')}:00</strong></div>
-    <div class="review-row"><span class="muted">Built for</span><strong>${esc(cap(W.position))}</strong></div>
-    <div class="review-row"><span class="muted">Focus</span><strong>${esc(focus.label)}</strong></div>
-    <div class="review-row"><span class="muted">Where</span><strong>${esc(W.location)}</strong></div>
-    <div class="review-row"><span class="muted">Price</span>
+  // Raw method stays English server-side; translate for display only.
+  const payMethod = W.site.payment && W.site.payment.method
+    ? I18N.server(W.site.payment.method).toLowerCase()
+    : t('booking.review.payment_method_fallback');
+
+  body().innerHTML = header(t(STEP_TITLE_KEYS[4])) + `
+    <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
+    <div class="review-row"><span class="muted">${t('booking.review.time_label')}</span>
+      <strong>${esc(fmtDate(W.slot.date))} ${fmtHourRange(W.slot.hour)}</strong></div>
+    <div class="review-row"><span class="muted">${t('booking.review.position_label')}</span><strong>${esc(posLabel(W.position))}</strong></div>
+    <div class="review-row"><span class="muted">${t('booking.review.focus_label')}</span><strong>${esc(I18N.server(focus.label))}</strong></div>
+    <div class="review-row"><span class="muted">${t('booking.review.location_label')}</span><strong>${esc(I18N.server(W.location))}</strong></div>
+    <div class="review-row"><span class="muted">${t('booking.review.price_label')}</span>
       <strong>${discount ? `<span class="price-old">${eur(price)}</span> ` : ''}
         <span class="price-new">${eur(price - discount)}</span>
         ${priceChip}</strong></div>
     <p class="small muted" style="margin-top:12px">${hasCredit
-      ? 'This session is free — your credit is applied automatically and the 0,00 € invoice is just for your records.'
-      : `Confirming issues the invoice (${eur(price - discount)}, due in 7 days)${W.site.emailDelivery ? ' to your email' : ', viewable in My bookings'}. Payment is by ${esc((W.site.payment && W.site.payment.method || 'bank transfer').toLowerCase())} — the account number (IBAN) and reference are on the invoice.`}</p>
+      ? t('booking.review.free_note')
+      : t('booking.review.invoice_note', {
+          price: eur(price - discount),
+          delivery: W.site.emailDelivery
+            ? t('booking.review.invoice_note_delivery_email')
+            : t('booking.review.invoice_note_delivery_mybookings'),
+          method: esc(payMethod),
+        })}</p>
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
-      <button class="btn btn-ghost" data-nav="back">Back</button>
+      <button class="btn btn-ghost" data-nav="back">${t('booking.nav.back')}</button>
       <button class="btn btn-primary" id="confirm-btn" ${needsAuth ? 'disabled' : ''}>
-        Confirm booking</button>
+        ${t('booking.review.confirm_button')}</button>
     </div>`;
 
   body().querySelector('[data-nav="back"]').addEventListener('click', () => {
@@ -249,7 +267,7 @@ async function renderReview() {
 
   body().querySelector('#confirm-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
-    btn.disabled = true; btn.textContent = 'Booking…';
+    btn.disabled = true; btn.textContent = t('booking.review.confirm_button_busy');
     try {
       const result = await API.post('/bookings', {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
@@ -258,14 +276,14 @@ async function renderReview() {
       W.step = 5;
       renderSuccess(result);
     } catch (err) {
-      btn.disabled = false; btn.textContent = 'Confirm booking';
+      btn.disabled = false; btn.textContent = t('booking.review.confirm_button');
       body().querySelector('#confirm-error').textContent = err.message;
       if (err.status === 409) { // slot taken — refresh slots and go back to the picker
         const data = await API.get(`/coaches/${W.coach.id}/slots`).catch(() => null);
         if (data) { W.slots = data.slots; }
         W.slot = null;
         W.step = 0;
-        toast('That time was just taken — please pick another.', true);
+        toast(t('booking.toast.slot_taken'), true);
         render();
       }
     }
@@ -277,23 +295,22 @@ function renderAuthPanel() {
   const panel = body().querySelector('#auth-panel');
   const isCoachOrAdmin = W.user && W.user.role === 'coach';
   panel.innerHTML = isCoachOrAdmin
-    ? `<p class="form-error">You are logged in as a coach — bookings need a customer account.
-       Log out first, then book as a customer.</p>`
+    ? `<p class="form-error">${t('booking.auth.coach_blocked')}</p>`
     : `
     <div class="card" style="margin-top:16px">
       <div style="display:flex;gap:8px;margin-bottom:14px">
-        <button class="btn btn-sm btn-primary" data-tab="login">I have an account</button>
-        <button class="btn btn-sm btn-ghost" data-tab="signup">I'm new here</button>
+        <button class="btn btn-sm btn-primary" data-tab="login">${t('booking.auth.tab_login')}</button>
+        <button class="btn btn-sm btn-ghost" data-tab="signup">${t('booking.auth.tab_signup')}</button>
       </div>
       <form id="auth-form">
-        <label class="f" id="f-name" hidden><span>Player / parent name</span>
+        <label class="f" id="f-name" hidden><span>${t('booking.auth.name_label')}</span>
           <input type="text" name="name" autocomplete="name"></label>
-        <label class="f"><span>Email</span>
+        <label class="f"><span>${t('common.form.email')}</span>
           <input type="email" name="email" required autocomplete="email"></label>
-        <label class="f"><span>Password</span>
+        <label class="f"><span>${t('common.form.password')}</span>
           <input type="password" name="password" required autocomplete="current-password"></label>
         <div class="form-error" id="auth-error"></div>
-        <button class="btn btn-primary" type="submit" style="width:100%">Log in &amp; continue</button>
+        <button class="btn btn-primary" type="submit" style="width:100%">${esc(t('booking.auth.submit_login'))}</button>
       </form>
     </div>`;
   if (isCoachOrAdmin) return;
@@ -306,8 +323,8 @@ function renderAuthPanel() {
       x.classList.toggle('btn-ghost', x !== b);
     });
     panel.querySelector('#f-name').hidden = mode === 'login';
-    panel.querySelector('button[type="submit"]').innerHTML =
-      mode === 'login' ? 'Log in &amp; continue' : 'Create account &amp; continue';
+    panel.querySelector('button[type="submit"]').textContent =
+      mode === 'login' ? t('booking.auth.submit_login') : t('booking.auth.submit_signup');
   }));
 
   panel.querySelector('#auth-form').addEventListener('submit', async (e) => {
@@ -320,7 +337,7 @@ function renderAuthPanel() {
       if (mode === 'signup') payload.name = fd.get('name');
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       if (res.user.role !== 'customer' && res.user.role !== 'admin') {
-        err.textContent = 'This account is a staff account — please use a customer account to book.';
+        err.textContent = t('booking.auth.staff_error');
         return;
       }
       initHeaderAuth();
@@ -336,25 +353,24 @@ function renderSuccess({ booking, invoice }) {
   body().innerHTML = `
     <div style="text-align:center;padding:12px 0">
       <div style="font-size:3.2rem">⚽</div>
-      <h2>You're booked!</h2>
+      <h2>${t('booking.success.title')}</h2>
       <p class="muted">${esc(booking.coach)} · ${esc(fmtDate(booking.date))}
-        ${String(booking.hour).padStart(2, '0')}:00–${String(booking.hour + 1).padStart(2, '0')}:00 ·
-        ${esc(booking.location)}</p>
-      <p>Booking reference <strong>${esc(booking.code)}</strong></p>
+        ${fmtHourRange(booking.hour)} ·
+        ${esc(I18N.server(booking.location))}</p>
+      <p>${t('booking.success.reference', { code: `<strong>${esc(booking.code)}</strong>` })}</p>
       <div class="card" style="text-align:left;margin:18px 0">
-        <div class="review-row"><span class="muted">Invoice</span><strong>${esc(invoice.number)}</strong></div>
-        <div class="review-row"><span class="muted">Amount</span><strong>${eur(invoice.amountCents)}
-          ${booking.creditApplied ? '<span class="chip" style="font-size:.68rem">FREE — credit used</span>' : ''}</strong></div>
-        <div class="review-row" style="border:none"><span class="muted">Due</span><strong>${esc(invoice.dueDate)}</strong></div>
+        <div class="review-row"><span class="muted">${t('booking.success.invoice_label')}</span><strong>${esc(invoice.number)}</strong></div>
+        <div class="review-row"><span class="muted">${t('booking.success.amount_label')}</span><strong>${eur(invoice.amountCents)}
+          ${booking.creditApplied ? `<span class="chip" style="font-size:.68rem">${t('booking.success.credit_chip')}</span>` : ''}</strong></div>
+        <div class="review-row" style="border:none"><span class="muted">${t('booking.success.due_label')}</span><strong>${esc(I18N.lang === 'fi' ? fiDate(invoice.dueDate) : invoice.dueDate)}</strong></div>
       </div>
       <p class="small muted">${W.site.emailDelivery
-        ? 'The invoice has been sent to your email.'
-        : 'Your invoice is ready to view below.'} Pay by bank transfer — the IBAN and
-        payment reference are on the invoice. You can open it any time
-        from <a href="/my-bookings">My bookings</a>.</p>
+        ? t('booking.success.invoice_emailed')
+        : t('booking.success.invoice_ready')} ${t('booking.success.payment_note',
+          { myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:8px">
-        <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">View invoice</a>
-        <a class="btn btn-primary" href="/my-bookings">My bookings</a>
+        <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">${t('booking.success.view_invoice')}</a>
+        <a class="btn btn-primary" href="/my-bookings">${t('common.nav.my_bookings')}</a>
       </div>
     </div>`;
 }

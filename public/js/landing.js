@@ -6,10 +6,10 @@ let COACHES = [];     // /api/coaches payload
 
 function slidePriceHTML() {
   const p = SITE.pricing;
-  if (!p.salePercent) return `<span class="price-new">${eur(p.sessionPrice * 100)}</span> / session`;
+  if (!p.salePercent) return `<span class="price-new">${eur(p.sessionPrice * 100)}</span> ${t('landing.persession')}`;
   const now = p.sessionPrice * 100 * (100 - p.salePercent) / 100;
   return `<span class="price-old">${eur(p.sessionPrice * 100)}</span>
-    <span class="price-new">${eur(now)}</span> / session`;
+    <span class="price-new">${eur(now)}</span> ${t('landing.persession')}`;
 }
 
 // --- hero carousel ----------------------------------------------------------
@@ -23,16 +23,16 @@ function buildSlides() {
       photos: c.photos,
       html: `
         <div>
-          <div class="kicker">Coach spotlight</div>
+          <div class="kicker">${t('landing.spotlight')}</div>
           <h1><a href="/coaches/${encodeURIComponent(c.slug)}" style="color:inherit">${esc(c.name)}</a></h1>
           <div class="slide-tags">
-            ${c.positions.map((p) => `<span class="chip">${esc(cap(p))}</span>`).join('')}
+            ${c.positions.map((p) => `<span class="chip">${esc(posLabel(p))}</span>`).join('')}
             ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join('')}
           </div>
-          <p class="bio">${esc(c.bio)}</p>
+          <p class="bio">${esc(coachBio(c))}</p>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
-            <button class="btn btn-primary" data-book="${c.id}">Book a session with ${esc(c.name.split(' ')[0])}</button>
-            <a class="btn btn-ghost" href="/coaches/${encodeURIComponent(c.slug)}">Full profile</a>
+            <button class="btn btn-primary" data-book="${c.id}">${t('landing.bookwith', { name: esc(c.name.split(' ')[0]) })}</button>
+            <a class="btn btn-ghost" href="/coaches/${encodeURIComponent(c.slug)}">${t('landing.fullprofile')}</a>
           </div>
         </div>`,
     });
@@ -43,16 +43,11 @@ function buildSlides() {
     photos: ['/assets/ben-2.jpg'],
     html: `
       <div>
-        <div class="kicker">About us</div>
-        <h1>Built by players,<br>for the next generation</h1>
-        <p class="bio">We are a Finnish coaching collective for young footballers who want more than
-          two team trainings a week. Our coaches have come up through Finnish academies and play or
-          have played competitively — they remember exactly what it takes, because they are living it.
-          Every session is 1-on-1, planned around your position, your goals and your pace, on pitches
-          in Helsinki, Espoo and Vantaa.</p>
-        <p class="bio">One hour with full attention on you beats ten where you wait in line.
-          That is the whole idea.</p>
-        <a class="btn btn-primary" href="#coaches">Find your coach</a>
+        <div class="kicker">${t('landing.about.kicker')}</div>
+        <h1>${t('landing.about.title')}</h1>
+        <p class="bio">${t('landing.about.body1')}</p>
+        <p class="bio">${t('landing.about.body2')}</p>
+        <a class="btn btn-primary" href="#coaches">${t('landing.about.cta')}</a>
       </div>`,
   });
 
@@ -67,7 +62,7 @@ function buildSlides() {
 
     const dot = document.createElement('button');
     dot.className = 'dot' + (i === 0 ? ' active' : '');
-    dot.setAttribute('aria-label', `Slide ${i + 1}`);
+    dot.setAttribute('aria-label', t('landing.slide.aria', { n: i + 1 }));
     dot.innerHTML = '<span class="fill"></span>';
     dot.addEventListener('click', () => show(i, true));
     dots.appendChild(dot);
@@ -124,24 +119,24 @@ function buildCoachGrid() {
     const card = document.createElement('article');
     card.className = 'card coach-card reveal';
     const reviewsToggle = c.rating && c.rating.count
-      ? `<button class="reviews-toggle small" data-reviews="${c.id}">Read reviews</button>` : '';
+      ? `<button class="reviews-toggle small" data-reviews="${c.id}">${t('landing.readreviews')}</button>` : '';
     card.innerHTML = `
-      <div class="photo"><img src="${esc(c.photos[0] || '/assets/logo.svg')}" alt="Coach ${esc(c.name)}" loading="lazy"></div>
+      <div class="photo"><img src="${esc(c.photos[0] || '/assets/logo.svg')}" alt="${t('landing.coachalt', { name: esc(c.name) })}" loading="lazy"></div>
       <div class="body">
         <h3>${esc(c.name)}</h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">
           ${ratingLine(c.rating)} ${reviewsToggle}
         </div>
         <div>
-          ${c.positions.map((p) => `<span class="chip">${esc(cap(p))}</span>`).join(' ')}
+          ${c.positions.map((p) => `<span class="chip">${esc(posLabel(p))}</span>`).join(' ')}
           ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join(' ')}
         </div>
-        <p class="bio">${esc(c.bio)}</p>
-        <a class="small" href="/coaches/${encodeURIComponent(c.slug)}">Full profile →</a>
+        <p class="bio">${esc(coachBio(c))}</p>
+        <a class="small" href="/coaches/${encodeURIComponent(c.slug)}">${t('landing.fullprofile.arrow')}</a>
         <div class="reviews-panel" id="reviews-${c.id}" hidden></div>
         <div class="foot">
           <span>${slidePriceHTML()}</span>
-          <button class="btn btn-primary btn-sm" data-book="${c.id}">Book a session</button>
+          <button class="btn btn-primary btn-sm" data-book="${c.id}">${t('common.cta.book')}</button>
         </div>
       </div>`;
     // The whole card opens the coach's profile — except the interactive bits
@@ -158,25 +153,25 @@ function buildCoachGrid() {
 async function toggleReviews(coachId, btn) {
   const panel = document.getElementById('reviews-' + coachId);
   if (!panel) return;
-  if (!panel.hidden) { panel.hidden = true; btn.textContent = 'Read reviews'; return; }
+  if (!panel.hidden) { panel.hidden = true; btn.textContent = t('landing.readreviews'); return; }
   if (!panel.dataset.loaded) {
-    panel.innerHTML = '<p class="small muted">Loading reviews…</p>';
+    panel.innerHTML = `<p class="small muted">${t('landing.loadingreviews')}</p>`;
     panel.hidden = false;
     try {
       const { reviews } = await API.get(`/coaches/${coachId}/reviews`);
       panel.innerHTML = reviews.length
         ? reviews.map(reviewHTML).join('')
-        : '<p class="small muted">No reviews yet.</p>';
+        : `<p class="small muted">${t('landing.noreviews.dot')}</p>`;
       panel.dataset.loaded = '1';
     } catch (err) {
       panel.innerHTML = `<p class="small muted">${esc(err.message)}</p>`;
-      btn.textContent = 'Read reviews';
+      btn.textContent = t('landing.readreviews');
       return;
     }
   } else {
     panel.hidden = false;
   }
-  btn.textContent = 'Hide reviews';
+  btn.textContent = t('landing.hidereviews');
 }
 
 // --- init -------------------------------------------------------------------
@@ -187,7 +182,8 @@ async function toggleReviews(coachId, btn) {
   const banner = document.getElementById('sale-banner');
   if (SITE.pricing.salePercent > 0) {
     banner.hidden = false;
-    banner.textContent = `⚡ ${SITE.pricing.saleLabel}: ${SITE.pricing.salePercent}% OFF every session — automatically applied at booking`;
+    banner.textContent = t('landing.salebanner',
+      { label: I18N.server(SITE.pricing.saleLabel), percent: SITE.pricing.salePercent });
   }
   document.getElementById('price-tag').innerHTML = slidePriceHTML();
 
@@ -208,5 +204,5 @@ async function toggleReviews(coachId, btn) {
   });
 })().catch((err) => {
   console.error(err);
-  toast('Could not load the site data — please refresh.', true);
+  toast(t('common.loadfailed'), true);
 });

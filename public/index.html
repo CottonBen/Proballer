@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="fi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Proballers Coaching Finland — 1-on-1 football coaching for young players</title>
-  <meta name="description" content="Personal football coaching for young players in Helsinki, Espoo and Vantaa. Book a 1-on-1 session with a coach who has played the game.">
+  <title data-i18n="landing.title">Proballers Coaching Finland — henkilökohtaista jalkapallovalmennusta nuorille pelaajille</title>
+  <meta name="description" data-i18n-content="landing.meta.description" content="Henkilökohtaista jalkapallovalmennusta nuorille pelaajille Helsingissä, Espoossa ja Vantaalla. Varaa 1-on-1-treeni valmentajalta, joka on itse pelannut.">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -26,7 +26,7 @@
     <section class="hero">
       <div class="wrap">
         <div class="carousel" id="carousel" aria-live="polite"></div>
-        <div class="dots" id="dots" role="tablist" aria-label="Slides"></div>
+        <div class="dots" id="dots" role="tablist" data-i18n-aria="landing.dots.aria" aria-label="Diat"></div>
       </div>
     </section>
 
@@ -35,9 +35,9 @@
       <div class="wrap">
         <div class="section-head reveal">
           <div>
-            <h2>Meet the coaches</h2>
-            <p class="muted" style="max-width:60ch">Every coach sets their own calendar. Pick a coach,
-              pick a free time, and build the session around your position and what you want to improve.</p>
+            <h2 data-i18n="landing.coaches.title">Tutustu valmentajiin</h2>
+            <p class="muted" style="max-width:60ch" data-i18n="landing.coaches.lead">Jokainen valmentaja pitää omaa
+              kalenteriaan. Valitse valmentaja ja vapaa aika, ja rakenna treeni pelipaikkasi ja kehityskohteidesi ympärille.</p>
           </div>
           <div id="price-tag" class="display" style="font-size:1.6rem"></div>
         </div>
@@ -48,14 +48,14 @@
     <!-- How it works -->
     <section class="section" style="padding-top:0">
       <div class="wrap">
-        <h2 class="reveal">How it works</h2>
+        <h2 class="reveal" data-i18n="landing.how.title">Näin se toimii</h2>
         <div class="grid reveal" style="grid-template-columns:repeat(auto-fit,minmax(230px,1fr))">
-          <div class="card"><h3>1 · Pick a time</h3><p class="muted">Choose a coach and one of the times
-            they have opened in their calendar. Sessions run 8:00–20:00, every day.</p></div>
-          <div class="card"><h3>2 · Shape the session</h3><p class="muted">Tell us your position —
-            goalkeeper, defender, midfielder or attacker — and pick a focus, from finishing to Game IQ.</p></div>
-          <div class="card"><h3>3 · Confirm &amp; train</h3><p class="muted">Confirm the booking and the
-            invoice lands in your email. Then it's just you, the coach and the pitch.</p></div>
+          <div class="card"><h3 data-i18n="landing.how.step1.title">1 · Valitse aika</h3><p class="muted" data-i18n="landing.how.step1.body">Valitse
+            valmentaja ja jokin hänen kalenteriinsa avaamistaan ajoista. Treenejä on tarjolla klo 8–20 joka päivä.</p></div>
+          <div class="card"><h3 data-i18n="landing.how.step2.title">2 · Räätälöi treeni</h3><p class="muted" data-i18n="landing.how.step2.body">Kerro
+            pelipaikkasi — maalivahti, puolustaja, keskikenttäpelaaja tai hyökkääjä — ja valitse kehityskohde viimeistelystä Game IQ:hun.</p></div>
+          <div class="card"><h3 data-i18n="landing.how.step3.title">3 · Vahvista ja treenaa</h3><p class="muted" data-i18n="landing.how.step3.body">Vahvista
+            varaus, niin lasku saapuu sähköpostiisi. Sen jälkeen jäljellä ovat vain sinä, valmentaja ja kenttä.</p></div>
         </div>
       </div>
     </section>
@@ -67,18 +67,20 @@
         <strong>Proballers Coaching Finland</strong><br>
         Helsinki · Espoo · Vantaa
       </div>
-      <div>1-on-1 coaching for young footballers.<br>Working name — official name coming soon.</div>
+      <div><span data-i18n="landing.footer.tagline">Henkilökohtaista valmennusta nuorille jalkapalloilijoille.</span><br>
+        <span data-i18n="landing.footer.workingname">Työnimi — virallinen nimi tulossa.</span></div>
     </div>
   </footer>
 
   <!-- Booking wizard modal -->
   <div class="modal-backdrop" id="wizard-backdrop">
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Book a session">
-      <button class="close" id="wizard-close" aria-label="Close">×</button>
+    <div class="modal" role="dialog" aria-modal="true" data-i18n-aria="landing.wizard.aria" aria-label="Varaa treeni">
+      <button class="close" id="wizard-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
       <div id="wizard-body"></div>
     </div>
   </div>
 
+  <script src="/js/i18n.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/landing.js"></script>
   <script src="/js/booking.js"></script>

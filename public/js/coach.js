@@ -22,6 +22,13 @@ const mondayOf = (iso) => {
   const d = new Date(iso + 'T12:00:00Z');
   return addDays(iso, -((d.getUTCDay() + 6) % 7));
 };
+// FI uses a period as the hour separator ('8.00'), EN a colon ('8:00').
+const hourSep = I18N.lang === 'fi' ? '.' : ':';
+// Focus id -> /api/config label; labels are server-sent, translated at display time.
+const focusLabel = (id) => {
+  const f = state.site.focusTypes.find((x) => x.id === id);
+  return I18N.server(f ? f.label : id);
+};
 
 (async function init() {
   const user = await initHeaderAuth();
@@ -34,7 +41,7 @@ const mondayOf = (iso) => {
     state.coach = await API.get('/coach/me');
   } catch (err) {
     document.getElementById('coach-sub').innerHTML =
-      esc(err.message) + (user.role === 'admin' ? ' — <a href="/admin">back to the admin page</a>.' : '');
+      esc(I18N.server(err.message)) + (user.role === 'admin' ? t('coachdash.err.backadmin') : '');
     return;
   }
   document.getElementById('coach-name').textContent = state.coach.name;
@@ -54,16 +61,16 @@ const mondayOf = (iso) => {
   document.getElementById('next-week').addEventListener('click', () => moveWeek(7));
   document.getElementById('save-avail').addEventListener('click', saveAvailability);
   document.getElementById('save-filters').addEventListener('click', saveFilters);
-})().catch((e) => toast(e.message, true));
+})().catch((e) => toast(I18N.server(e.message), true));
 
 function moveWeek(days) {
   const target = addDays(state.weekStart, days);
   if (target < mondayOf(state.today)) return; // the past is not editable
   if (state.pending.size &&
-      !confirm('You have unsaved availability changes on this week. Discard them?')) return;
+      !confirm(t('coachdash.cal.confirm_discard'))) return;
   state.pending.clear();
   state.weekStart = target;
-  loadWeek().catch((e) => toast(e.message, true));
+  loadWeek().catch((e) => toast(I18N.server(e.message), true));
 }
 
 async function loadWeek() {
@@ -89,7 +96,7 @@ function renderCalendar() {
     </div>`).join('');
 
   for (let h = site.hours.start; h < site.hours.end; h++) {
-    html += `<div class="hr">${String(h).padStart(2, '0')}:00</div>`;
+    html += `<div class="hr">${String(h).padStart(2, '0')}${hourSep}00</div>`;
     for (const d of days) {
       const k = key(d, h);
       const isPast = d < state.today; // whole past days; today's past hours handled server-side
@@ -104,7 +111,7 @@ function renderCalendar() {
       else if (state.saved.has(k)) cls += ' avail';
       if (isPast) cls += ' past';
       html += `<div class="${cls}" data-k="${k}" data-label="${esc(label)}"
-        title="${booked ? esc(`${booked.customer} · ${cap(booked.position)} · ${booked.focus}`) : ''}"></div>`;
+        title="${booked ? esc(`${booked.customer} · ${posLabel(booked.position)} · ${focusLabel(booked.focus)}`) : ''}"></div>`;
     }
   }
   cal.innerHTML = html;
@@ -121,7 +128,9 @@ function renderCalendar() {
 
   const btn = document.getElementById('save-avail');
   btn.disabled = state.pending.size === 0;
-  btn.textContent = state.pending.size ? `Save changes (${state.pending.size})` : 'Save changes';
+  btn.textContent = state.pending.size
+    ? t('coachdash.cal.save_n', { n: state.pending.size })
+    : t('coachdash.cal.save');
 }
 
 async function saveAvailability() {
@@ -131,17 +140,17 @@ async function saveAvailability() {
     (op === 'add' ? adds : removes).push({ date, hour: Number(hour) });
   }
   const btn = document.getElementById('save-avail');
-  btn.disabled = true; btn.textContent = 'Saving…';
+  btn.disabled = true; btn.textContent = t('coachdash.cal.saving');
   try {
     const res = await API.put('/coach/availability', { adds, removes });
     state.pending.clear();
     await loadWeek();
-    let msg = `Saved — ${res.added} opened, ${res.removed} closed.`;
-    if (res.conflicts.length) msg += ` ${res.conflicts.length} could not be closed (already booked).`;
-    if (res.rejected.length) msg += ` ${res.rejected.length} skipped (past or out of range).`;
+    let msg = t('coachdash.cal.saved', { added: res.added, removed: res.removed });
+    if (res.conflicts.length) msg += ' ' + t('coachdash.cal.saved_conflicts', { n: res.conflicts.length });
+    if (res.rejected.length) msg += ' ' + t('coachdash.cal.saved_rejected', { n: res.rejected.length });
     toast(msg, res.conflicts.length > 0);
   } catch (err) {
-    toast(err.message, true);
+    toast(I18N.server(err.message), true);
     renderCalendar();
   }
 }
@@ -150,39 +159,42 @@ async function saveAvailability() {
 // Shows only euro amounts and session counts — never commission percentages.
 async function loadTier() {
   const box = document.getElementById('tier-body');
-  let t;
-  try { t = await API.get('/coach/tier'); }
-  catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; return; }
+  let tier; // NB: not `t` — that would shadow the i18n helper
+  try { tier = await API.get('/coach/tier'); }
+  catch (err) { box.innerHTML = `<p class="muted">${esc(I18N.server(err.message))}</p>`; return; }
 
-  const monthName = new Date(t.month + '-15T12:00:00Z')
-    .toLocaleDateString('en-GB', { month: 'long', timeZone: 'UTC' });
-  const progress = t.sessionsToNextTier !== null
-    ? `<div class="small muted" style="margin-top:4px">${t.sessionsToNextTier} more completed
-        session${t.sessionsToNextTier === 1 ? '' : 's'} and you move up to
-        <strong style="color:var(--lime)">Tier ${t.nextTierNumber}</strong></div>`
-    : '<div class="small" style="margin-top:4px;color:var(--lime)">Top tier — maximum earnings per session 🏆</div>';
+  const monthName = new Date(tier.month + '-15T12:00:00Z')
+    .toLocaleDateString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB', { month: 'long', timeZone: 'UTC' });
+  const tierName = (n) => t('coachdash.tier.name', { n });
+  const progress = tier.sessionsToNextTier !== null
+    ? `<div class="small muted" style="margin-top:4px">${t(
+        tier.sessionsToNextTier === 1 ? 'coachdash.tier.progress_one' : 'coachdash.tier.progress_many',
+        { n: tier.sessionsToNextTier,
+          next: `<strong style="color:var(--lime)">${tierName(tier.nextTierNumber)}</strong>` })}</div>`
+    : `<div class="small" style="margin-top:4px;color:var(--lime)">${t('coachdash.tier.top')}</div>`;
 
   box.innerHTML = `
     <div style="display:flex;align-items:baseline;justify-content:space-between;gap:8px;flex-wrap:wrap">
-      <div class="display" style="font-size:1.5rem;color:var(--lime)">Tier ${t.tierNumber}</div>
-      <span class="chip gray">${esc(t.sessionLabel)}</span>
+      <div class="display" style="font-size:1.5rem;color:var(--lime)">${tierName(tier.tierNumber)}</div>
+      <span class="chip gray">${esc(I18N.server(tier.sessionLabel))}</span>
     </div>
-    <div class="small muted">${t.sessionsThisMonth} session${t.sessionsThisMonth === 1 ? '' : 's'}
-      completed in ${esc(monthName)}</div>
+    <div class="small muted">${t(
+      tier.sessionsThisMonth === 1 ? 'coachdash.tier.month_count_one' : 'coachdash.tier.month_count_many',
+      { n: tier.sessionsThisMonth, month: esc(monthName) })}</div>
     ${progress}
-    <div class="review-row" style="margin-top:10px"><span class="muted">You earn per on-pitch session</span>
-      <strong style="color:var(--lime)">${eur(t.earnPerSession.onPitchCents)}</strong></div>
-    <div class="review-row"><span class="muted">You earn per online session</span>
-      <strong>${eur(t.earnPerSession.onlineCents)}</strong></div>
-    <div class="review-row"><span class="muted">Earned in ${esc(monthName)}</span>
-      <strong>${eur(t.earnedThisMonthCents)}</strong></div>
-    <div class="small muted" style="margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">All tiers</div>
-    ${t.allTiers.map((x) => `
-      <div style="padding:8px 0;border-top:1px dashed var(--line);${x.number === t.tierNumber ? '' : 'opacity:.65'}">
-        <strong>Tier ${x.number}</strong>
-        <span class="muted">· ${esc(x.sessions)}</span><br>
-        <span class="muted">Per session:</span> ${eur(x.earnPerSession.onPitchCents)}
-        <span class="muted">on-pitch ·</span> ${eur(x.earnPerSession.onlineCents)} <span class="muted">online</span>
+    <div class="review-row" style="margin-top:10px"><span class="muted">${t('coachdash.tier.earn_onpitch')}</span>
+      <strong style="color:var(--lime)">${eur(tier.earnPerSession.onPitchCents)}</strong></div>
+    <div class="review-row"><span class="muted">${t('coachdash.tier.earn_online')}</span>
+      <strong>${eur(tier.earnPerSession.onlineCents)}</strong></div>
+    <div class="review-row"><span class="muted">${t('coachdash.tier.earned_month', { month: esc(monthName) })}</span>
+      <strong>${eur(tier.earnedThisMonthCents)}</strong></div>
+    <div class="small muted" style="margin:14px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t('coachdash.tier.all')}</div>
+    ${tier.allTiers.map((x) => `
+      <div style="padding:8px 0;border-top:1px dashed var(--line);${x.number === tier.tierNumber ? '' : 'opacity:.65'}">
+        <strong>${tierName(x.number)}</strong>
+        <span class="muted">· ${esc(I18N.server(x.sessions))}</span><br>
+        <span class="muted">${t('coachdash.tier.per_session')}</span> ${eur(x.earnPerSession.onPitchCents)}
+        <span class="muted">${t('coachdash.tier.onpitch')} ·</span> ${eur(x.earnPerSession.onlineCents)} <span class="muted">${t('coachdash.tier.online')}</span>
       </div>`).join('')}`;
 }
 
@@ -191,11 +203,11 @@ async function loadReviews() {
   const box = document.getElementById('reviews-body');
   let data;
   try { data = await API.get('/coach/reviews'); }
-  catch (err) { box.innerHTML = `<p class="muted">${esc(err.message)}</p>`; return; }
+  catch (err) { box.innerHTML = `<p class="muted">${esc(I18N.server(err.message))}</p>`; return; }
   const header = `<div class="rating-line" style="margin-bottom:10px">${ratingLine(data.rating)}</div>`;
   box.innerHTML = header + (data.reviews.length
     ? data.reviews.map(reviewHTML).join('')
-    : '<p class="muted">No reviews yet — they’ll appear here once your clients leave one.</p>');
+    : `<p class="muted">${t('coachdash.reviews.empty')}</p>`);
 }
 
 // --- filters ----------------------------------------------------------------
@@ -205,7 +217,7 @@ function buildFilters() {
   locBox.innerHTML = state.site.locations.map((l) => `
     <span class="chip chip-toggle ${state.coach.locations.includes(l) ? 'on' : ''}" data-v="${esc(l)}">${esc(l)}</span>`).join('');
   posBox.innerHTML = state.site.positions.map((p) => `
-    <span class="chip chip-toggle ${state.coach.positions.includes(p) ? 'on' : ''}" data-v="${esc(p)}">${esc(cap(p))}</span>`).join('');
+    <span class="chip chip-toggle ${state.coach.positions.includes(p) ? 'on' : ''}" data-v="${esc(p)}">${esc(posLabel(p))}</span>`).join('');
   [locBox, posBox].forEach((box) => box.querySelectorAll('.chip-toggle').forEach((chip) =>
     chip.addEventListener('click', () => chip.classList.toggle('on'))));
 }
@@ -221,9 +233,9 @@ async function saveFilters() {
     });
     state.coach.locations = res.locations;
     state.coach.positions = res.positions;
-    toast('Filters saved — players now see your updated options.');
+    toast(t('coachdash.filters.saved'));
   } catch (err) {
-    msg.textContent = err.message;
+    msg.textContent = I18N.server(err.message);
   }
 }
 
@@ -234,61 +246,64 @@ async function saveFilters() {
 async function loadSessions() {
   const list = document.getElementById('sessions-list');
   const rows = await API.get('/coach/bookings');
-  if (!rows.length) { list.innerHTML = '<p class="muted">No sessions booked yet.</p>'; return; }
+  if (!rows.length) { list.innerHTML = `<p class="muted">${t('coachdash.clients.empty')}</p>`; return; }
 
   const upcoming = rows.filter((r) => r.status === 'confirmed').slice().reverse();
   const past = rows.filter((r) => r.status !== 'confirmed');
+
+  // Status labels: Finnish text, but the raw English value keeps driving the
+  // status-${status} CSS classes and the API calls.
+  const statusText = (s) => s === 'confirmed' ? t('coachdash.status.current') : t('common.status.' + s);
 
   // "Completed" only makes sense once the session has taken place — the server
   // rejects earlier, so disable it for clearly-future dates to match.
   const isFuture = (r) => r.date > state.today;
   const statusBtns = (r) => ['confirmed', 'completed', 'cancelled'].map((s) => {
-    const label = s === 'confirmed' ? 'Current' : cap(s);
+    const label = cap(statusText(s));
     const on = r.status === s;
     const lockFuture = s === 'completed' && isFuture(r);
     const cls = on ? 'btn-primary' : s === 'cancelled' ? 'btn-danger' : 'btn-ghost';
     return `<button class="btn btn-sm ${cls}" data-status="${s}" data-code="${esc(r.code)}"
-      ${on || lockFuture ? 'disabled' : ''} ${lockFuture ? 'title="Available after the session has taken place"' : ''}>${label}</button>`;
+      ${on || lockFuture ? 'disabled' : ''} ${lockFuture ? `title="${t('coachdash.clients.lock_future')}"` : ''}>${esc(label)}</button>`;
   }).join(' ');
 
   const item = (r) => `
     <div class="client-row" style="border-bottom:1px dashed var(--line);padding:12px 0">
       <div style="display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;align-items:baseline">
-        <strong>${esc(fmtDate(r.date))} ${String(r.hour).padStart(2, '0')}:00–${String(r.hour + 1).padStart(2, '0')}:00</strong>
-        <span class="status-tag status-${esc(r.status)}">${r.status === 'confirmed' ? 'current' : esc(r.status)}</span>
+        <strong>${esc(fmtDate(r.date))} ${String(r.hour).padStart(2, '0')}${hourSep}00–${String(r.hour + 1).padStart(2, '0')}${hourSep}00</strong>
+        <span class="status-tag status-${esc(r.status)}">${esc(statusText(r.status))}</span>
       </div>
       <div style="margin:4px 0 2px"><strong>${esc(r.customer)}</strong>
         <a class="small" href="mailto:${esc(r.customer_email)}">${esc(r.customer_email)}</a></div>
-      <div class="small muted">${esc(cap(r.position))} · ${esc(r.focus)} ·
-        ${r.is_online ? 'online' : esc(r.location)} ·
-        ${r.credit_applied ? 'client pays 0 € (credit)' : 'client pays ' + eur(r.total_cents)}</div>
+      <div class="small muted">${esc(posLabel(r.position))} · ${esc(focusLabel(r.focus))} ·
+        ${r.is_online ? esc(I18N.server('Online')) : esc(r.location)} ·
+        ${r.credit_applied ? t('coachdash.clients.pays_credit') : t('coachdash.clients.pays', { amount: esc(eur(r.total_cents)) })}</div>
       ${r.earn_cents != null ? `<div class="small" style="color:var(--lime);margin-top:2px">
-        You earn ${eur(r.earn_cents)}${r.earn_estimated ? ' (estimate — final amount set when the session is completed)' : ''}</div>` : ''}
+        ${t('coachdash.clients.earn', { amount: esc(eur(r.earn_cents)) })}${r.earn_estimated ? ' ' + t('coachdash.clients.earn_estimate') : ''}</div>` : ''}
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${statusBtns(r)}</div>
     </div>`;
 
   list.innerHTML =
-    `<div class="small muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">Upcoming clients (${upcoming.length})</div>` +
-    (upcoming.map(item).join('') || '<p class="muted">Nothing upcoming.</p>') +
-    `<div class="small muted" style="margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">Past & cancelled (${past.length})</div>` +
+    `<div class="small muted" style="margin-bottom:4px;text-transform:uppercase;letter-spacing:.08em">${t('coachdash.clients.upcoming', { n: upcoming.length })}</div>` +
+    (upcoming.map(item).join('') || `<p class="muted">${t('coachdash.clients.none_upcoming')}</p>`) +
+    `<div class="small muted" style="margin:16px 0 4px;text-transform:uppercase;letter-spacing:.08em">${t('coachdash.clients.past', { n: past.length })}</div>` +
     past.slice(0, 10).map(item).join('');
 
   list.querySelectorAll('[data-status]').forEach((btn) => btn.addEventListener('click', async () => {
     const to = btn.dataset.status;
-    if (to === 'cancelled' && !confirm(
-      'Cancel this session? The client will be notified and their next booking with any coach will be FREE.')) return;
+    if (to === 'cancelled' && !confirm(t('coachdash.clients.confirm_cancel'))) return;
     btn.disabled = true;
     try {
       await API.post(`/coach/bookings/${encodeURIComponent(btn.dataset.code)}/status`, { status: to });
       toast(to === 'cancelled'
-        ? 'Session cancelled — the client has been notified and got a free-session credit.'
-        : `Marked as ${to === 'confirmed' ? 'current' : to}.`);
+        ? t('coachdash.clients.cancelled_toast')
+        : t('coachdash.clients.marked', { status: statusText(to) }));
       await loadSessions();
       await loadWeek(); // a cancelled slot becomes bookable again
       await loadTier(); // completions move the monthly tier forward
     } catch (err) {
       btn.disabled = false;
-      toast(err.message, true);
+      toast(I18N.server(err.message), true);
     }
   }));
 }

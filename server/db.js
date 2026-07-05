@@ -29,7 +29,8 @@ CREATE TABLE IF NOT EXISTS coaches (
   user_id INTEGER UNIQUE REFERENCES users(id),
   name TEXT NOT NULL,
   slug TEXT NOT NULL UNIQUE,
-  bio TEXT NOT NULL DEFAULT '',
+  bio TEXT NOT NULL DEFAULT '',           -- Finnish (canonical site language)
+  bio_en TEXT NOT NULL DEFAULT '',        -- English version ('' = fall back to bio)
   photos TEXT NOT NULL DEFAULT '[]',      -- JSON array of asset URLs
   locations TEXT NOT NULL DEFAULT '[]',   -- JSON array from config.locations
   positions TEXT NOT NULL DEFAULT '[]',   -- JSON array from config.positions

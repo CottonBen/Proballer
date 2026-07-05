@@ -12,7 +12,10 @@ const API = {
     let data = null;
     try { data = await res.json(); } catch { /* non-JSON (e.g. invoice HTML) */ }
     if (!res.ok) {
-      const err = new Error((data && data.error) || `Request failed (${res.status})`);
+      // Server error strings are English; I18N.server maps known ones to Finnish.
+      const err = new Error(data && data.error
+        ? I18N.server(data.error)
+        : t('common.requestfailed', { status: res.status }));
       err.status = res.status;
       throw err;
     }
@@ -44,25 +47,35 @@ const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
 
 const DASH_FOR_ROLE = { admin: '/admin', coach: '/coach', customer: '/my-bookings' };
 
-// Fills the header auth area: "Log in" CTA when anonymous, dashboard + logout when known.
+// Fills the header auth area. Anonymous: booking CTA + "Log in" + language
+// toggle. Known: role buttons + logout + toggle (customers keep the CTA too).
 async function initHeaderAuth() {
   const box = document.getElementById('auth-box');
   if (!box) return null;
   let me = { user: null };
   try { me = await API.get('/me'); } catch { /* treat as anonymous */ }
   box.innerHTML = '';
+  const bookCta = () => {
+    const a = document.createElement('a');
+    a.href = '/#coaches';
+    a.className = 'btn btn-primary btn-sm';
+    a.textContent = t('common.cta.book');
+    return a;
+  };
   if (!me.user) {
+    box.appendChild(bookCta());
     const a = document.createElement('a');
     a.href = '/login';
-    a.className = 'btn btn-primary btn-sm';
-    a.textContent = 'Log in';
+    a.className = 'btn btn-ghost btn-sm';
+    a.textContent = t('common.login');
     box.appendChild(a);
   } else {
     // Dual-role users (admin + coach profile) get a button for each hat.
+    if (me.user.role === 'customer') box.appendChild(bookCta());
     const links = [];
-    if (me.user.role === 'admin') links.push(['/admin', 'Admin']);
-    if (me.coachProfile) links.push(['/coach', 'My calendar']);
-    if (me.user.role === 'customer') links.push(['/my-bookings', 'My bookings']);
+    if (me.user.role === 'admin') links.push(['/admin', t('common.admin')]);
+    if (me.coachProfile) links.push(['/coach', t('common.mycalendar')]);
+    if (me.user.role === 'customer') links.push(['/my-bookings', t('common.mybookings')]);
     for (const [href, label] of links) {
       const a = document.createElement('a');
       a.href = href;
@@ -72,13 +85,14 @@ async function initHeaderAuth() {
     }
     const out = document.createElement('button');
     out.className = 'btn btn-ghost btn-sm';
-    out.textContent = 'Log out';
+    out.textContent = t('common.logout');
     out.addEventListener('click', async () => {
       await API.post('/auth/logout', {});
       location.href = '/';
     });
     box.appendChild(out);
   }
+  box.appendChild(langToggleEl());
   return me.user;
 }
 
@@ -100,14 +114,15 @@ function requireLoginRedirect() {
 function starsHTML(avg) {
   const val = Math.max(0, Math.min(5, Number(avg) || 0));
   const pct = (val / 5 * 100).toFixed(1);
-  return `<span class="stars" role="img" aria-label="${val ? val + ' out of 5 stars' : 'no rating yet'}">`
+  const label = val ? t('common.stars.aria', { val: val.toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB') }) : t('common.stars.none');
+  return `<span class="stars" role="img" aria-label="${label}">`
     + `<span class="stars-fill" style="width:${pct}%">★★★★★</span>★★★★★</span>`;
 }
 
 // Stars + "4.5 (12)" line. Falls back to a muted "No reviews yet" when count = 0.
 function ratingLine(rating) {
   if (!rating || !rating.count) {
-    return `<span class="rating-line muted">${starsHTML(0)}<span class="small">No reviews yet</span></span>`;
+    return `<span class="rating-line muted">${starsHTML(0)}<span class="small">${t('common.noreviews')}</span></span>`;
   }
   return `<span class="rating-line">${starsHTML(rating.avg)}`
     + `<span class="small"><strong>${rating.avg.toLocaleString('fi-FI')}</strong> `
@@ -119,13 +134,12 @@ function reviewHTML(r) {
   return `<div class="review">
       <div>${starsHTML(r.rating)}</div>
       ${r.body ? `<p class="review-body">${esc(r.body)}</p>` : ''}
-      <div class="small muted">— ${esc(r.author_name || r.author || 'Anonymous')}${r.date ? ' · ' + esc(r.date) : ''}</div>
+      <div class="small muted">— ${esc(r.author_name || r.author || t('common.anonymous'))}${r.date ? ' · ' + esc(r.date) : ''}</div>
     </div>`;
 }
 
-const WEEKDAYS = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
 function fmtDate(iso) {
   // UTC-anchored so a calendar date renders the same weekday in every timezone.
   const d = new Date(iso + 'T12:00:00Z');
-  return `${WEEKDAYS[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
+  return `${t('common.weekdays').split(',')[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
 }

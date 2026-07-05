@@ -6,6 +6,13 @@
       "runtimeExecutable": "npm",
       "runtimeArgs": ["start"],
       "port": 3000
+    },
+    {
+      "name": "proballers-preview",
+      "runtimeExecutable": "/Users/user/.local/bin/node",
+      "runtimeArgs": ["server/app.js"],
+      "port": 3199,
+      "env": { "PORT": "3199", "DEMO_DATA": "1" }
     }
   ]
 }

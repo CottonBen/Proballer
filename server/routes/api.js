@@ -16,7 +16,7 @@ const WINDOWS = { d7: 7, d30: 30, d90: 90 };
 
 const parseJSON = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
 const coachPublic = (c) => ({
-  id: c.id, name: c.name, slug: c.slug, bio: c.bio,
+  id: c.id, name: c.name, slug: c.slug, bio: c.bio, bio_en: c.bio_en || '',
   photos: parseJSON(c.photos, []),
   locations: parseJSON(c.locations, []),
   positions: parseJSON(c.positions, []),
@@ -77,6 +77,9 @@ function resolvePhotos(list, slug) {
 function readCoachFields(body) {
   const name = String(body?.name || '').trim();
   const bio = String(body?.bio || '').trim().slice(0, 1200);
+  // bio_en is optional: null means "field not sent" (an older cached admin UI),
+  // so updates keep the stored English bio instead of silently wiping it.
+  const bio_en = body?.bio_en === undefined ? null : String(body.bio_en || '').trim().slice(0, 1200);
   const positions = Array.isArray(body?.positions)
     ? [...new Set(body.positions.filter(p => config.positions.includes(p)))] : [];
   const locations = Array.isArray(body?.locations)
@@ -84,7 +87,7 @@ function readCoachFields(body) {
   if (name.length < 2 || name.length > 60) return { error: 'Coach name must be 2–60 characters.' };
   if (!positions.length) return { error: 'Pick at least one position group.' };
   if (!locations.length) return { error: 'Pick at least one city.' };
-  return { name, bio, positions, locations, featured: body?.featured ? 1 : 0 };
+  return { name, bio, bio_en, positions, locations, featured: body?.featured ? 1 : 0 };
 }
 
 // Has a session's slot already ended (in Helsinki time)? Only ended sessions
@@ -822,7 +825,7 @@ router.get('/admin/coaches/:id', requireRole('admin'), (req, res) => {
   if (!c) return res.status(404).json({ error: 'Coach not found.' });
   const user = c.user_id ? db.prepare('SELECT email, role FROM users WHERE id = ?').get(c.user_id) : null;
   res.json({
-    id: c.id, name: c.name, slug: c.slug, bio: c.bio,
+    id: c.id, name: c.name, slug: c.slug, bio: c.bio, bio_en: c.bio_en || '',
     photos: parseJSON(c.photos, []),
     positions: parseJSON(c.positions, []),
     locations: parseJSON(c.locations, []),
@@ -870,8 +873,8 @@ router.post('/admin/coaches', requireRole('admin'), (req, res) => {
     }
     const order = db.prepare('SELECT COALESCE(MAX(display_order),0)+10 AS n FROM coaches').get().n;
     const info = db.prepare(`INSERT INTO coaches
-      (user_id, name, slug, bio, photos, locations, positions, featured, display_order, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?)`).run(userId, v.name, slug, v.bio, JSON.stringify(photos),
+      (user_id, name, slug, bio, bio_en, photos, locations, positions, featured, display_order, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(userId, v.name, slug, v.bio, v.bio_en || '', JSON.stringify(photos),
         JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured, order, nowISO());
     db.exec('COMMIT');
     sheets.scheduleSync();
@@ -905,8 +908,9 @@ router.put('/admin/coaches/:id', requireRole('admin'), (req, res) => {
     if (!resolved.length) return res.status(400).json({ error: 'A coach needs at least one photo.' });
     photos = resolved;
   }
-  db.prepare('UPDATE coaches SET name=?, bio=?, locations=?, positions=?, featured=?, photos=? WHERE id=?')
-    .run(v.name, v.bio, JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured,
+  // COALESCE: a request without bio_en (older cached admin UI) keeps the stored value.
+  db.prepare('UPDATE coaches SET name=?, bio=?, bio_en=COALESCE(?, bio_en), locations=?, positions=?, featured=?, photos=? WHERE id=?')
+    .run(v.name, v.bio, v.bio_en, JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured,
       JSON.stringify(photos), c.id);
   if (c.user_id) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(v.name, c.user_id); // keep login name in sync
   sheets.scheduleSync();

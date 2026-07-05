@@ -1,9 +1,9 @@
 <!doctype html>
-<html lang="en">
+<html lang="fi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Admin — Proballers Coaching Finland</title>
+  <title data-i18n="admin.title">Ylläpito — Proballers Coaching Finland</title>
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -21,22 +21,22 @@
   <main class="wrap">
     <div class="dash-title">
       <div>
-        <h1 style="font-size:2.4rem">Mission control</h1>
-        <p class="muted" id="gen-time">Everything about the business, live.</p>
+        <h1 style="font-size:2.4rem" data-i18n="admin.heading">Komentokeskus</h1>
+        <p class="muted" id="gen-time" data-i18n="admin.subtitle">Koko liiketoiminta, reaaliajassa.</p>
       </div>
       <div class="window-pills" id="window-pills">
-        <button data-w="d7">7 days</button>
-        <button data-w="d30" class="on">30 days</button>
-        <button data-w="d90">90 days</button>
-        <button data-w="all">All time</button>
+        <button data-w="d7" data-i18n="admin.window.d7">7 päivää</button>
+        <button data-w="d30" class="on" data-i18n="admin.window.d30">30 päivää</button>
+        <button data-w="d90" data-i18n="admin.window.d90">90 päivää</button>
+        <button data-w="all" data-i18n="admin.window.all">Koko aika</button>
       </div>
     </div>
 
     <div id="demo-note" hidden class="card" style="border-color:rgba(247,161,58,.5);margin-bottom:18px">
-      <strong style="color:#f7a13a">Demo data is loaded.</strong>
-      <span class="muted small">The numbers below include generated example data so you can see how
-        everything works. When you go live, press</span>
-      <button class="btn btn-ghost btn-sm" id="remove-demo">Remove demo data</button>
+      <strong style="color:#f7a13a" data-i18n="admin.demo.loaded">Demodata on ladattu.</strong>
+      <span class="muted small" data-i18n="admin.demo.note">Alla olevissa luvuissa on mukana generoitua
+        esimerkkidataa, jotta näet, miten kaikki toimii. Kun siirryt tuotantoon, paina</span>
+      <button class="btn btn-ghost btn-sm" id="remove-demo" data-i18n="admin.demo.remove">Poista demodata</button>
     </div>
 
     <!-- headline stats -->
@@ -47,23 +47,23 @@
 
     <!-- coaches -->
     <div class="dash-title">
-      <h2 style="font-size:1.8rem">How the coaches are doing</h2>
-      <button class="btn btn-primary btn-sm" id="add-coach">+ Add coach</button>
+      <h2 style="font-size:1.8rem" data-i18n="admin.coaches.heading">Miten valmentajilla menee</h2>
+      <button class="btn btn-primary btn-sm" id="add-coach" data-i18n="admin.coaches.add">+ Lisää valmentaja</button>
     </div>
     <div class="card" style="overflow-x:auto">
       <table class="data" id="coach-table"></table>
-      <p class="small muted" style="margin:10px 0 0">Click a coach's name to see their live calendar,
-        or <strong>Manage</strong> to edit their photos, bio, cities/positions and login.</p>
+      <p class="small muted" style="margin:10px 0 0"><span data-i18n="admin.coaches.hint.before">Klikkaa valmentajan
+        nimeä, niin näet hänen ajantasaisen kalenterinsa — </span><strong data-i18n="admin.coaches.hint.manage">Muokkaa</strong><span data-i18n="admin.coaches.hint.after">-painikkeesta pääset muokkaamaan kuvia, biota, kaupunkeja ja pelipaikkoja sekä kirjautumistietoja.</span></p>
     </div>
 
     <!-- bookings -->
     <div class="dash-title">
-      <h2 style="font-size:1.8rem">Bookings</h2>
+      <h2 style="font-size:1.8rem" data-i18n="admin.bookings.heading">Varaukset</h2>
       <div class="window-pills" id="booking-filter">
-        <button data-s="" class="on">All</button>
-        <button data-s="confirmed">Upcoming</button>
-        <button data-s="completed">Completed</button>
-        <button data-s="cancelled">Cancelled</button>
+        <button data-s="" class="on" data-i18n="admin.filter.all">Kaikki</button>
+        <button data-s="confirmed" data-i18n="admin.bookings.filter.upcoming">Tulevat</button>
+        <button data-s="completed" data-i18n="admin.bookings.filter.completed">Pidetyt</button>
+        <button data-s="cancelled" data-i18n="admin.bookings.filter.cancelled">Perutut</button>
       </div>
     </div>
     <div class="card" style="overflow-x:auto">
@@ -73,47 +73,47 @@
     <!-- CRM -->
     <div class="dash-title">
       <div>
-        <h2 style="font-size:1.8rem">Customers — CRM</h2>
-        <p class="muted small" style="margin:0">Who has an account, how much they've booked, and what's been paid.</p>
+        <h2 style="font-size:1.8rem" data-i18n="admin.crm.heading">Asiakkaat — CRM</h2>
+        <p class="muted small" style="margin:0" data-i18n="admin.crm.sub">Kenellä on tili, paljonko varauksia on tehty ja mitä on maksettu.</p>
       </div>
     </div>
     <div class="grid stat-grid" id="crm-stats"></div>
     <div class="card" style="overflow-x:auto;margin-top:18px">
       <table class="data" id="crm-customers"></table>
-      <p class="muted small" id="crm-empty" hidden style="margin:12px 0 4px">No customer accounts yet —
-        they'll appear here as soon as someone signs up on the site.</p>
+      <p class="muted small" id="crm-empty" hidden style="margin:12px 0 4px" data-i18n="admin.crm.empty">Ei vielä asiakastilejä —
+        ne ilmestyvät tänne heti, kun joku rekisteröityy sivustolla.</p>
     </div>
     <div class="dash-title">
-      <h3 style="margin:0">Invoices</h3>
+      <h3 style="margin:0" data-i18n="admin.invoices.heading">Laskut</h3>
       <div class="window-pills" id="invoice-filter">
-        <button data-f="" class="on">All</button>
-        <button data-f="sent">Unpaid</button>
-        <button data-f="paid">Paid</button>
-        <button data-f="void">Voided</button>
+        <button data-f="" class="on" data-i18n="admin.filter.all">Kaikki</button>
+        <button data-f="sent" data-i18n="admin.invoices.filter.unpaid">Maksamatta</button>
+        <button data-f="paid" data-i18n="admin.invoices.filter.paid">Maksetut</button>
+        <button data-f="void" data-i18n="admin.invoices.filter.void">Mitätöidyt</button>
       </div>
     </div>
     <div class="card" style="overflow-x:auto">
       <table class="data" id="crm-invoices"></table>
     </div>
-    <div class="dash-title"><h3 style="margin:0">Coach reviews</h3></div>
+    <div class="dash-title"><h3 style="margin:0" data-i18n="admin.reviews.heading">Valmentajien arvostelut</h3></div>
     <div class="card" style="overflow-x:auto">
       <table class="data" id="crm-reviews"></table>
-      <p class="muted small" id="crm-reviews-empty" hidden style="margin:12px 0 4px">No reviews yet.</p>
+      <p class="muted small" id="crm-reviews-empty" hidden style="margin:12px 0 4px" data-i18n="admin.reviews.empty">Ei vielä arvosteluja.</p>
     </div>
 
     <!-- data & export -->
-    <div class="dash-title"><h2 style="font-size:1.8rem">Business data</h2></div>
+    <div class="dash-title"><h2 style="font-size:1.8rem" data-i18n="admin.data.heading">Liiketoiminnan data</h2></div>
     <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr))">
       <div class="card">
         <h3>Google Sheets</h3>
-        <p class="small muted" id="sheets-status">Checking…</p>
-        <button class="btn btn-primary btn-sm" id="sheets-sync">Sync to Google Sheets now</button>
-        <p class="small muted" style="margin-top:10px">Not connected yet? The README has a 2-minute,
-          no-password setup (service account) — after that every booking auto-syncs.</p>
+        <p class="small muted" id="sheets-status" data-i18n="admin.sheets.checking">Tarkistetaan…</p>
+        <button class="btn btn-primary btn-sm" id="sheets-sync" data-i18n="admin.sheets.sync">Synkronoi Google Sheetsiin nyt</button>
+        <p class="small muted" style="margin-top:10px" data-i18n="admin.sheets.note">Eikö yhteyttä vielä ole? README-tiedostossa
+          on kahden minuutin ohje ilman salasanoja (palvelutili) — sen jälkeen jokainen varaus synkronoituu automaattisesti.</p>
       </div>
       <div class="card">
-        <h3>CSV downloads</h3>
-        <p class="small muted">The same datasets the Google Sheet gets:</p>
+        <h3 data-i18n="admin.csv.heading">CSV-lataukset</h3>
+        <p class="small muted" data-i18n="admin.csv.sub">Samat tietojoukot kuin Google Sheetiin:</p>
         <div id="csv-links" style="display:flex;gap:8px;flex-wrap:wrap"></div>
       </div>
     </div>
@@ -122,7 +122,7 @@
   <!-- coach calendar modal -->
   <div class="modal-backdrop" id="cal-backdrop">
     <div class="modal" style="max-width:900px" role="dialog" aria-modal="true">
-      <button class="close" id="cal-close" aria-label="Close">×</button>
+      <button class="close" id="cal-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
       <div id="cal-modal-body"></div>
     </div>
   </div>
@@ -130,12 +130,12 @@
   <!-- coach add/manage modal -->
   <div class="modal-backdrop" id="coach-backdrop">
     <div class="modal" style="max-width:640px" role="dialog" aria-modal="true">
-      <button class="close" id="coach-close" aria-label="Close">×</button>
+      <button class="close" id="coach-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
       <div id="coach-modal-body"></div>
     </div>
   </div>
 
-  <script src="/js/common.js"></script>
+  <script src="/js/i18n.js"></script>  <script src="/js/common.js"></script>
   <script src="/js/admin.js"></script>
 </body>
 </html>

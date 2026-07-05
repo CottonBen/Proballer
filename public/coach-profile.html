@@ -1,10 +1,10 @@
 <!doctype html>
-<html lang="en">
+<html lang="fi">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>Coach — Proballers Coaching Finland</title>
-  <meta name="description" content="Coach profile — book a 1-on-1 football session.">
+  <title data-i18n="profile.title">Valmentaja — Proballers Coaching Finland</title>
+  <meta name="description" data-i18n-content="profile.meta.description" content="Valmentajaprofiili — varaa henkilökohtainen jalkapallotreeni.">
   <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
   <link rel="stylesheet" href="/styles.css">
 </head>
@@ -23,7 +23,7 @@
 
   <main>
     <div class="wrap" id="profile-root">
-      <p class="muted" style="padding:40px 0">Loading coach…</p>
+      <p class="muted" style="padding:40px 0" data-i18n="profile.loading">Ladataan valmentajaa…</p>
     </div>
   </main>
 
@@ -33,18 +33,20 @@
         <strong>Proballers Coaching Finland</strong><br>
         Helsinki · Espoo · Vantaa
       </div>
-      <div>1-on-1 coaching for young footballers.<br>Working name — official name coming soon.</div>
+      <div><span data-i18n="common.footer.tagline">Henkilökohtaista valmennusta nuorille jalkapalloilijoille.</span><br>
+        <span data-i18n="common.footer.workingname">Työnimi — virallinen nimi tulossa pian.</span></div>
     </div>
   </footer>
 
   <!-- Booking wizard modal (same markup as the landing page) -->
   <div class="modal-backdrop" id="wizard-backdrop">
-    <div class="modal" role="dialog" aria-modal="true" aria-label="Book a session">
-      <button class="close" id="wizard-close" aria-label="Close">×</button>
+    <div class="modal" role="dialog" aria-modal="true" data-i18n-aria="booking.wizard.arialabel" aria-label="Varaa treeni">
+      <button class="close" id="wizard-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
       <div id="wizard-body"></div>
     </div>
   </div>
 
+  <script src="/js/i18n.js"></script>
   <script src="/js/common.js"></script>
   <script src="/js/coach-profile.js"></script>
   <script src="/js/booking.js"></script>
