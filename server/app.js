@@ -32,6 +32,11 @@ app.use((req, res, next) => {
 // large-body allowance below can be limited to authenticated admins.
 app.use(sessionMiddleware);
 
+// Stripe webhook needs the RAW request body for signature verification, so it
+// mounts before the JSON parsers below.
+app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }),
+  require('./stripe').webhookHandler);
+
 // Most requests carry tiny JSON; only an ADMIN creating/updating a coach carries
 // base64 photos, so only those get the larger limit (images are downscaled
 // client-side first). Everyone else — including anonymous callers hitting the

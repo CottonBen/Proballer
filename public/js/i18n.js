@@ -369,6 +369,13 @@ const I18N_DICT = {
   "booking.step.notes.hint": { fi: "Viesti välitetään valmentajallesi keskusteluun, joka avautuu varauksen yhteydessä.", en: "This is passed to your coach in the chat that opens with your booking." },
   "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
 
+  // --- card payments (Stripe) ---
+  "pay.card": { fi: "Maksa kortilla", en: "Pay by card" },
+  "pay.now": { fi: "Maksa nyt kortilla", en: "Pay now by card" },
+  "pay.received": { fi: "Maksu vastaanotettu — kiitos! Lasku on merkitty maksetuksi.", en: "Payment received — thank you! The invoice is marked paid." },
+  "pay.pending": { fi: "Maksu käsitellään — lasku päivittyy hetken kuluttua.", en: "Payment is processing — the invoice updates shortly." },
+  "pay.cancelled": { fi: "Maksua ei suoritettu.", en: "The payment was not completed." },
+
   // --- chat ---
   "chat.title": { fi: "Viestit — Proballers Coaching", en: "Chats — Proballers Coaching" },
   "chat.heading": { fi: "Viestit", en: "Chats" },
@@ -636,6 +643,9 @@ const I18N_SERVER_EXACT = {
   "Bank transfer": "Tilisiirto",
   "Online": "Etänä",
   "Chat not found.": "Keskustelua ei löytynyt.",
+  "Card payments are not enabled yet.": "Korttimaksut eivät ole vielä käytössä.",
+  "Invoice is already paid.": "Lasku on jo maksettu.",
+  "Nothing to pay.": "Ei maksettavaa.",
   "Empty message.": "Tyhjä viesti.",
   "Message is too long (max 2000 characters).": "Viesti on liian pitkä (enintään 2000 merkkiä).",
 

@@ -32,6 +32,22 @@
 
   await loadReviewsSection();   // independent of the bookings table below
 
+  // Returning from Stripe Checkout: confirm the payment server-side.
+  const params = new URLSearchParams(location.search);
+  if (params.get('paid')) {
+    try {
+      const r = await API.post(`/invoices/${encodeURIComponent(params.get('paid'))}/refresh-payment`, {});
+      toast(r.status === 'paid' ? t('pay.received') : t('pay.pending'));
+    } catch { toast(t('pay.pending')); }
+    history.replaceState(null, '', '/my-bookings');
+  } else if (params.get('paycancel')) {
+    toast(t('pay.cancelled'), true);
+    history.replaceState(null, '', '/my-bookings');
+  }
+
+  let stripeOn = false;
+  try { stripeOn = Boolean((await API.get('/config')).payment.stripeEnabled); } catch { /* off */ }
+
   const rows = await API.get('/my-bookings');
   const tbl = document.getElementById('bookings-table');
   document.getElementById('empty-note').hidden = rows.length > 0;
@@ -51,8 +67,20 @@
         <td>${eur(b.total_cents)}</td>
         <td><span class="status-tag status-${esc(b.status)}">${esc(t('common.status.' + b.status))}</span></td>
         <td>${b.invoice_number
-          ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>` : '—'}</td>
+          ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>${
+              stripeOn && b.invoice_status === 'sent' && b.total_cents > 0
+                ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" data-pay="${esc(b.invoice_number)}">💳 ${t('pay.card')}</button>` : ''
+            }` : '—'}</td>
       </tr>`).join('');
+
+  // Card payment: create a Checkout session and hand over to Stripe.
+  tbl.querySelectorAll('[data-pay]').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const { url } = await API.post(`/invoices/${encodeURIComponent(btn.dataset.pay)}/pay`, {});
+      location.href = url;
+    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
+  }));
 })().catch((e) => toast(I18N.server(e.message), true));
 
 // --- reviews: leave one per coach you've completed a session with -------------

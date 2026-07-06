@@ -10,6 +10,7 @@ const { createSession, destroySession, requireRole, loginThrottle } = require('.
 const { createInvoiceForBooking, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
 const tiers = require('../tiers');
+const stripe = require('../stripe');
 const i18n = require('../i18n');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
@@ -202,7 +203,7 @@ router.get('/config', (req, res) => {
     emailDelivery: require('../mailer').smtpConfigured(),
     // Only the method NAME is public; the IBAN / MobilePay number live on the
     // invoice (auth-gated) so they aren't scraped from the open config endpoint.
-    payment: { method: config.payment.method },
+    payment: { method: config.payment.method, stripeEnabled: stripe.enabled() },
   });
 });
 
@@ -602,7 +603,7 @@ router.get('/my-bookings', requireRole('customer', 'admin'), (req, res) => {
   autoCompleteBookings();
   const rows = db.prepare(`
     SELECT b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
-           b.total_cents, c.name AS coach, i.number AS invoice_number
+           b.total_cents, c.name AS coach, i.number AS invoice_number, i.status AS invoice_status
     FROM bookings b JOIN coaches c ON c.id = b.coach_id
     LEFT JOIN invoices i ON i.booking_id = b.id
     WHERE b.customer_id = ? ORDER BY b.date DESC, b.hour DESC`).all(req.user.id);
@@ -622,7 +623,60 @@ router.get('/invoices/:number', requireRole('customer', 'admin', 'coach'), (req,
   if (!isOwner) return res.status(403).json({ error: 'Not allowed.' });
   const file = path.join(OUTBOX, path.basename(inv.html_path || ''));
   if (!inv.html_path || !fs.existsSync(file)) return res.status(404).json({ error: 'Invoice file missing.' });
-  res.type('html').send(fs.readFileSync(file, 'utf8'));
+  res.set('Cache-Control', 'no-cache');
+  return res.sendFile(file);
+});
+
+// Start an online card payment for an invoice (Stripe Checkout redirect).
+router.post('/invoices/:number/pay', requireRole('customer', 'admin'), async (req, res) => {
+  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(String(req.params.number));
+  if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
+  if (req.user.role !== 'admin' && inv.customer_email !== req.user.email) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  if (inv.status === 'paid') return res.status(409).json({ error: 'Invoice is already paid.' });
+  if (inv.status === 'void') {
+    return res.status(409).json({ error: 'This invoice is voided (its booking was cancelled) — it cannot be marked paid.' });
+  }
+  if (!inv.amount_cents) return res.status(400).json({ error: 'Nothing to pay.' });
+  const booking = db.prepare(`SELECT b.date, b.hour, c.name AS coach
+    FROM bookings b JOIN coaches c ON c.id = b.coach_id WHERE b.id = ?`).get(inv.booking_id);
+  const me = db.prepare('SELECT lang FROM users WHERE id = ?').get(req.user.id);
+  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+  try {
+    const session = await stripe.createCheckoutSession({
+      invoiceNumber: inv.number,
+      amountCents: inv.amount_cents,
+      description: `${config.siteName} — ${booking.coach} ${booking.date} ${String(booking.hour).padStart(2, '0')}:00 (${inv.number})`,
+      customerEmail: inv.customer_email,
+      origin,
+      lang: me && me.lang,
+    });
+    db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, inv.id);
+    res.json({ url: session.url });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+// Success-URL return: re-read the Checkout session server-side and mark the
+// invoice paid. Works without any webhook (local/dev); idempotent with it.
+router.post('/invoices/:number/refresh-payment', requireRole('customer', 'admin'), async (req, res) => {
+  const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(String(req.params.number));
+  if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
+  if (req.user.role !== 'admin' && inv.customer_email !== req.user.email) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  if (inv.status === 'paid') return res.json({ status: 'paid' });
+  if (!stripe.enabled() || !inv.stripe_session_id) return res.json({ status: inv.status });
+  try {
+    const session = await stripe.retrieveSession(inv.stripe_session_id);
+    if (session.payment_status === 'paid') stripe.markInvoicePaid(inv.number);
+    res.json({ status: session.payment_status === 'paid' ? 'paid' : inv.status });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
 });
 
 // ---------------------------------------------------------------------------

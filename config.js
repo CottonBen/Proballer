@@ -80,6 +80,15 @@ module.exports = {
     referenceHint: 'Use the invoice number as the message/reference',
   },
 
+  // Stripe card payments (optional). Set STRIPE_SECRET_KEY (sk_test_/sk_live_)
+  // to enable the "Pay by card" flow; STRIPE_WEBHOOK_SECRET (whsec_...) lets
+  // Stripe confirm payments server-to-server in production. Without keys the
+  // site is bank-transfer-only, exactly as before.
+  stripe: {
+    secretKey: process.env.STRIPE_SECRET_KEY || '',
+    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+  },
+
   // How many days ahead coaches can publish availability / customers can book.
   bookingHorizonDays: 60,
 

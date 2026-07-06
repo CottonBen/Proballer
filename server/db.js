@@ -203,6 +203,8 @@ for (const stmt of [
   'ALTER TABLE invoices ADD COLUMN prev_status TEXT',
   // Customer's free-text notes to the coach, asked in the booking wizard.
   "ALTER TABLE bookings ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
+  // Stripe Checkout session behind an online card payment (NULL = none started).
+  'ALTER TABLE invoices ADD COLUMN stripe_session_id TEXT',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

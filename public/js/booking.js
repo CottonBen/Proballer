@@ -384,9 +384,19 @@ function renderSuccess({ booking, invoice }) {
         ? t('booking.success.invoice_emailed')
         : t('booking.success.invoice_ready')} ${t('booking.success.payment_note',
           { myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>
-      <div style="display:flex;gap:10px;justify-content:center;margin-top:8px">
+      <div style="display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap">
+        ${invoice.amountCents > 0 && W.site.payment.stripeEnabled
+          ? `<button class="btn btn-primary" id="pay-now">💳 ${t('pay.now')}</button>` : ''}
         <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">${t('booking.success.view_invoice')}</a>
-        <a class="btn btn-primary" href="/my-bookings">${t('common.nav.my_bookings')}</a>
+        <a class="btn ${invoice.amountCents > 0 && W.site.payment.stripeEnabled ? 'btn-ghost' : 'btn-primary'}" href="/my-bookings">${t('common.nav.my_bookings')}</a>
       </div>
     </div>`;
+  const payBtn = body().querySelector('#pay-now');
+  if (payBtn) payBtn.addEventListener('click', async () => {
+    payBtn.disabled = true;
+    try {
+      const { url } = await API.post(`/invoices/${encodeURIComponent(invoice.number)}/pay`, {});
+      location.href = url;
+    } catch (e) { payBtn.disabled = false; toast(I18N.server(e.message), true); }
+  });
 }
