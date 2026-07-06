@@ -1,4 +1,4 @@
-// Central business configuration for Proballers Coaching Finland (working title).
+// Central business configuration for Proballers Coaching.
 // Change values here — the rest of the app reads everything from this file.
 
 // Load a local, gitignored .env file (KEY=value per line) so secrets — the
@@ -17,7 +17,7 @@
 })();
 
 module.exports = {
-  siteName: 'Proballers Coaching Finland',
+  siteName: 'Proballers Coaching',
   tagline: 'Pro-level 1-on-1 coaching for young footballers',
 
   // Europe/Helsinki drives what "today", "past session" and slot times mean,
@@ -61,7 +61,7 @@ module.exports = {
     // they are also emailed to the customer (see server/mailer.js).
     dueDays: 7,
     numberPrefix: 'PBF',
-    businessLine1: 'Proballers Coaching Finland (working title)',
+    businessLine1: 'Proballers Coaching',
     businessLine2: 'Helsinki · Espoo · Vantaa',
     replyEmail: 'cottonbenjaminmik@gmail.com',
   },
@@ -71,7 +71,7 @@ module.exports = {
   // it in .env locally and in the host's environment in production.
   payment: {
     method: 'Bank transfer',
-    payee: process.env.PAYMENT_PAYEE || 'Proballers Coaching Finland',
+    payee: process.env.PAYMENT_PAYEE || 'Proballers Coaching',
     iban: process.env.PAYMENT_IBAN || 'FI00 0000 0000 0000 00',
     // Optional MobilePay number (Finnish mobile payment). Blank = not offered;
     // set PAYMENT_MOBILEPAY to a phone number to add it to invoices.

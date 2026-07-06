@@ -70,6 +70,13 @@ async function initHeaderAuth() {
     a.textContent = t('common.login');
     box.appendChild(a);
   } else {
+    // Chats: prominent for every logged-in role, with an unread badge.
+    const chats = document.createElement('a');
+    chats.href = '/chats';
+    chats.className = 'btn btn-primary btn-sm chats-btn';
+    chats.innerHTML = `💬 ${esc(t('chat.nav'))}` +
+      (me.unreadChats ? ` <span class="hdr-badge">${me.unreadChats > 9 ? '9+' : me.unreadChats}</span>` : '');
+    box.appendChild(chats);
     // Dual-role users (admin + coach profile) get a button for each hat.
     if (me.user.role === 'customer') box.appendChild(bookCta());
     const links = [];

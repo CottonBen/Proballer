@@ -278,6 +278,8 @@ async function loadSessions() {
       <div class="small muted">${esc(posLabel(r.position))} · ${esc(focusLabel(r.focus))} ·
         ${r.is_online ? esc(I18N.server('Online')) : esc(r.location)} ·
         ${r.credit_applied ? t('coachdash.clients.pays_credit') : t('coachdash.clients.pays', { amount: esc(eur(r.total_cents)) })}</div>
+      ${r.notes ? `<div class="small" style="margin-top:4px;padding:6px 10px;background:rgba(255,255,255,0.04);
+        border-left:2px solid var(--lime);border-radius:6px">📝 ${esc(r.notes)}</div>` : ''}
       ${r.earn_cents != null ? `<div class="small" style="color:var(--lime);margin-top:2px">
         ${t('coachdash.clients.earn', { amount: esc(eur(r.earn_cents)) })}${r.earn_estimated ? ' ' + t('coachdash.clients.earn_estimate') : ''}</div>` : ''}
       <div style="display:flex;gap:6px;margin-top:8px;flex-wrap:wrap">${statusBtns(r)}</div>

@@ -71,6 +71,7 @@ CREATE TABLE IF NOT EXISTS bookings (
   total_cents INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'confirmed' CHECK (status IN ('confirmed','completed','cancelled')),
   credit_applied INTEGER NOT NULL DEFAULT 0,  -- 1 = paid with a free-session credit
+  notes TEXT NOT NULL DEFAULT '',             -- customer's free-text wishes for the coach
   demo INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   completed_at TEXT             -- ISO timestamp of the session end, set on completion
@@ -165,6 +166,31 @@ CREATE TABLE IF NOT EXISTS meta (
   key TEXT PRIMARY KEY,
   value TEXT NOT NULL
 );
+
+-- Coach <-> customer chat. One thread per pair, auto-created on first booking.
+-- Admins are implicit members of every chat (business oversight).
+CREATE TABLE IF NOT EXISTS chats (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  coach_id INTEGER NOT NULL REFERENCES coaches(id),
+  customer_id INTEGER NOT NULL REFERENCES users(id),
+  created_at TEXT NOT NULL,
+  UNIQUE (coach_id, customer_id)
+);
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  sender_id INTEGER REFERENCES users(id),  -- NULL = automatic system line
+  body TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_chat_messages_chat ON chat_messages (chat_id, id);
+-- Per-user read cursor: the last message id this user has seen in a chat.
+CREATE TABLE IF NOT EXISTS chat_reads (
+  chat_id INTEGER NOT NULL REFERENCES chats(id) ON DELETE CASCADE,
+  user_id INTEGER NOT NULL REFERENCES users(id),
+  last_read_id INTEGER NOT NULL DEFAULT 0,
+  PRIMARY KEY (chat_id, user_id)
+);
 `);
 
 // Idempotent column migrations for databases created before a feature existed.
@@ -175,6 +201,8 @@ for (const stmt of [
   'ALTER TABLE bookings ADD COLUMN payout_basis_cents INTEGER',
   // Invoice status before a void, so reactivation can restore 'paid' vs 'sent'.
   'ALTER TABLE invoices ADD COLUMN prev_status TEXT',
+  // Customer's free-text notes to the coach, asked in the booking wizard.
+  "ALTER TABLE bookings ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

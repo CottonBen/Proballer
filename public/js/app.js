@@ -64,7 +64,7 @@ const byStatus = (st) => S.bookings.filter((b) => b.status === st);
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
-const ROUTES = { home: renderHome, sessions: renderSessions, calendar: renderCalendar, alerts: renderAlerts, profile: renderProfile };
+const ROUTES = { home: renderHome, sessions: renderSessions, calendar: renderCalendar, chats: renderChats, alerts: renderAlerts, profile: renderProfile };
 
 function currentTab() {
   const h = (location.hash || '#home').slice(1);
@@ -181,6 +181,81 @@ function renderCalendar() {
   wireSessionActions();
 }
 
+let openChatId = null;
+async function renderChats() {
+  const v = view();
+  if (openChatId) {
+    let data;
+    try { data = await API.get(`/chats/${openChatId}/messages`); }
+    catch { openChatId = null; return renderChats(); }
+    const c = data.chat;
+    const mineIsCoach = S.me.user.id === c.coachUserId;
+    v.innerHTML = `<div class="screen">
+      <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px">
+        <button class="btn btn-ghost btn-sm" id="chat-back">${t('chat.back')}</button>
+        <strong>${mineIsCoach ? esc(c.customerName) : `${esc(c.customerName)} ↔ ${esc(c.coachName)}`}</strong>
+      </div>
+      <div id="app-msgs" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
+        ${data.messages.map((m) => m.system
+          ? `<div class="msg-system" style="align-self:center;color:var(--muted);font-size:.75rem;border:1px dashed var(--line);border-radius:999px;padding:3px 12px">📅 ${t('chat.system_booking')} · ${esc(m.body.replace(/^📅\s*/, ''))}</div>`
+          : `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:80%">
+              ${m.mine ? '' : `<div class="small muted">${esc(m.senderName || '?')}</div>`}
+              <div style="padding:8px 13px;border-radius:14px;font-size:.9rem;white-space:pre-wrap;word-break:break-word;
+                background:${m.mine ? 'rgba(62,229,134,0.16)' : 'rgba(255,255,255,0.07)'};
+                border:1px solid ${m.mine ? 'rgba(62,229,134,0.3)' : 'var(--line)'}">${esc(m.body)}</div>
+            </div>`).join('')}
+      </div>
+      <form id="app-compose" style="display:flex;gap:8px">
+        <input id="app-chat-input" maxlength="2000" autocomplete="off" placeholder="${esc(t('chat.input_placeholder'))}"
+          style="flex:1;background:rgba(255,255,255,0.05);border:1px solid var(--line);border-radius:999px;
+          color:var(--text);font-family:var(--body);font-size:.95rem;padding:10px 16px;outline:none">
+        <button class="btn btn-primary btn-sm" type="submit">${t('chat.send')}</button>
+      </form>
+    </div>`;
+    v.scrollTop = v.scrollHeight;
+    document.getElementById('chat-back').addEventListener('click', () => { openChatId = null; renderChats(); });
+    document.getElementById('app-compose').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const input = document.getElementById('app-chat-input');
+      const text = input.value.trim();
+      if (!text) return;
+      input.value = '';
+      try { await API.post(`/chats/${openChatId}/messages`, { message: text }); renderChats(); }
+      catch (err) { input.value = text; toast(I18N.server(err.message), true); }
+    });
+    paintChatBadge();
+    return;
+  }
+  let chats = [];
+  try { chats = await API.get('/chats'); } catch { /* empty */ }
+  v.innerHTML = `<div class="screen">
+    <header class="app-head"><h1 class="app-h1">${t('chat.heading')}</h1></header>
+    ${chats.length ? chats.map((c) => `
+      <button class="sess-card" data-chat="${c.id}" style="width:100%;text-align:left;cursor:pointer;display:flex;gap:12px;align-items:center;font-family:var(--body);color:var(--text)">
+        <span style="width:42px;height:42px;border-radius:50%;overflow:hidden;flex-shrink:0;display:grid;place-items:center;background:rgba(62,229,134,0.12)">
+          ${c.coachPhoto ? `<img src="${esc(c.coachPhoto)}" alt="" style="width:100%;height:100%;object-fit:cover">` : '💬'}</span>
+        <span style="flex:1;min-width:0">
+          <span style="display:block;font-weight:700">${S.me.user.id === c.customerId ? esc(c.coachName) : esc(c.customerName)}</span>
+          <span class="small muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((c.lastMessage || '').slice(0, 44))}</span>
+        </span>
+        ${c.unread ? `<span class="tab-badge" style="position:static">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}
+      </button>`).join('') : emptyState('bell', t('chat.empty'))}
+  </div>`;
+  v.querySelectorAll('[data-chat]').forEach((b) =>
+    b.addEventListener('click', () => { openChatId = Number(b.dataset.chat); renderChats(); }));
+  paintChatBadge();
+}
+
+async function paintChatBadge() {
+  const el = document.getElementById('chat-badge');
+  if (!el) return;
+  try {
+    const me = await API.get('/me');
+    el.textContent = me.unreadChats > 9 ? '9+' : String(me.unreadChats || 0);
+    el.hidden = !me.unreadChats;
+  } catch { /* leave as-is */ }
+}
+
 async function renderAlerts() {
   view().innerHTML = `<div class="screen">
     <div class="alerts-head">
@@ -284,6 +359,7 @@ function sessionCard(b) {
       <div>
         <div class="sess-name">${esc(b.customer)}</div>
         <div class="sess-meta">${esc(cap(fmtDate(b.date)))} · ${fmtTime(b.hour)}<br>${sessionWhat(b)}</div>
+        ${b.notes ? `<div class="sess-meta" style="margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--lime);border-radius:6px">📝 ${esc(b.notes)}</div>` : ''}
       </div>
       <span class="pill ${b.status}">${esc(t('common.status.' + b.status))}</span>
     </div>
@@ -380,5 +456,6 @@ function showGate() {
   }
   document.getElementById('tabbar').hidden = false;
   window.addEventListener('hashchange', render);
+  paintChatBadge();
   render();
 })();

@@ -3,7 +3,7 @@
 
 const W = {
   coach: null, site: null, slots: [],
-  slot: null, position: null, focus: null, location: null,
+  slot: null, position: null, focus: null, location: null, notes: '',
   step: 0, user: null,
 };
 
@@ -19,6 +19,7 @@ function track(type, meta) { API.post('/track', { type, meta }).catch(() => {});
 async function openWizard(coach, site) {
   W.coach = coach; W.site = site;
   W.slot = W.position = W.focus = W.location = null;
+  W.notes = '';
   W.step = 0;
   backdrop().classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -37,7 +38,7 @@ async function openWizard(coach, site) {
 function closeWizard() {
   backdrop().classList.remove('open');
   document.body.style.overflow = '';
-  if (W.step < 5 && W.step > 0) track('booking_abandoned', { step: W.step, coachId: W.coach?.id });
+  if (W.step < 6 && W.step > 0) track('booking_abandoned', { step: W.step, coachId: W.coach?.id });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -50,7 +51,8 @@ document.addEventListener('DOMContentLoaded', () => {
 });
 
 const STEP_TITLE_KEYS = ['booking.step.time.title', 'booking.step.position.title',
-  'booking.step.focus.title', 'booking.step.location.title', 'booking.step.confirm.title'];
+  'booking.step.focus.title', 'booking.step.notes.title', 'booking.step.location.title',
+  'booking.step.confirm.title'];
 
 function header(title, subtitle) {
   return `
@@ -70,7 +72,7 @@ function nav({ backOk = true, nextOk = false, nextLabel = t('booking.nav.continu
 }
 
 function render() {
-  const steps = [renderSlot, renderPosition, renderFocus, renderLocation, renderReview];
+  const steps = [renderSlot, renderPosition, renderFocus, renderNotes, renderLocation, renderReview];
   steps[W.step]();
   body().querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', onNav));
 }
@@ -78,13 +80,8 @@ function render() {
 function onNav(e) {
   const dir = e.currentTarget.dataset.nav;
   if (dir === 'back') { W.step = Math.max(0, W.step - 1); return render(); }
-  if (W.step === 3 || (W.step === 2 && skipLocation())) {
-    // entering review
-    W.step = 4;
-  } else {
-    W.step += 1;
-    if (W.step === 3 && skipLocation()) W.step = 4;
-  }
+  W.step += 1;
+  if (W.step === 4 && skipLocation()) W.step = 5; // online / single-city: no location step
   track('booking_step', { step: W.step, coachId: W.coach.id });
   render();
 }
@@ -176,9 +173,24 @@ function renderFocus() {
   bindOptCards('focus', () => { W.location = null; });
 }
 
-// --- step 3: location -------------------------------------------------------
+// --- step 3: additional notes (optional, free text) --------------------------
+function renderNotes() {
+  body().innerHTML = header(t(STEP_TITLE_KEYS[3]), t('booking.step.notes.subtitle')) +
+    `<label class="f"><textarea id="notes-input" rows="5" maxlength="500"
+      placeholder="${esc(t('booking.step.notes.placeholder'))}"
+      style="width:100%;resize:vertical;background:rgba(255,255,255,0.05);border:1px solid var(--line);
+        border-radius:12px;color:var(--text);font-family:var(--body);font-size:0.95rem;padding:12px"
+      >${esc(W.notes)}</textarea></label>
+    <p class="small muted">${t('booking.step.notes.hint')}</p>` +
+    nav({ nextOk: true });
+  body().querySelector('#notes-input').addEventListener('input', (e) => {
+    W.notes = e.target.value.slice(0, 500);
+  });
+}
+
+// --- step 4: location -------------------------------------------------------
 function renderLocation() {
-  body().innerHTML = header(t(STEP_TITLE_KEYS[3]),
+  body().innerHTML = header(t(STEP_TITLE_KEYS[4]),
     t('booking.step.location.subtitle', { coach: esc(W.coach.name.split(' ')[0]) })) +
     `<div class="opt-grid">${W.coach.locations.map((l) => `
       <div class="opt-card ${W.location === l ? 'sel' : ''}" data-val="${l}">
@@ -230,13 +242,14 @@ async function renderReview() {
     ? I18N.server(W.site.payment.method).toLowerCase()
     : t('booking.review.payment_method_fallback');
 
-  body().innerHTML = header(t(STEP_TITLE_KEYS[4])) + `
+  body().innerHTML = header(t(STEP_TITLE_KEYS[5])) + `
     <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.time_label')}</span>
       <strong>${esc(fmtDate(W.slot.date))} ${fmtHourRange(W.slot.hour)}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.position_label')}</span><strong>${esc(posLabel(W.position))}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.focus_label')}</span><strong>${esc(I18N.server(focus.label))}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.location_label')}</span><strong>${esc(I18N.server(W.location))}</strong></div>
+    ${W.notes ? `<div class="review-row"><span class="muted">${t('booking.review.notes_label')}</span><strong style="max-width:60%;text-align:right;font-weight:400">${esc(W.notes)}</strong></div>` : ''}
     <div class="review-row"><span class="muted">${t('booking.review.price_label')}</span>
       <strong>${discount ? `<span class="price-old">${eur(price)}</span> ` : ''}
         <span class="price-new">${eur(price - discount)}</span>
@@ -259,7 +272,7 @@ async function renderReview() {
     </div>`;
 
   body().querySelector('[data-nav="back"]').addEventListener('click', () => {
-    W.step = skipLocation() ? 2 : 3;
+    W.step = skipLocation() ? 3 : 4;
     render();
   });
 
@@ -272,9 +285,10 @@ async function renderReview() {
       const result = await API.post('/bookings', {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
         position: W.position, focus: W.focus, location: W.location,
+        notes: W.notes.trim(),
         lang: I18N.lang, // the invoice is generated in this language
       });
-      W.step = 5;
+      W.step = 6;
       renderSuccess(result);
     } catch (err) {
       btn.disabled = false; btn.textContent = t('booking.review.confirm_button');

@@ -365,7 +365,10 @@ router.get('/me', (req, res) => {
     'SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read = 0').get(req.user.id).n;
   // Dual roles: an admin can also have a coach profile (e.g. Kalle, Ben).
   const coachProfile = Boolean(db.prepare('SELECT 1 FROM coaches WHERE user_id = ?').get(req.user.id));
-  res.json({ user: req.user, freeCredits, unreadNotifications, coachProfile });
+  res.json({
+    user: req.user, freeCredits, unreadNotifications, coachProfile,
+    unreadChats: unreadChatCount(req.user),
+  });
 });
 
 router.get('/my-notifications', requireRole('customer', 'admin', 'coach'), (req, res) => {
@@ -380,6 +383,118 @@ router.get('/my-notifications', requireRole('customer', 'admin', 'coach'), (req,
 router.post('/my-notifications/read', requireRole('customer', 'admin', 'coach'), (req, res) => {
   db.prepare('UPDATE notifications SET read = 1 WHERE user_id = ?').run(req.user.id);
   res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Chat: one thread per coach<->customer pair, auto-created on booking.
+// Admins are implicit members of EVERY chat (business oversight) and may post.
+// ---------------------------------------------------------------------------
+function ensureChat(coachId, customerId) {
+  db.prepare('INSERT OR IGNORE INTO chats (coach_id, customer_id, created_at) VALUES (?,?,?)')
+    .run(coachId, customerId, nowISO());
+  return db.prepare('SELECT * FROM chats WHERE coach_id = ? AND customer_id = ?').get(coachId, customerId);
+}
+
+function postChatMessage(chatId, senderId, text) {
+  const info = db.prepare('INSERT INTO chat_messages (chat_id, sender_id, body, created_at) VALUES (?,?,?,?)')
+    .run(chatId, senderId, text, nowISO());
+  // The sender has trivially read their own message.
+  if (senderId) db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
+    ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
+    .run(chatId, senderId, Number(info.lastInsertRowid));
+  return Number(info.lastInsertRowid);
+}
+
+// May this user see this chat? The customer, the coach's linked login, or admin.
+function chatAccess(req, chat) {
+  if (!chat || !req.user) return false;
+  if (req.user.role === 'admin') return true;
+  if (chat.customer_id === req.user.id) return true;
+  const coach = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(chat.coach_id);
+  return Boolean(coach && coach.user_id === req.user.id);
+}
+
+// WHERE clause limiting chats to the ones this user belongs to.
+function chatScope(user) {
+  if (user.role === 'admin') return { where: '', params: [] };
+  const coach = db.prepare('SELECT id FROM coaches WHERE user_id = ?').get(user.id);
+  if (coach) return { where: 'WHERE (c.customer_id = ? OR c.coach_id = ?)', params: [user.id, coach.id] };
+  return { where: 'WHERE c.customer_id = ?', params: [user.id] };
+}
+
+// Number of chats holding messages this user hasn't read (drives header badges).
+function unreadChatCount(user) {
+  const scope = chatScope(user);
+  return db.prepare(`
+    SELECT COUNT(*) n FROM chats c ${scope.where ? scope.where + ' AND ' : 'WHERE '}
+    EXISTS (SELECT 1 FROM chat_messages m WHERE m.chat_id = c.id
+      AND m.id > COALESCE((SELECT last_read_id FROM chat_reads r
+                           WHERE r.chat_id = c.id AND r.user_id = ?), 0)
+      AND (m.sender_id IS NULL OR m.sender_id != ?))`)
+    .get(...scope.params, user.id, user.id).n;
+}
+
+router.get('/chats', requireRole('customer', 'coach', 'admin'), (req, res) => {
+  const scope = chatScope(req.user);
+  const rows = db.prepare(`
+    SELECT c.id, c.coach_id, c.customer_id,
+           co.name AS coach_name, co.photos AS coach_photos, cu.name AS customer_name,
+           (SELECT body FROM chat_messages m WHERE m.chat_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_body,
+           (SELECT created_at FROM chat_messages m WHERE m.chat_id = c.id ORDER BY m.id DESC LIMIT 1) AS last_at,
+           (SELECT COUNT(*) FROM chat_messages m WHERE m.chat_id = c.id
+              AND m.id > COALESCE((SELECT last_read_id FROM chat_reads r
+                                   WHERE r.chat_id = c.id AND r.user_id = ?), 0)
+              AND (m.sender_id IS NULL OR m.sender_id != ?)) AS unread
+    FROM chats c
+    JOIN coaches co ON co.id = c.coach_id
+    JOIN users cu ON cu.id = c.customer_id
+    ${scope.where}
+    ORDER BY (SELECT MAX(m.id) FROM chat_messages m WHERE m.chat_id = c.id) DESC`)
+    .all(req.user.id, req.user.id, ...scope.params);
+  res.json(rows.map((r) => ({
+    id: r.id, coachId: r.coach_id, coachName: r.coach_name,
+    coachPhoto: parseJSON(r.coach_photos, [])[0] || null,
+    customerId: r.customer_id, customerName: r.customer_name,
+    lastMessage: r.last_body, lastAt: r.last_at, unread: r.unread,
+  })));
+});
+
+router.get('/chats/:id/messages', requireRole('customer', 'coach', 'admin'), (req, res) => {
+  const chat = db.prepare('SELECT * FROM chats WHERE id = ?').get(Number(req.params.id));
+  if (!chatAccess(req, chat)) return res.status(404).json({ error: 'Chat not found.' });
+  const coach = db.prepare('SELECT name, photos, user_id FROM coaches WHERE id = ?').get(chat.coach_id);
+  const customer = db.prepare('SELECT name FROM users WHERE id = ?').get(chat.customer_id);
+  const rows = db.prepare(`
+    SELECT m.id, m.sender_id, m.body, m.created_at, u.name AS sender_name, u.role AS sender_role
+    FROM chat_messages m LEFT JOIN users u ON u.id = m.sender_id
+    WHERE m.chat_id = ? ORDER BY m.id LIMIT 500`).all(chat.id);
+  // Fetching the thread marks it read for this user.
+  const lastId = rows.length ? rows[rows.length - 1].id : 0;
+  db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
+    ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
+    .run(chat.id, req.user.id, lastId);
+  res.json({
+    chat: {
+      id: chat.id, coachName: coach.name, coachUserId: coach.user_id,
+      coachPhoto: parseJSON(coach.photos, [])[0] || null,
+      customerId: chat.customer_id, customerName: customer.name,
+    },
+    messages: rows.map((m) => ({
+      id: m.id, body: m.body, at: m.created_at,
+      senderId: m.sender_id, senderName: m.sender_name, senderRole: m.sender_role,
+      mine: m.sender_id === req.user.id, system: m.sender_id == null,
+    })),
+  });
+});
+
+router.post('/chats/:id/messages', requireRole('customer', 'coach', 'admin'), (req, res) => {
+  const chat = db.prepare('SELECT * FROM chats WHERE id = ?').get(Number(req.params.id));
+  if (!chatAccess(req, chat)) return res.status(404).json({ error: 'Chat not found.' });
+  const text = String(req.body?.message || '').trim();
+  if (!text) return res.status(400).json({ error: 'Empty message.' });
+  if (text.length > 2000) return res.status(400).json({ error: 'Message is too long (max 2000 characters).' });
+  const id = postChatMessage(chat.id, req.user.id, text);
+  res.status(201).json({ ok: true, id });
 });
 
 // ---------------------------------------------------------------------------
@@ -431,15 +546,17 @@ router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
     .get(req.user.id);
   if (credit) discount = price;
   const code = 'PBF-' + require('node:crypto').randomBytes(3).toString('hex').toUpperCase();
+  // Optional free-text wishes for the coach, asked in the wizard's notes step.
+  const notes = String(req.body?.notes || '').trim().slice(0, 500);
 
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
-       price_cents, discount_cents, total_cents, credit_applied, status, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed',?)`)
+       price_cents, discount_cents, total_cents, credit_applied, notes, status, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed',?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus.id,
-        focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, nowISO());
+        focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes, nowISO());
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
@@ -454,6 +571,17 @@ router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
   // The invoice renders in the language the customer is booking in (fi|en).
   const langPref = readLang(req.body);
   if (langPref) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(langPref, req.user.id);
+
+  // Every booking connects the customer and coach in a chat thread. The system
+  // line uses language-neutral tokens; the customer's notes post as their own
+  // first message so the coach sees them where the conversation happens.
+  const chat = ensureChat(coachId, req.user.id);
+  const sysId = postChatMessage(chat.id, null, `📅 ${code} · ${date} · ${String(hour).padStart(2, '0')}:00`);
+  // The booker has obviously "seen" their own booking's system line.
+  db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
+    ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
+    .run(chat.id, req.user.id, sysId);
+  if (notes) postChatMessage(chat.id, req.user.id, notes);
 
   const invoice = createInvoiceForBooking(bookingId);
   recordEvent(req, 'booking_completed', { coachId, code });
@@ -600,7 +728,7 @@ router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
   autoCompleteBookings();
   const rows = db.prepare(`
     SELECT b.id, b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
-           b.price_cents, b.total_cents, b.credit_applied, u.name AS customer, u.email AS customer_email
+           b.price_cents, b.total_cents, b.credit_applied, b.notes, u.name AS customer, u.email AS customer_email
     FROM bookings b JOIN users u ON u.id = b.customer_id
     WHERE b.coach_id = ?
     ORDER BY b.date DESC, b.hour DESC LIMIT 200`).all(coach.id);
@@ -987,7 +1115,7 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
     ? String(req.query.status) : null;
   const rows = db.prepare(`
     SELECT b.id, b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online,
-           b.total_cents, b.status, b.created_at,
+           b.total_cents, b.status, b.created_at, b.notes,
            c.name AS coach, u.name AS customer, u.email AS customer_email,
            i.number AS invoice_number, i.status AS invoice_status
     FROM bookings b

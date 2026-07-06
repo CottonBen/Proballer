@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="chat.title">Viestit — Proballers Coaching</title>
+  <link rel="icon" href="/assets/favicon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main class="section" style="padding-top:28px">
+    <div class="wrap">
+      <h1 class="display" style="font-size:2rem;margin:0 0 4px" data-i18n="chat.heading">Viestit</h1>
+      <p class="muted small" id="chat-sub" data-i18n="chat.subtitle">Keskustelut valmentajan ja pelaajan
+        välillä — avautuu jokaisesta varauksesta.</p>
+      <div class="chat-layout" id="chat-layout">
+        <div class="chat-list card" id="chat-list"><p class="muted small" data-i18n="chat.loading">Ladataan…</p></div>
+        <div class="chat-thread card" id="chat-thread" hidden>
+          <div class="chat-thread-head" id="thread-head"></div>
+          <div class="chat-msgs" id="chat-msgs"></div>
+          <form class="chat-compose" id="chat-compose">
+            <input type="text" id="chat-input" maxlength="2000" autocomplete="off"
+              data-i18n-placeholder="chat.input_placeholder" placeholder="Kirjoita viesti…">
+            <button class="btn btn-primary btn-sm" type="submit" data-i18n="chat.send">Lähetä</button>
+          </form>
+        </div>
+      </div>
+    </div>
+  </main>
+
+  <script src="/js/i18n.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/chats.js"></script>
+</body>
+</html>

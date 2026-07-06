@@ -43,8 +43,8 @@ const I18N_DICT = {
 
   // --- landing page -----------------------------------------------------------
   'landing.title': {
-    fi: 'Proballers Coaching Finland — henkilökohtaista jalkapallovalmennusta nuorille pelaajille',
-    en: 'Proballers Coaching Finland — 1-on-1 football coaching for young players' },
+    fi: 'Proballers Coaching — henkilökohtaista jalkapallovalmennusta nuorille pelaajille',
+    en: 'Proballers Coaching — 1-on-1 football coaching for young players' },
   'landing.meta.description': {
     fi: 'Henkilökohtaista jalkapallovalmennusta nuorille pelaajille Helsingissä, Espoossa ja Vantaalla. Varaa henkilökohtainen treeni valmentajan kanssa, joka on itse pelannut.',
     en: 'Personal football coaching for young players in Helsinki, Espoo and Vantaa. Book a 1-on-1 session with a coach who has played the game.' },
@@ -66,7 +66,6 @@ const I18N_DICT = {
     fi: 'Vahvista varaus, niin lasku kilahtaa sähköpostiisi. Sitten jäljellä olette vain sinä, valmentaja ja kenttä.',
     en: 'Confirm the booking and the invoice lands in your email. Then it\'s just you, the coach and the pitch.' },
   'landing.footer.tagline':  { fi: 'Henkilökohtaista valmennusta nuorille jalkapalloilijoille.', en: '1-on-1 coaching for young footballers.' },
-  'landing.footer.workingname': { fi: 'Työnimi — virallinen nimi tulossa pian.', en: 'Working name — official name coming soon.' },
   'landing.wizard.aria':     { fi: 'Varaa treeni', en: 'Book a session' },
   'landing.dots.aria':       { fi: 'Diat', en: 'Slides' },
   'landing.slide.aria':      { fi: 'Dia {n}', en: 'Slide {n}' },
@@ -159,7 +158,7 @@ const I18N_DICT = {
   "common.nav.my_bookings": { fi: "Omat varaukset", en: "My bookings" },
 
   // --- login / signup ---
-  "login.title": { fi: "Kirjaudu sisään — Proballers Coaching Finland", en: "Log in — Proballers Coaching Finland" },
+  "login.title": { fi: "Kirjaudu sisään — Proballers Coaching", en: "Log in — Proballers Coaching" },
   "common.brand": { fi: "Proballers Coaching", en: "Proballers Coaching" },
   "login.heading": { fi: "Tervetuloa takaisin", en: "Welcome back" },
   "login.intro": { fi: "Yksi ovi kaikille — pelaajille, valmentajille ja ylläpidolle. Päädyt suoraan omalle sivullesi.", en: "One door for everyone — players, coaches and admin. You'll land on your own page." },
@@ -171,7 +170,7 @@ const I18N_DICT = {
   "login.signup.note": { fi: "Uusille pelaajille: tilin luominen vie kymmenen sekuntia, ja sen jälkeen voit varata treenejä ja nähdä laskusi.", en: "New players: creating an account takes ten seconds and lets you book sessions and see your invoices." },
 
   // --- customer dashboard ---
-  "mybookings.title": { fi: "Omat varaukset — Proballers Coaching Finland", en: "My bookings — Proballers Coaching Finland" },
+  "mybookings.title": { fi: "Omat varaukset — Proballers Coaching", en: "My bookings — Proballers Coaching" },
   "mybookings.heading": { fi: "Omat varaukset", en: "My bookings" },
   "mybookings.subtitle": { fi: "Treenisi ja laskusi, kaikki yhdessä paikassa.", en: "Your sessions and invoices, all in one place." },
   "mybookings.book_another": { fi: "Varaa uusi treeni", en: "Book another session" },
@@ -208,18 +207,17 @@ const I18N_DICT = {
   "mybookings.reviews.posted": { fi: "Kiitos — arvostelusi on julkaistu!", en: "Thanks — your review is posted!" },
 
   // --- coach profile + 404 ---
-  "profile.title": { fi: "Valmentaja — Proballers Coaching Finland", en: "Coach — Proballers Coaching Finland" },
+  "profile.title": { fi: "Valmentaja — Proballers Coaching", en: "Coach — Proballers Coaching" },
   "profile.meta.description": { fi: "Valmentajaprofiili — varaa henkilökohtainen jalkapallotreeni.", en: "Coach profile — book a 1-on-1 football session." },
   "common.brand.header": { fi: "Proballers Coaching", en: "Proballers Coaching" },
   "profile.loading": { fi: "Ladataan valmentajaa…", en: "Loading coach…" },
-  "common.footer.brand": { fi: "Proballers Coaching Finland", en: "Proballers Coaching Finland" },
+  "common.footer.brand": { fi: "Proballers Coaching", en: "Proballers Coaching" },
   "common.footer.cities": { fi: "Helsinki · Espoo · Vantaa", en: "Helsinki · Espoo · Vantaa" },
   "common.footer.tagline": { fi: "Henkilökohtaista valmennusta nuorille jalkapalloilijoille.", en: "1-on-1 coaching for young footballers." },
-  "common.footer.workingname": { fi: "Työnimi — virallinen nimi tulossa pian.", en: "Working name — official name coming soon." },
   "booking.wizard.arialabel": { fi: "Varaa treeni", en: "Book a session" },
   "profile.price.persession": { fi: "/ treeni", en: "/ session" },
   "profile.price.salechip": { fi: "{saleLabel} −{salePercent}%", en: "{saleLabel} −{salePercent}%" },
-  "profile.doctitle": { fi: "{coachName} — Proballers Coaching Finland", en: "{coachName} — Proballers Coaching Finland" },
+  "profile.doctitle": { fi: "{coachName} — Proballers Coaching", en: "{coachName} — Proballers Coaching" },
   "profile.gallery.mainalt": { fi: "Valmentaja {coachName}", en: "Coach {coachName}" },
   "profile.back": { fi: "← Kaikki valmentajat", en: "← All coaches" },
   "profile.kicker": { fi: "Valmentajaprofiili", en: "Coach profile" },
@@ -232,7 +230,7 @@ const I18N_DICT = {
   "profile.notfound.cta": { fi: "Katso kaikki valmentajat", en: "See all coaches" },
   "common.salebanner": { fi: "⚡ {saleLabel}: {salePercent} % alennus jokaisesta treenistä — huomioidaan automaattisesti varauksen yhteydessä", en: "⚡ {saleLabel}: {salePercent}% OFF every session — automatically applied at booking" },
   "profile.error.load": { fi: "Valmentajan tietoja ei voitu ladata — päivitä sivu.", en: "Could not load this coach — please refresh." },
-  "notfound.title": { fi: "Pallo hukassa — Proballers Coaching Finland", en: "Lost the ball — Proballers Coaching Finland" },
+  "notfound.title": { fi: "Pallo hukassa — Proballers Coaching", en: "Lost the ball — Proballers Coaching" },
   "notfound.heading": { fi: "Ohi meni", en: "Off target" },
   "notfound.body": { fi: "Tätä sivua ei ole olemassa — mutta kenttä on ihan tässä vieressä.", en: "That page doesn't exist — but the pitch is right over here." },
   "notfound.cta": { fi: "Takaisin sivustolle", en: "Back to the site" },
@@ -246,7 +244,7 @@ const I18N_DICT = {
   "mybookings.empty.after": { fi: " ja hyppää kentälle.", en: " and get on the pitch." },
 
   // --- coach dashboard ---
-  "coachdash.title": { fi: "Oma kalenteri — Proballers Coaching Finland", en: "Coach dashboard — Proballers Coaching Finland" },
+  "coachdash.title": { fi: "Oma kalenteri — Proballers Coaching", en: "Coach dashboard — Proballers Coaching" },
   "coachdash.heading": { fi: "Valmentaja", en: "Coach" },
   "coachdash.subtitle": { fi: "Oma kalenteri, omat säännöt — pelaajat voivat varata vain aikoja, jotka olet avannut.", en: "Your calendar, your rules — players can only book times you open." },
   "coachdash.cal.title": { fi: "Vapaat ajat", en: "Availability" },
@@ -362,9 +360,34 @@ const I18N_DICT = {
   "app.profile.manage": { fi: "Hallitse kalenteria ja vapaita aikoja", en: "Manage calendar & availability" },
   "app.profile.website": { fi: "Proballers-verkkosivusto", en: "Proballers website" },
   "app.profile.logout": { fi: "Kirjaudu ulos", en: "Log out" },
+  "app.nav.chats": { fi: "Viestit", en: "Chats" },
+
+  // --- booking wizard: additional notes step ---
+  "booking.step.notes.title": { fi: "Lisätiedot", en: "Additional notes" },
+  "booking.step.notes.subtitle": { fi: "Haluatko kertoa valmentajalle jotain etukäteen? (valinnainen)", en: "Anything you want the coach to know beforehand? (optional)" },
+  "booking.step.notes.placeholder": { fi: "Esim. tavoitteet, loukkaantumiset, toiveet treenin sisällöstä…", en: "E.g. goals, injuries, wishes for the session…" },
+  "booking.step.notes.hint": { fi: "Viesti välitetään valmentajallesi keskusteluun, joka avautuu varauksen yhteydessä.", en: "This is passed to your coach in the chat that opens with your booking." },
+  "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
+
+  // --- chat ---
+  "chat.title": { fi: "Viestit — Proballers Coaching", en: "Chats — Proballers Coaching" },
+  "chat.heading": { fi: "Viestit", en: "Chats" },
+  "chat.subtitle": { fi: "Keskustelut valmentajan ja pelaajan välillä — avautuu jokaisesta varauksesta.", en: "Conversations between coach and player — one opens with every booking." },
+  "chat.nav": { fi: "Viestit", en: "Chats" },
+  "chat.empty": { fi: "Ei vielä keskusteluja — ne avautuvat automaattisesti, kun treeni varataan.", en: "No conversations yet — one opens automatically when a session is booked." },
+  "chat.empty_thread": { fi: "Valitse keskustelu", en: "Pick a conversation" },
+  "chat.send": { fi: "Lähetä", en: "Send" },
+  "chat.input_placeholder": { fi: "Kirjoita viesti…", en: "Write a message…" },
+  "chat.back": { fi: "‹ Takaisin", en: "‹ Back" },
+  "chat.with_coach": { fi: "Valmentaja {name}", en: "Coach {name}" },
+  "chat.admin_view": { fi: "Näet ylläpitäjänä kaikki keskustelut.", en: "As an admin you see every conversation." },
+  "chat.admin_badge": { fi: "ylläpito", en: "admin" },
+  "chat.coach_badge": { fi: "valmentaja", en: "coach" },
+  "chat.system_booking": { fi: "Uusi varaus", en: "New booking" },
+  "chat.loading": { fi: "Ladataan…", en: "Loading…" },
 
   // --- admin dashboard ---
-  "admin.title": { fi: "Ylläpito — Proballers Coaching Finland", en: "Admin — Proballers Coaching Finland" },
+  "admin.title": { fi: "Ylläpito — Proballers Coaching", en: "Admin — Proballers Coaching" },
   "admin.heading": { fi: "Komentokeskus", en: "Mission control" },
   "admin.subtitle": { fi: "Koko liiketoiminta, reaaliajassa.", en: "Everything about the business, live." },
   "admin.subtitle.updated": { fi: "Koko liiketoiminta, reaaliajassa · päivitetty {time}", en: "Everything about the business, live · updated {time}" },
@@ -612,6 +635,9 @@ const I18N_SERVER_EXACT = {
   "15+ sessions / month": "15+ treeniä / kk",
   "Bank transfer": "Tilisiirto",
   "Online": "Etänä",
+  "Chat not found.": "Keskustelua ei löytynyt.",
+  "Empty message.": "Tyhjä viesti.",
+  "Message is too long (max 2000 characters).": "Viesti on liian pitkä (enintään 2000 merkkiä).",
 
   // --- focus ids as stored on bookings (displayed via I18N.server) ---
   "conditioning": "kunto",
