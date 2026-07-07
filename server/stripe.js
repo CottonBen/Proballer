@@ -55,6 +55,9 @@ function createCheckoutSession({ invoiceNumber, amountCents, description, custom
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     locale: lang === 'fi' ? 'fi' : 'en',
+    // Payment is due AT booking: the session dies after 30 min (Stripe's
+    // minimum), and the unpaid booking is released by expireUnpaidBookings().
+    expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     customer_email: customerEmail,
     line_items: [{
       quantity: 1,
@@ -72,11 +75,16 @@ function createCheckoutSession({ invoiceNumber, amountCents, description, custom
 
 const retrieveSession = (id) => stripeRequest('GET', `/checkout/sessions/${encodeURIComponent(id)}`);
 
-// Idempotent: only a 'sent' invoice flips to paid.
+// Idempotent: only a 'sent' invoice flips to paid. A successful flip fires the
+// automatic receipt (regenerated document + email) — never blocks the caller.
 function markInvoicePaid(invoiceNumber) {
   const r = db.prepare("UPDATE invoices SET status = 'paid' WHERE number = ? AND status = 'sent'")
     .run(invoiceNumber);
-  if (r.changes) require('./sheets').scheduleSync();
+  if (r.changes) {
+    require('./sheets').scheduleSync();
+    require('./invoice').sendReceiptForInvoice(invoiceNumber, 'card')
+      .catch((err) => console.error('[receipt]', err.message));
+  }
   return r.changes > 0;
 }
 

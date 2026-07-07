@@ -256,13 +256,15 @@ async function renderReview() {
         ${priceChip}</strong></div>
     <p class="small muted" style="margin-top:12px">${hasCredit
       ? t('booking.review.free_note')
-      : t('booking.review.invoice_note', {
-          price: eur(price - discount),
-          delivery: W.site.emailDelivery
-            ? t('booking.review.invoice_note_delivery_email')
-            : t('booking.review.invoice_note_delivery_mybookings'),
-          method: esc(payMethod),
-        })}</p>
+      : (W.site.payment.stripeEnabled
+        ? t('booking.review.pay_note', { price: eur(price - discount) })
+        : t('booking.review.invoice_note', {
+            price: eur(price - discount),
+            delivery: W.site.emailDelivery
+              ? t('booking.review.invoice_note_delivery_email')
+              : t('booking.review.invoice_note_delivery_mybookings'),
+            method: esc(payMethod),
+          }))}</p>
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -365,7 +367,21 @@ function renderAuthPanel() {
 }
 
 // --- success ----------------------------------------------------------------
-function renderSuccess({ booking, invoice }) {
+function renderSuccess({ booking, invoice, payUrl }) {
+  // Payment is due NOW: show a brief confirmation, then hand over to Stripe.
+  if (payUrl) {
+    body().innerHTML = `
+      <div style="text-align:center;padding:26px 0">
+        <div style="font-size:3.2rem">⚽</div>
+        <h2>${t('booking.success.pay_title')}</h2>
+        <p class="muted">${esc(booking.coach)} · ${esc(fmtDate(booking.date))}
+          ${fmtHourRange(booking.hour)} · ${eur(invoice.amountCents)}</p>
+        <p class="small muted">${t('booking.success.redirecting')}</p>
+        <a class="btn btn-primary" href="${esc(payUrl)}" style="margin-top:8px">💳 ${t('booking.success.paybtn')}</a>
+      </div>`;
+    setTimeout(() => { location.href = payUrl; }, 1500);
+    return;
+  }
   body().innerHTML = `
     <div style="text-align:center;padding:12px 0">
       <div style="font-size:3.2rem">⚽</div>

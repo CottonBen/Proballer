@@ -251,6 +251,31 @@ function autoCompleteBookings() {
         completed_at = date || 'T' || printf('%02d', hour + 1) || ':00:00'
     WHERE status = 'confirmed' AND (date < ? OR (date = ? AND hour + 1 <= ?))
   `).run(date, date, hour);
+  expireUnpaidBookings();
+}
+
+// Card payment is mandatory at booking time (when Stripe is configured): a
+// booking whose Checkout payment hasn't completed is released — cancelled,
+// invoice voided, slot free again, customer notified. The Stripe session
+// itself expires at 30 minutes, and this sweep runs at 45, so a payment can
+// never land on an already-released booking. Only rows WITH a
+// stripe_session_id are eligible: legacy bank-transfer invoices from before
+// this feature are never touched.
+function expireUnpaidBookings() {
+  if (!config.stripe.secretKey) return;
+  const cutoff = new Date(Date.now() - 45 * 60000).toISOString();
+  const stale = db.prepare(`
+    SELECT b.id, b.customer_id, i.number AS invoice_number
+    FROM bookings b JOIN invoices i ON i.booking_id = b.id
+    WHERE b.status = 'confirmed' AND b.total_cents > 0 AND b.created_at < ?
+      AND i.status = 'sent' AND i.stripe_session_id IS NOT NULL`).all(cutoff);
+  for (const s of stale) {
+    db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(s.id);
+    db.prepare("UPDATE invoices SET status = 'void' WHERE number = ?").run(s.invoice_number);
+    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+      .run(s.customer_id, 'Your booking was cancelled because the payment was not completed. '
+        + 'The slot is open again — you are welcome to book a new time.', nowISO());
+  }
 }
 
 module.exports = {

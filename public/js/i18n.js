@@ -370,6 +370,10 @@ const I18N_DICT = {
   "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
 
   // --- card payments (Stripe) ---
+  "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
+  "booking.success.pay_title": { fi: "Varaus tehty — viimeistele maksu", en: "Booked — complete your payment" },
+  "booking.success.redirecting": { fi: "Siirryt turvalliseen korttimaksuun hetken kuluttua…", en: "Taking you to secure card payment…" },
+  "booking.success.paybtn": { fi: "Siirry maksuun", en: "Go to payment" },
   "pay.card": { fi: "Maksa kortilla", en: "Pay by card" },
   "pay.now": { fi: "Maksa nyt kortilla", en: "Pay now by card" },
   "pay.received": { fi: "Maksu vastaanotettu — kiitos! Lasku on merkitty maksetuksi.", en: "Payment received — thank you! The invoice is marked paid." },
@@ -625,6 +629,7 @@ const I18N_SERVER_EXACT = {
   "Your free-session credit is available again — use it on any coach.": "Ilmainen treenikertasi on taas käytettävissä — voit käyttää sen kenen tahansa valmentajan kanssa.",
   "To make it right, your next session with ANY coach is free — the credit is applied automatically when you book.": "Hyvitykseksi seuraava treenisi KENEN tahansa valmentajan kanssa on ilmainen — ilmainen treenikerta käytetään automaattisesti, kun varaat.",
   "An administrator updated your login password — please sign in with the new password.": "Ylläpitäjä päivitti salasanasi — kirjaudu sisään uudella salasanalla.",
+  "Your booking was cancelled because the payment was not completed. The slot is open again — you are welcome to book a new time.": "Varauksesi peruttiin, koska maksua ei suoritettu loppuun. Aika on jälleen vapaana — voit varata uuden ajan.",
 
   // --- config labels served by /api/config (translated at display time) ------
   "LAUNCH OFFER": "AVAJAISTARJOUS",

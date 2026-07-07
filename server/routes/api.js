@@ -7,7 +7,7 @@ const crypto = require('node:crypto');
 const config = require('../../config');
 const { db, DATA_DIR, nowISO, helsinkiNow, helsinkiDateOffset, autoCompleteBookings } = require('../db');
 const { createSession, destroySession, requireRole, loginThrottle } = require('../auth');
-const { createInvoiceForBooking, OUTBOX } = require('../invoice');
+const { createInvoiceForBooking, sendReceiptForInvoice, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
 const tiers = require('../tiers');
 const stripe = require('../stripe');
@@ -501,7 +501,7 @@ router.post('/chats/:id/messages', requireRole('customer', 'coach', 'admin'), (r
 // ---------------------------------------------------------------------------
 // Booking (customers)
 // ---------------------------------------------------------------------------
-router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
+router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   const coachId = Number(req.body?.coachId);
   const date = String(req.body?.date || '');
   const hour = Number(req.body?.hour);
@@ -588,7 +588,29 @@ router.post('/bookings', requireRole('customer', 'admin'), (req, res) => {
   recordEvent(req, 'booking_completed', { coachId, code });
   sheets.scheduleSync();
 
+  // Payment is due AT booking: hand back a ready Checkout URL (unless the
+  // booking is free or Stripe isn't configured). If Stripe is briefly down,
+  // the booking still exists and Omat varaukset shows a pay button — the
+  // 45-minute expiry sweep releases it if the payment never completes.
+  let payUrl = null;
+  if (stripe.enabled() && price - discount > 0) {
+    try {
+      const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+      const session = await stripe.createCheckoutSession({
+        invoiceNumber: invoice.number,
+        amountCents: invoice.amount_cents,
+        description: `${config.siteName} — ${coach.name} ${date} ${String(hour).padStart(2, '0')}:00 (${invoice.number})`,
+        customerEmail: req.user.email,
+        origin,
+        lang: langPref || db.prepare('SELECT lang FROM users WHERE id = ?').get(req.user.id).lang,
+      });
+      db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, invoice.id);
+      payUrl = session.url;
+    } catch (err) { console.error('[stripe]', err.message); }
+  }
+
   res.status(201).json({
+    payUrl,
     booking: {
       code, date, hour, location, position, focus: focus.id, focusLabel: focus.label,
       online: focus.online, coach: coach.name,
@@ -1265,6 +1287,8 @@ router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => 
     return res.status(409).json({ error: 'This invoice is voided (its booking was cancelled) — it cannot be marked paid.' });
   }
   db.prepare("UPDATE invoices SET status = 'paid' WHERE number = ? AND status = 'sent'").run(req.params.number);
+  // Manual mark-paid = a bank transfer arrived; the receipt goes out automatically.
+  sendReceiptForInvoice(req.params.number, 'bank').catch((e) => console.error('[receipt]', e.message));
   res.json({ ok: true });
 });
 
