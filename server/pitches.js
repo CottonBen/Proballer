@@ -18,7 +18,18 @@ const CITY_CODES = { Helsinki: 91, Espoo: 49, Vantaa: 92 };
 // 1340 ball field, 1350 football stadium, 2230 indoor football hall.
 const TYPE_CODES = '1340,1350,2230';
 const CACHE_TTL_MS = 7 * 24 * 3600000;
-const CACHE_KEY = (city) => `pitches:v1:${city}`;
+// v2: school pitches, dirt fields and petanque courts filtered out (below).
+const CACHE_KEY = (city) => `pitches:v2:${city}`;
+
+// Curated for real coaching use (owner's call): drop school pitches
+// (koulu/skola), petanque courts, and dirt/gravel fields — by surface token
+// when LIPAS provides one, by name ("hiekkakenttä"/"grusplan") when it
+// doesn't. NOTE "hiekkatekonurmi" (sand-infilled artificial turf) is a proper
+// turf pitch and stays: the name regex deliberately does not match it.
+const NAME_EXCLUDE = /koulu|skola|petank|hiekkakenttä|grusplan/i;
+const SURFACE_EXCLUDE = new Set(['rock-dust', 'sand', 'gravel', 'soil', 'clay']);
+const excluded = (pitch) =>
+  NAME_EXCLUDE.test(pitch.name) || pitch.surface.some((s) => SURFACE_EXCLUDE.has(s));
 
 const knownCity = (city) => Object.prototype.hasOwnProperty.call(CITY_CODES, city);
 
@@ -57,7 +68,7 @@ async function fetchCityFromLipas(city) {
     for (const site of data.items || []) {
       if (site.status !== 'active') continue; // skip demolished / out-of-service
       const pitch = normalize(site);
-      if (pitch.id && pitch.name) out.push(pitch);
+      if (pitch.id && pitch.name && !excluded(pitch)) out.push(pitch);
     }
     if (page >= ((data.pagination && data.pagination['total-pages']) || 1)) break;
   }
