@@ -90,10 +90,9 @@ const writeCache = (city, pitches) => {
     .run(CACHE_KEY(city), JSON.stringify({ fetchedAt: nowISO(), pitches }));
 };
 
-// The city's pitch list: fresh cache -> as-is; stale/missing -> refetch, and
+// The raw LIPAS list: fresh cache -> as-is; stale/missing -> refetch, and
 // on a fetch error fall back to whatever cache exists.
-async function getCityPitches(city) {
-  if (!knownCity(city)) throw Object.assign(new Error('Unknown city.'), { status: 400 });
+async function lipasList(city) {
   const cached = readCache(city);
   const fresh = cached && (Date.now() - Date.parse(cached.fetchedAt)) < CACHE_TTL_MS;
   if (fresh) return cached;
@@ -109,6 +108,34 @@ async function getCityPitches(city) {
     throw Object.assign(new Error('The pitch registry (LIPAS) is not responding — try again in a moment.'),
       { status: 502 });
   }
+}
+
+// A custom (admin-added) pitch in the same shape the app expects. Exposed with
+// a NEGATIVE id so it can never collide with a LIPAS id.
+const customShape = (c) => ({
+  id: -c.id,
+  name: c.name,
+  neighborhood: c.neighborhood,
+  address: c.address,
+  surface: c.surface ? [c.surface] : [],
+  length: null, width: null,
+  lighting: Boolean(c.lighting),
+  indoor: Boolean(c.indoor),
+  stadium: false,
+  www: c.www || null,
+  custom: true,
+});
+
+// The list the app shows: LIPAS minus admin-hidden pitches, plus the admin's
+// own custom pitches for that city, one alphabetical list.
+async function getCityPitches(city) {
+  if (!knownCity(city)) throw Object.assign(new Error('Unknown city.'), { status: 400 });
+  const data = await lipasList(city);
+  const hidden = new Set(db.prepare('SELECT pitch_id FROM hidden_pitches').all().map((r) => r.pitch_id));
+  const custom = db.prepare('SELECT * FROM custom_pitches WHERE city = ?').all(city).map(customShape);
+  const pitches = data.pitches.filter((p) => !hidden.has(p.id)).concat(custom)
+    .sort((a, b) => a.name.localeCompare(b.name, 'fi'));
+  return { fetchedAt: data.fetchedAt, pitches, hiddenCount: hidden.size };
 }
 
 // Does this pitch id exist in the city's cached list? Returns the pitch or null.

@@ -208,45 +208,112 @@ function pitchTagLine(p) {
 
 async function renderPitches() {
   const sessions = pitchSessions();
-  if (!sessions.length) {
+  const isAdmin = S.me.user.role === 'admin';
+  // Coaches need an upcoming session to plan a pitch for; an admin can always
+  // browse and curate the list per city, sessions or not.
+  if (!sessions.length && !isAdmin) {
     view().innerHTML = `<div class="screen">
       <header class="app-head"><h1 class="app-h1">${t('app.pitches.title')}</h1></header>
       ${emptyState('cal', t('app.pitches.no_sessions'), t('app.pitches.no_sessions_sub'))}
     </div>`;
     return;
   }
-  if (!S.pitch.sel || !sessions.some((b) => b.code === S.pitch.sel)) S.pitch.sel = sessions[0].code;
-  const sess = sessions.find((b) => b.code === S.pitch.sel);
+  let sess;
+  if (sessions.length) {
+    if (!S.pitch.sel || !sessions.some((b) => b.code === S.pitch.sel)) S.pitch.sel = sessions[0].code;
+    sess = sessions.find((b) => b.code === S.pitch.sel);
+  } else {
+    // admin browse mode: city only, no session to assign to
+    if (!S.pitch.city) S.pitch.city = 'Helsinki';
+    sess = { code: null, location: S.pitch.city, pitch_id: null, date: null, hour: null };
+  }
 
   view().innerHTML = `<div class="screen">
     <header class="app-head"><h1 class="app-h1">${t('app.pitches.title')}</h1></header>
+    ${sessions.length ? `
     <label class="small muted" style="display:block;margin-bottom:6px">${t('app.pitches.for_session')}</label>
     <select id="pitch-sess" class="input" style="width:100%;margin-bottom:10px">
       ${sessions.map((b) => `<option value="${esc(b.code)}" ${b.code === S.pitch.sel ? 'selected' : ''}>
         ${esc(fmtDate(b.date))} ${fmtTime(b.hour)} · ${esc(b.customer)} · ${esc(I18N.server(b.location))}</option>`).join('')}
-    </select>
+    </select>` : `
+    <select id="pitch-city" class="input" style="width:100%;margin-bottom:10px">
+      ${['Helsinki', 'Espoo', 'Vantaa'].map((c) => `<option value="${c}" ${c === sess.location ? 'selected' : ''}>${c}</option>`).join('')}
+    </select>`}
     <input id="pitch-q" class="input" type="search" value="${esc(S.pitch.q)}"
       placeholder="${esc(t('app.pitches.search_ph'))}" style="width:100%;margin-bottom:8px">
     <p class="small muted" style="margin:0 0 12px">${t('app.pitches.note')}</p>
+    ${isAdmin ? `
+    <button class="btn btn-ghost btn-sm" id="pitch-add-toggle" style="margin-bottom:10px">+ ${t('app.pitches.add')}</button>
+    <div class="pf-block" id="pitch-add-form" hidden style="margin-bottom:12px">
+      <input id="pa-name" class="input" maxlength="80" placeholder="${esc(t('app.pitches.add_name_ph'))}" style="width:100%;margin-bottom:6px">
+      <input id="pa-area" class="input" maxlength="60" placeholder="${esc(t('app.pitches.add_area_ph'))}" style="width:100%;margin-bottom:6px">
+      <input id="pa-address" class="input" maxlength="120" placeholder="${esc(t('app.pitches.add_address_ph'))}" style="width:100%;margin-bottom:6px">
+      <input id="pa-www" class="input" maxlength="300" placeholder="${esc(t('app.pitches.add_www_ph'))}" style="width:100%;margin-bottom:6px">
+      <select id="pa-surface" class="input" style="width:100%;margin-bottom:8px">
+        <option value="artificial-turf">${esc(t('app.pitches.surface.artificial-turf'))}</option>
+        <option value="grass">${esc(t('app.pitches.surface.grass'))}</option>
+        <option value="">${esc(t('app.pitches.surface_other'))}</option>
+      </select>
+      <label class="small" style="display:inline-flex;gap:6px;margin-right:14px;align-items:center"><input type="checkbox" id="pa-lit"> ${t('app.pitches.lit')}</label>
+      <label class="small" style="display:inline-flex;gap:6px;align-items:center"><input type="checkbox" id="pa-indoor"> ${t('app.pitches.indoor')}</label>
+      <div style="margin-top:10px;display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" id="pa-save">${t('app.pitches.add_save')}</button>
+        <span class="small muted">${t('app.pitches.add_city_note', { city: esc(I18N.server(sess.location)) })}</span>
+      </div>
+    </div>` : ''}
     <div id="pitch-list"><div class="app-loading">${t('app.loading')}</div></div>
   </div>`;
 
-  document.getElementById('pitch-sess').addEventListener('change', (e) => {
+  const sessSel = document.getElementById('pitch-sess');
+  if (sessSel) sessSel.addEventListener('change', (e) => {
     S.pitch.sel = e.target.value;
+    renderPitches();
+  });
+  const citySel = document.getElementById('pitch-city');
+  if (citySel) citySel.addEventListener('change', (e) => {
+    S.pitch.city = e.target.value;
     renderPitches();
   });
   document.getElementById('pitch-q').addEventListener('input', (e) => {
     S.pitch.q = e.target.value;
     if (S.pitch.data) paintPitchList(sess);
   });
+  const addToggle = document.getElementById('pitch-add-toggle');
+  if (addToggle) addToggle.addEventListener('click', () => {
+    const f = document.getElementById('pitch-add-form');
+    f.hidden = !f.hidden;
+  });
+  const addSave = document.getElementById('pa-save');
+  if (addSave) addSave.addEventListener('click', async () => {
+    addSave.disabled = true;
+    try {
+      await API.post('/admin/pitches', {
+        city: sess.location,
+        name: document.getElementById('pa-name').value,
+        neighborhood: document.getElementById('pa-area').value,
+        address: document.getElementById('pa-address').value,
+        www: document.getElementById('pa-www').value,
+        surface: document.getElementById('pa-surface').value,
+        lighting: document.getElementById('pa-lit').checked,
+        indoor: document.getElementById('pa-indoor').checked,
+      });
+      toast(t('app.pitches.added_toast'));
+      renderPitches();
+    } catch (e) {
+      addSave.disabled = false;
+      toast(I18N.server(e.message), true);
+    }
+  });
 
+  // Stale response check: the coach switched sessions/cities (or tabs) mid-fetch.
+  const stale = () => (sess.code ? S.pitch.sel !== sess.code : S.pitch.city !== sess.location);
   try {
-    const data = await API.get(`/coach/pitches?city=${encodeURIComponent(sess.location)}&date=${sess.date}&hour=${sess.hour}`);
-    // Stale response: the coach switched sessions (or tabs) mid-fetch.
-    if (S.pitch.sel !== sess.code) return;
+    const slot = sess.code ? `&date=${sess.date}&hour=${sess.hour}` : '';
+    const data = await API.get(`/coach/pitches?city=${encodeURIComponent(sess.location)}${slot}`);
+    if (stale()) return;
     S.pitch.data = data;
   } catch (e) {
-    if (S.pitch.sel !== sess.code) return;
+    if (stale()) return;
     S.pitch.data = null;
     const list = document.getElementById('pitch-list');
     if (list) list.innerHTML = `<div class="empty"><div class="big">${esc(I18N.server(e.message))}</div></div>`;
@@ -258,6 +325,7 @@ async function renderPitches() {
 function paintPitchList(sess) {
   const list = document.getElementById('pitch-list');
   if (!list || !S.pitch.data) return;
+  const isAdmin = S.me.user.role === 'admin';
   const q = S.pitch.q.trim().toLowerCase();
   let rows = S.pitch.data.pitches;
   if (q) rows = rows.filter((p) => `${p.name} ${p.neighborhood} ${p.address}`.toLowerCase().includes(q));
@@ -269,28 +337,43 @@ function paintPitchList(sess) {
     || a.name.localeCompare(b.name, 'fi'));
 
   list.innerHTML = `
-    <div class="small muted" style="margin-bottom:8px">${t('app.pitches.count', { total: rows.length, free })}</div>
+    <div class="small muted" style="margin-bottom:8px">${sess.code
+      ? t('app.pitches.count', { total: rows.length, free })
+      : t('app.pitches.count_plain', { total: rows.length })}
+      ${isAdmin && S.pitch.data.hiddenCount ? `<br><button class="link-btn" id="pitch-restore" style="padding:2px 0">${t('app.pitches.restore', { n: S.pitch.data.hiddenCount })}</button>` : ''}
+    </div>
     ${rows.slice(0, 120).map((p) => {
       const mine = p.id === sess.pitch_id;
-      const chip = mine
-        ? `<span class="pill confirmed">✓ ${t('app.pitches.chosen')}</span>`
-        : p.takenBy
-          ? `<span class="pill cancelled">${t('app.pitches.taken', { coach: esc(p.takenBy.coach) })}</span>`
-          : `<span class="pill completed">${t('app.pitches.free')}</span>`;
-      const btn = mine
-        ? `<button class="btn btn-ghost btn-sm" data-clearpitch>${t('app.pitches.clear')}</button>`
-        : (!p.takenBy ? `<button class="btn btn-primary btn-sm" data-setpitch="${p.id}">${t('app.pitches.pick')}</button>` : '');
+      // Free/taken only means something at a specific session time — admin
+      // browse mode shows the plain directory without status chips.
+      const chip = !sess.code ? ''
+        : mine
+          ? `<span class="pill confirmed">✓ ${t('app.pitches.chosen')}</span>`
+          : p.takenBy
+            ? `<span class="pill cancelled">${t('app.pitches.taken', { coach: esc(p.takenBy.coach) })}</span>`
+            : `<span class="pill completed">${t('app.pitches.free')}</span>`;
+      // Assign buttons only exist when a session is selected (admin browse
+      // mode has no session to attach the pitch to).
+      const btn = !sess.code ? ''
+        : mine
+          ? `<button class="btn btn-ghost btn-sm" data-clearpitch>${t('app.pitches.clear')}</button>`
+          : (!p.takenBy ? `<button class="btn btn-primary btn-sm" data-setpitch="${p.id}">${t('app.pitches.pick')}</button>` : '');
+      // Admins prune the list right here: LIPAS pitches hide (restorable),
+      // custom ones delete for good.
+      const rmBtn = isAdmin
+        ? `<button class="btn btn-ghost btn-sm" data-rmpitch="${p.id}" data-name="${esc(p.name)}" data-custom="${p.custom ? 1 : 0}">🗑 ${t(p.custom ? 'app.pitches.delete_custom' : 'app.pitches.hide')}</button>`
+        : '';
       return `<div class="sess-card">
         <div class="sess-top">
           <div style="min-width:0">
-            <div class="sess-name" style="font-size:.95rem">${esc(p.name)}</div>
+            <div class="sess-name" style="font-size:.95rem">${esc(p.name)}${p.custom ? ` <span class="chip" style="font-size:.6rem">${t('app.pitches.custom_tag')}</span>` : ''}</div>
             <div class="sess-meta">${esc([p.neighborhood, p.address].filter(Boolean).join(' · '))}</div>
             ${pitchTagLine(p) ? `<div class="sess-meta">${pitchTagLine(p)}</div>` : ''}
             ${p.www ? `<div class="sess-meta"><a href="${esc(p.www)}" target="_blank" rel="noopener" style="color:var(--lime)">🔗 ${t('app.pitches.city_link')}</a></div>` : ''}
           </div>
           ${chip}
         </div>
-        ${btn ? `<div class="sess-actions">${btn}</div>` : ''}
+        ${btn || rmBtn ? `<div class="sess-actions">${btn}${rmBtn}</div>` : ''}
       </div>`;
     }).join('') || `<div class="empty"><div class="big">${esc(t('app.pitches.no_match'))}</div></div>`}
     ${rows.length > 120 ? `<div class="small muted" style="margin-top:8px">${t('app.pitches.narrow', { shown: 120, total: rows.length })}</div>` : ''}`;
@@ -307,6 +390,23 @@ function paintPitchList(sess) {
     b.addEventListener('click', () => setPitch(Number(b.dataset.setpitch))));
   list.querySelectorAll('[data-clearpitch]').forEach((b) =>
     b.addEventListener('click', () => setPitch(null)));
+  list.querySelectorAll('[data-rmpitch]').forEach((b) => b.addEventListener('click', async () => {
+    const custom = b.dataset.custom === '1';
+    if (!confirm(t(custom ? 'app.pitches.delete_custom_confirm' : 'app.pitches.hide_confirm', { name: b.dataset.name }))) return;
+    try {
+      await API.del(`/admin/pitches/${b.dataset.rmpitch}`);
+      toast(t('app.pitches.removed_toast'));
+      renderPitches();
+    } catch (e) { toast(I18N.server(e.message), true); }
+  }));
+  const restore = document.getElementById('pitch-restore');
+  if (restore) restore.addEventListener('click', async () => {
+    try {
+      await API.post('/admin/pitches/restore-hidden', {});
+      toast(t('app.pitches.restored_toast'));
+      renderPitches();
+    } catch (e) { toast(I18N.server(e.message), true); }
+  });
 }
 
 let openChatId = null;

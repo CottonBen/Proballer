@@ -968,9 +968,50 @@ router.get('/coach/pitches', requireRole('coach', 'admin'), async (req, res) => 
     }
   }
   res.json({
-    city, updatedAt: data.fetchedAt,
+    city, updatedAt: data.fetchedAt, hiddenCount: data.hiddenCount,
     pitches: data.pitches.map((p) => ({ ...p, takenBy: taken.get(p.id) || null })),
   });
+});
+
+// ---------------------------------------------------------------------------
+// Admin curation of the pitch list: add own venues, remove listed ones.
+// Deleting a LIPAS pitch hides it (restorable); deleting a custom pitch
+// (negative id) removes it for good.
+// ---------------------------------------------------------------------------
+router.post('/admin/pitches', requireRole('admin'), (req, res) => {
+  const city = String(req.body?.city || '');
+  if (!pitches.knownCity(city)) return res.status(400).json({ error: 'Unknown city.' });
+  const name = String(req.body?.name || '').trim().slice(0, 80);
+  if (name.length < 2) return res.status(400).json({ error: 'Pitch name is required.' });
+  const surface = ['artificial-turf', 'grass', ''].includes(req.body?.surface) ? req.body.surface : '';
+  let www = String(req.body?.www || '').trim().slice(0, 300);
+  if (www && !/^https?:\/\//i.test(www)) www = 'https://' + www;
+  const info = db.prepare(`INSERT INTO custom_pitches
+    (city, name, neighborhood, address, surface, lighting, indoor, www, created_at)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
+    .run(city, name,
+      String(req.body?.neighborhood || '').trim().slice(0, 60),
+      String(req.body?.address || '').trim().slice(0, 120),
+      surface, req.body?.lighting ? 1 : 0, req.body?.indoor ? 1 : 0, www || null, nowISO());
+  res.status(201).json({ ok: true, id: -Number(info.lastInsertRowid) });
+});
+
+router.delete('/admin/pitches/:id', requireRole('admin'), (req, res) => {
+  const id = Number(req.params.id);
+  if (!Number.isInteger(id) || id === 0) return res.status(400).json({ error: 'Bad pitch id.' });
+  if (id < 0) {
+    const info = db.prepare('DELETE FROM custom_pitches WHERE id = ?').run(-id);
+    if (!info.changes) return res.status(404).json({ error: 'Pitch not found.' });
+  } else {
+    db.prepare('INSERT OR IGNORE INTO hidden_pitches (pitch_id, hidden_at) VALUES (?,?)').run(id, nowISO());
+  }
+  res.json({ ok: true });
+});
+
+// Undo button for the hide list: bring every hidden LIPAS pitch back.
+router.post('/admin/pitches/restore-hidden', requireRole('admin'), (req, res) => {
+  const info = db.prepare('DELETE FROM hidden_pitches').run();
+  res.json({ ok: true, restored: info.changes });
 });
 
 // The coach picks (or clears) the pitch for one of their upcoming sessions.

@@ -167,6 +167,27 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
+-- Admin curation of the coach app's pitch list (on top of the LIPAS registry):
+-- own venues added by hand, and LIPAS pitches hidden from the list. Custom
+-- pitches are exposed with NEGATIVE ids so they can never collide with LIPAS
+-- ids (bookings.pitch_id then references either space unambiguously).
+CREATE TABLE IF NOT EXISTS custom_pitches (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  city TEXT NOT NULL,
+  name TEXT NOT NULL,
+  neighborhood TEXT NOT NULL DEFAULT '',
+  address TEXT NOT NULL DEFAULT '',
+  surface TEXT NOT NULL DEFAULT '',   -- LIPAS-style token ('artificial-turf', …) or ''
+  lighting INTEGER NOT NULL DEFAULT 0,
+  indoor INTEGER NOT NULL DEFAULT 0,
+  www TEXT,
+  created_at TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS hidden_pitches (
+  pitch_id INTEGER PRIMARY KEY,      -- LIPAS id
+  hidden_at TEXT NOT NULL
+);
+
 -- Coach <-> customer chat. One thread per pair, auto-created on first booking.
 -- Admins are implicit members of every chat (business oversight).
 CREATE TABLE IF NOT EXISTS chats (
