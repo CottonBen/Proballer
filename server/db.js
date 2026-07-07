@@ -295,10 +295,10 @@ function autoCompleteBookings() {
   `).run(date, date, hour);
 }
 
-// Card payments are due within 72 HOURS of booking — and always before the
-// session itself starts, whichever comes first. The booking is confirmed right
-// away and holds the slot; this sweep (a) reminds the customer in-app when
-// ~24 h remain, and (b) releases the booking at the deadline: cancelled,
+// Card payments are due AT booking: each invoice carries a pay_by deadline
+// (config.stripe.payWindowMinutes after booking) — and the session start is
+// always a deadline too, whichever comes first. The booking holds the slot
+// until then; this sweep releases it once the deadline passes: cancelled,
 // invoice voided, slot free again, customer AND coach notified. Only invoices
 // with a pay_by deadline are eligible — legacy bank-transfer invoices (pay_by
 // NULL) are never touched.
@@ -309,25 +309,27 @@ function expireUnpaidBookings() {
   const now = new Date().toISOString();
   const hki = helsinkiNow();
 
-  // One-shot payment reminder when less than 24 h of the window remains
-  // (skipped when the session-start deadline arrives first — close to the
-  // session the customer is looking at the booking anyway).
-  const remindBefore = new Date(Date.now() + 24 * 3600000).toISOString();
-  const toRemind = db.prepare(`
-    SELECT b.code, b.date, b.hour, b.customer_id, i.id AS invoice_id
-    FROM bookings b JOIN invoices i ON i.booking_id = b.id
-    WHERE b.status = 'confirmed' AND i.status = 'sent'
-      AND i.pay_by IS NOT NULL AND i.pay_by > ? AND i.pay_by <= ?
-      AND i.pay_reminder_sent = 0`).all(now, remindBefore);
-  for (const r of toRemind) {
-    db.prepare('UPDATE invoices SET pay_reminder_sent = 1 WHERE id = ?').run(r.invoice_id);
-    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-      .run(r.customer_id, `Payment reminder: your booking ${r.code} on ${r.date} at `
-        + `${String(r.hour).padStart(2, '0')}:00 is still unpaid — pay it on the My bookings page `
-        + 'within 24 hours (before the session, if it is sooner) or the booking will be cancelled automatically.', nowISO());
+  // One-shot "24 h left" reminder — only meaningful when the business runs a
+  // long pay-later window. With the current pay-at-booking window (< 24 h) the
+  // customer is mid-checkout and a reminder would fire instantly, so skip.
+  if (config.stripe.payWindowMinutes >= 24 * 60) {
+    const remindBefore = new Date(Date.now() + 24 * 3600000).toISOString();
+    const toRemind = db.prepare(`
+      SELECT b.code, b.date, b.hour, b.customer_id, i.id AS invoice_id
+      FROM bookings b JOIN invoices i ON i.booking_id = b.id
+      WHERE b.status = 'confirmed' AND i.status = 'sent'
+        AND i.pay_by IS NOT NULL AND i.pay_by > ? AND i.pay_by <= ?
+        AND i.pay_reminder_sent = 0`).all(now, remindBefore);
+    for (const r of toRemind) {
+      db.prepare('UPDATE invoices SET pay_reminder_sent = 1 WHERE id = ?').run(r.invoice_id);
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(r.customer_id, `Payment reminder: your booking ${r.code} on ${r.date} at `
+          + `${String(r.hour).padStart(2, '0')}:00 is still unpaid — pay it on the My bookings page `
+          + 'within 24 hours (before the session, if it is sooner) or the booking will be cancelled automatically.', nowISO());
+    }
   }
 
-  // Release: the 72 h window has passed, or the session is about to start.
+  // Release: the payment window has passed, or the session is about to start.
   const stale = db.prepare(`
     SELECT b.id, b.code, b.date, b.hour, b.customer_id, b.coach_id, i.number AS invoice_number
     FROM bookings b JOIN invoices i ON i.booking_id = b.id

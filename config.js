@@ -87,6 +87,11 @@ module.exports = {
   stripe: {
     secretKey: process.env.STRIPE_SECRET_KEY || '',
     webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
+    // Payment is due AT booking: the customer is sent straight to card payment
+    // and the slot is held this many minutes before an unpaid booking is
+    // auto-released. (Raise to e.g. 72*60 to offer a pay-later window instead —
+    // reminders and all release/restore logic follow this number.)
+    payWindowMinutes: 45,
   },
 
   // How many days ahead coaches can publish availability / customers can book.

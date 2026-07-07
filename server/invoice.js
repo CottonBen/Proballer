@@ -138,15 +138,16 @@ function createInvoiceForBooking(bookingId) {
   const lang = pickLang(customer.lang);
 
   const free = booking.total_cents === 0;
-  // Card payments are due within 72 h of booking (and before the session —
-  // expireUnpaidBookings enforces both). pay_by stays NULL on free and legacy
-  // bank-transfer invoices so the sweep never touches them.
+  // Card payments are due AT booking, within config.stripe.payWindowMinutes
+  // (and always before the session — expireUnpaidBookings enforces both).
+  // pay_by stays NULL on free and legacy bank-transfer invoices so the sweep
+  // never touches them.
   const cardFlow = !free && Boolean(config.stripe.secretKey);
   const inv = {
     number: nextInvoiceNumber(),
     issued_at: nowISO(),
-    due_date: cardFlow ? helsinkiDateOffset(3) : helsinkiDateOffset(config.invoice.dueDays),
-    pay_by: cardFlow ? new Date(Date.now() + 72 * 3600000).toISOString() : null,
+    due_date: cardFlow ? helsinkiDateOffset(0) : helsinkiDateOffset(config.invoice.dueDays),
+    pay_by: cardFlow ? new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString() : null,
   };
   const html = renderInvoiceHTML(inv, booking, customer, coach.name, focus || booking.focus, lang,
     free ? { method: 'credit', date: helsinkiNow().date } : null);

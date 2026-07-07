@@ -189,12 +189,12 @@ function reactivateBooking(booking) {
   // Restore the invoice to whatever it was before the void (paid stays paid).
   db.prepare("UPDATE invoices SET status = COALESCE(prev_status, 'sent'), prev_status = NULL WHERE booking_id = ? AND status = 'void'")
     .run(booking.id);
-  // A reactivated card invoice gets a FRESH 72 h payment window — its old
-  // deadline has usually passed, and without this the unpaid-booking sweep
-  // would release the booking again on the very next request.
+  // A reactivated card invoice gets a FRESH payment window — its old deadline
+  // has usually passed, and without this the unpaid-booking sweep would
+  // release the booking again on the very next request.
   db.prepare(`UPDATE invoices SET pay_by = ?, pay_reminder_sent = 0
     WHERE booking_id = ? AND status = 'sent' AND pay_by IS NOT NULL`)
-    .run(new Date(Date.now() + 72 * 3600000).toISOString(), booking.id);
+    .run(new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(), booking.id);
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
     .run(booking.customer_id,
@@ -612,10 +612,10 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
         + `${String(hour).padStart(2, '0')}:00 — ${focus.id} (${location}).`, nowISO());
   }
 
-  // The booking is confirmed now and holds the slot; the card payment is due
-  // within 72 hours (and before the session starts). The customer can pay
-  // right away via this Checkout URL or later from Omat varaukset — the
-  // expiry sweep releases the booking if the deadline passes unpaid.
+  // Payment is due AT booking: the client redirects straight to this Checkout
+  // URL. The slot is held for config.stripe.payWindowMinutes — if the payment
+  // is interrupted, Omat varaukset has a pay button until the sweep releases
+  // the unpaid booking at the deadline.
   let payUrl = null;
   if (stripe.enabled() && price - discount > 0) {
     try {

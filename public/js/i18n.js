@@ -370,14 +370,11 @@ const I18N_DICT = {
   "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
 
   // --- card payments (Stripe) ---
-  "booking.review.pay_note": { fi: "Varaus vahvistetaan heti. Maksa turvallisella korttimaksulla ({price}) heti tai 72 tunnin kuluessa varauksesta (kuitenkin ennen treeniä) — maksamaton varaus perutaan automaattisesti. Kuitti tulee sähköpostiisi.", en: "Your booking is confirmed right away. Pay securely by card ({price}) now or within 72 hours of booking (before the session, at the latest) — an unpaid booking is cancelled automatically. A receipt lands in your email." },
+  "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
   "booking.success.pay_title": { fi: "Varaus tehty — viimeistele maksu", en: "Booked — complete your payment" },
   "booking.success.redirecting": { fi: "Siirryt turvalliseen korttimaksuun hetken kuluttua…", en: "Taking you to secure card payment…" },
   "booking.success.paybtn": { fi: "Siirry maksuun", en: "Go to payment" },
-  "booking.success.pay_window_title": { fi: "Maksuaika: 72 tuntia", en: "Payment window: 72 hours" },
-  "booking.success.pay_window": { fi: "Varauksesi on vahvistettu ja aika on varattu sinulle. Maksa korttimaksu viimeistään {deadline} — muuten varaus perutaan automaattisesti ja aika vapautuu muille.", en: "Your booking is confirmed and the slot is held for you. Pay by card by {deadline} — otherwise the booking is cancelled automatically and the slot opens up again." },
-  "booking.success.pay_before_session": { fi: "Jos treenisi alkaa tätä ennen, maksu on tehtävä ennen treenin alkua.", en: "If your session starts before that, the payment is due before the session begins." },
-  "booking.success.pay_later": { fi: "Voit maksaa myös myöhemmin — {myBookingsLink}-sivulla on Maksa kortilla -painike ja maksun takaraja.", en: "You can also pay later — {myBookingsLink} has a Pay by card button and shows the deadline." },
+  "booking.success.pay_hold": { fi: "Aika on varattuna sinulle klo {time} asti. Jos maksu keskeytyy, voit maksaa vielä {myBookingsLink}-sivulta — maksamaton varaus perutaan automaattisesti.", en: "The slot is held for you until {time}. If the payment gets interrupted you can still pay from {myBookingsLink} — an unpaid booking is cancelled automatically." },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
   "pay.refund_pending": { fi: "Maksusi ehti perille vasta varauksen peruunnuttua, eikä varausta voitu enää palauttaa. Palautamme maksun sinulle — otamme yhteyttä.", en: "Your payment arrived after the booking had already been cancelled and it could not be restored. We will refund the payment and be in touch." },
   "pay.card": { fi: "Maksa kortilla", en: "Pay by card" },
