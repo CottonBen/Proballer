@@ -85,6 +85,10 @@ function markInvoicePaid(invoiceNumber) {
     require('./sheets').scheduleSync();
     require('./invoice').sendReceiptForInvoice(invoiceNumber, 'card')
       .catch((err) => console.error('[receipt]', err.message));
+    // The payment is confirmed — NOW the booking goes to the coach (alert +
+    // chat thread with the customer's notes). Idempotent.
+    const inv = db.prepare('SELECT booking_id FROM invoices WHERE number = ?').get(invoiceNumber);
+    if (inv) require('./notify').announceBookingToCoach(inv.booking_id);
     return true;
   }
   // Race: the payment landed AFTER the unpaid-booking sweep released the
@@ -147,13 +151,17 @@ function recoverPaidButReleased(invoiceNumber) {
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
     .run(booking.customer_id, `Good news — we received your payment and your booking ${booking.code} `
       + 'is confirmed again.', nowISO());
-  // The coach saw the release alert, so they must see the restore too.
-  const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(booking.coach_id);
-  if (coachUser && coachUser.user_id) {
-    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-      .run(coachUser.user_id, `Booking ${booking.code} on ${booking.date} at `
-        + `${String(booking.hour).padStart(2, '0')}:00 is confirmed again — the payment arrived `
-        + 'just after the release.', nowISO());
+  // Restored + paid: a coach who never heard about the booking gets the normal
+  // "New booking" announcement now; one who already knew (it was announced
+  // before the release) gets the restore notice instead.
+  if (!require('./notify').announceBookingToCoach(booking.id)) {
+    const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(booking.coach_id);
+    if (coachUser && coachUser.user_id) {
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(coachUser.user_id, `Booking ${booking.code} on ${booking.date} at `
+          + `${String(booking.hour).padStart(2, '0')}:00 is confirmed again — the payment arrived `
+          + 'just after the release.', nowISO());
+    }
   }
   require('./sheets').scheduleSync();
   require('./invoice').sendReceiptForInvoice(invoiceNumber, 'card')

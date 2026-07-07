@@ -236,6 +236,10 @@ for (const stmt of [
   // national sports-site registry. NULL/'' = not chosen yet.
   'ALTER TABLE bookings ADD COLUMN pitch_id INTEGER',
   "ALTER TABLE bookings ADD COLUMN pitch_name TEXT NOT NULL DEFAULT ''",
+  // Has the coach been told about this booking? Card bookings start at 0 and
+  // are announced when the payment confirms (server/notify.js); the DEFAULT 1
+  // makes every pre-existing row count as already announced.
+  'ALTER TABLE bookings ADD COLUMN coach_notified INTEGER NOT NULL DEFAULT 1',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }
@@ -331,7 +335,8 @@ function expireUnpaidBookings() {
 
   // Release: the payment window has passed, or the session is about to start.
   const stale = db.prepare(`
-    SELECT b.id, b.code, b.date, b.hour, b.customer_id, b.coach_id, i.number AS invoice_number
+    SELECT b.id, b.code, b.date, b.hour, b.customer_id, b.coach_id, b.coach_notified,
+           i.number AS invoice_number
     FROM bookings b JOIN invoices i ON i.booking_id = b.id
     WHERE b.status = 'confirmed' AND b.total_cents > 0
       AND i.status = 'sent' AND i.pay_by IS NOT NULL
@@ -343,13 +348,16 @@ function expireUnpaidBookings() {
     db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
       .run(s.customer_id, 'Your booking was cancelled because the payment was not completed. '
         + 'The slot is open again — you are welcome to book a new time.', nowISO());
-    // The coach sees the released slot in their app alerts too.
-    const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(s.coach_id);
-    if (coachUser && coachUser.user_id) {
-      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-        .run(coachUser.user_id, `Booking ${s.code} on ${s.date} at `
-          + `${String(s.hour).padStart(2, '0')}:00 was released because the payment `
-          + 'was not completed. The slot is open again.', nowISO());
+    // Coaches only hear about announced bookings — one that was never sent to
+    // them (unpaid card booking) also vanishes silently.
+    if (s.coach_notified) {
+      const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(s.coach_id);
+      if (coachUser && coachUser.user_id) {
+        db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+          .run(coachUser.user_id, `Booking ${s.code} on ${s.date} at `
+            + `${String(s.hour).padStart(2, '0')}:00 was released because the payment `
+            + 'was not completed. The slot is open again.', nowISO());
+      }
     }
   }
 }

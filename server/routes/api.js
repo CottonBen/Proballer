@@ -13,6 +13,7 @@ const tiers = require('../tiers');
 const stripe = require('../stripe');
 const i18n = require('../i18n');
 const pitches = require('../pitches');
+const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
 const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
@@ -403,24 +404,10 @@ router.post('/my-notifications/read', requireRole('customer', 'admin', 'coach'),
 });
 
 // ---------------------------------------------------------------------------
-// Chat: one thread per coach<->customer pair, auto-created on booking.
-// Admins are implicit members of EVERY chat (business oversight) and may post.
+// Chat: one thread per coach<->customer pair, created when a booking is
+// announced to the coach (see server/notify.js — for card bookings that is
+// when the payment confirms). Admins are implicit members of EVERY chat.
 // ---------------------------------------------------------------------------
-function ensureChat(coachId, customerId) {
-  db.prepare('INSERT OR IGNORE INTO chats (coach_id, customer_id, created_at) VALUES (?,?,?)')
-    .run(coachId, customerId, nowISO());
-  return db.prepare('SELECT * FROM chats WHERE coach_id = ? AND customer_id = ?').get(coachId, customerId);
-}
-
-function postChatMessage(chatId, senderId, text) {
-  const info = db.prepare('INSERT INTO chat_messages (chat_id, sender_id, body, created_at) VALUES (?,?,?,?)')
-    .run(chatId, senderId, text, nowISO());
-  // The sender has trivially read their own message.
-  if (senderId) db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
-    ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
-    .run(chatId, senderId, Number(info.lastInsertRowid));
-  return Number(info.lastInsertRowid);
-}
 
 // May this user see this chat? The customer, the coach's linked login, or admin.
 function chatAccess(req, chat) {
@@ -566,12 +553,18 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   // Optional free-text wishes for the coach, asked in the wizard's notes step.
   const notes = String(req.body?.notes || '').trim().slice(0, 500);
 
+  // Card bookings are NOT announced to the coach yet: no alert, no chat, and
+  // the coach endpoints hide the row. The announcement (server/notify.js)
+  // fires when the payment confirms. Free-credit and legacy bank-transfer
+  // bookings have nothing pending, so the coach hears immediately.
+  const cardFlow = stripe.enabled() && price - discount > 0;
+
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
-       price_cents, discount_cents, total_cents, credit_applied, notes, status, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,'confirmed',?)`)
+       price_cents, discount_cents, total_cents, credit_applied, notes, coach_notified, status, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus.id,
         focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes, nowISO());
     bookingId = Number(info.lastInsertRowid);
@@ -589,28 +582,13 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   const langPref = readLang(req.body);
   if (langPref) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(langPref, req.user.id);
 
-  // Every booking connects the customer and coach in a chat thread. The system
-  // line uses language-neutral tokens; the customer's notes post as their own
-  // first message so the coach sees them where the conversation happens.
-  const chat = ensureChat(coachId, req.user.id);
-  const sysId = postChatMessage(chat.id, null, `📅 ${code} · ${date} · ${String(hour).padStart(2, '0')}:00`);
-  // The booker has obviously "seen" their own booking's system line.
-  db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
-    ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
-    .run(chat.id, req.user.id, sysId);
-  if (notes) postChatMessage(chat.id, req.user.id, notes);
-
   const invoice = createInvoiceForBooking(bookingId);
   recordEvent(req, 'booking_completed', { coachId, code });
   sheets.scheduleSync();
 
-  // The coach hears about the new booking right away (app Alerts tab).
-  // English-canonical text; the frontend translates it at display time.
-  if (coach.user_id && coach.user_id !== req.user.id) {
-    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-      .run(coach.user_id, `New booking: ${req.user.name} on ${date} at `
-        + `${String(hour).padStart(2, '0')}:00 — ${focus.id} (${location}).`, nowISO());
-  }
+  // No payment pending -> announce now. Card bookings announce from the
+  // payment paths instead (webhook / refresh-payment / admin mark-paid).
+  if (!cardFlow) announceBookingToCoach(bookingId);
 
   // Payment is due AT booking: the client redirects straight to this Checkout
   // URL. The slot is held for config.stripe.payWindowMinutes — if the payment
@@ -759,7 +737,8 @@ router.get('/coach/availability', requireRole('coach', 'admin'), (req, res) => {
   const bookings = db.prepare(`
     SELECT b.date, b.hour, b.location, b.position, b.focus, b.status, b.pitch_name, u.name AS customer
     FROM bookings b JOIN users u ON u.id = b.customer_id
-    WHERE b.coach_id = ? AND b.date BETWEEN ? AND ? AND b.status != 'cancelled'`)
+    WHERE b.coach_id = ? AND b.date BETWEEN ? AND ? AND b.status != 'cancelled'
+      AND b.coach_notified = 1`)
     .all(coach.id, from, to);
   res.json({ from, to, slots, bookings });
 });
@@ -840,7 +819,7 @@ router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
            b.price_cents, b.total_cents, b.credit_applied, b.notes, b.pitch_id, b.pitch_name,
            u.name AS customer, u.email AS customer_email
     FROM bookings b JOIN users u ON u.id = b.customer_id
-    WHERE b.coach_id = ?
+    WHERE b.coach_id = ? AND b.coach_notified = 1
     ORDER BY b.date DESC, b.hour DESC LIMIT 200`).all(coach.id);
 
   // Attach what the coach earns, in euros only (tier math stays server-side):
@@ -1482,8 +1461,11 @@ router.delete('/admin/customers/:id', requireRole('admin'), (req, res) => {
   for (const f of invoiceFiles) {
     try { fs.unlinkSync(path.join(OUTBOX, path.basename(f))); } catch { /* already gone */ }
   }
-  // Outside the transaction: coaches lose their upcoming sessions with this customer.
+  // Outside the transaction: coaches lose their upcoming sessions with this
+  // customer — but only announced ones; a coach is never told about the
+  // removal of a booking they never heard of (unpaid card booking).
   for (const b of upcoming) {
+    if (!b.coach_notified) continue;
     const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(b.coach_id);
     if (coachUser && coachUser.user_id) {
       db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
@@ -1504,8 +1486,11 @@ router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => 
     return res.status(409).json({ error: 'This invoice is voided (its booking was cancelled) — it cannot be marked paid.' });
   }
   db.prepare("UPDATE invoices SET status = 'paid' WHERE number = ? AND status = 'sent'").run(req.params.number);
-  // Manual mark-paid = a bank transfer arrived; the receipt goes out automatically.
+  // Manual mark-paid = a bank transfer arrived; the receipt goes out automatically,
+  // and a not-yet-announced card booking reaches its coach now.
   sendReceiptForInvoice(req.params.number, 'bank').catch((e) => console.error('[receipt]', e.message));
+  const paidInv = db.prepare('SELECT booking_id FROM invoices WHERE number = ?').get(req.params.number);
+  if (paidInv) announceBookingToCoach(paidInv.booking_id);
   res.json({ ok: true });
 });
 
