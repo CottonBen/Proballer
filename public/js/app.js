@@ -12,6 +12,7 @@ const S = {
   notifs: [],        // /api/my-notifications
   unread: 0,
   cal: { y: null, m: null, selDate: null }, // calendar view state
+  pitch: { sel: null, q: '' },              // pitches tab: selected session code + search
 };
 
 const view = () => document.getElementById('view');
@@ -28,6 +29,8 @@ function fmtTime(hour) {
   const sep = I18N.lang === 'fi' ? '.' : ':';
   return `${String(hour).padStart(2, '0')}${sep}00`;
 }
+// Chronological comparator. NOT string-concat: 'date'+10 sorts before 'date'+9.
+const byWhen = (a, b) => (a.date === b.date ? a.hour - b.hour : a.date.localeCompare(b.date));
 // A booking's session line: focus · position · place (all localized).
 function sessionWhat(b) {
   const place = b.is_online ? t('app.session.online') : esc(I18N.server(b.location));
@@ -64,7 +67,7 @@ const byStatus = (st) => S.bookings.filter((b) => b.status === st);
 // ---------------------------------------------------------------------------
 // Router
 // ---------------------------------------------------------------------------
-const ROUTES = { home: renderHome, sessions: renderSessions, calendar: renderCalendar, chats: renderChats, alerts: renderAlerts, profile: renderProfile };
+const ROUTES = { home: renderHome, sessions: renderSessions, calendar: renderCalendar, pitches: renderPitches, chats: renderChats, alerts: renderAlerts, profile: renderProfile };
 
 function currentTab() {
   const h = (location.hash || '#home').slice(1);
@@ -81,8 +84,7 @@ function render() {
 // Views
 // ---------------------------------------------------------------------------
 function renderHome() {
-  const upcoming = byStatus('confirmed').slice().sort((a, b) =>
-    (a.date + a.hour).localeCompare(b.date + b.hour));
+  const upcoming = byStatus('confirmed').slice().sort(byWhen);
   const completed = byStatus('completed');
   const next = upcoming.slice(0, 5);
   view().innerHTML = `<div class="screen">
@@ -109,7 +111,7 @@ let sessTab = 'confirmed';
 function renderSessions() {
   const map = { confirmed: 'app.stat.upcoming', completed: 'app.stat.completed', cancelled: 'app.stat.cancelled' };
   const list = byStatus(sessTab).slice();
-  if (sessTab === 'confirmed') list.sort((a, b) => (a.date + a.hour).localeCompare(b.date + b.hour));
+  if (sessTab === 'confirmed') list.sort(byWhen);
   view().innerHTML = `<div class="screen">
     <header class="app-head"><h1 class="app-h1">${t('app.sessions.title')}</h1></header>
     <div class="seg" id="sess-seg">
@@ -181,6 +183,132 @@ function renderCalendar() {
   wireSessionActions();
 }
 
+// ---------------------------------------------------------------------------
+// Pitches: the LIPAS directory of football venues in the session's city, with
+// Proballers' own occupancy at the session time. "Free" only covers OUR
+// bookings (LIPAS has no live calendars) — the note + city links say so.
+// ---------------------------------------------------------------------------
+function pitchSessions() {
+  return byStatus('confirmed').filter((b) => !b.is_online).sort(byWhen);
+}
+
+function pitchTagLine(p) {
+  const tags = [];
+  for (const s of p.surface || []) {
+    // Common LIPAS surface tokens are translated; rare ones show as-is.
+    const key = 'app.pitches.surface.' + s;
+    tags.push(esc(Object.prototype.hasOwnProperty.call(I18N_DICT, key) ? t(key) : s));
+  }
+  if (p.length && p.width) tags.push(`${p.length}×${p.width} m`);
+  if (p.lighting) tags.push('💡 ' + t('app.pitches.lit'));
+  if (p.indoor) tags.push('🏟 ' + t('app.pitches.indoor'));
+  else if (p.stadium) tags.push('🏟 ' + t('app.pitches.stadium'));
+  return tags.join(' · ');
+}
+
+async function renderPitches() {
+  const sessions = pitchSessions();
+  if (!sessions.length) {
+    view().innerHTML = `<div class="screen">
+      <header class="app-head"><h1 class="app-h1">${t('app.pitches.title')}</h1></header>
+      ${emptyState('cal', t('app.pitches.no_sessions'), t('app.pitches.no_sessions_sub'))}
+    </div>`;
+    return;
+  }
+  if (!S.pitch.sel || !sessions.some((b) => b.code === S.pitch.sel)) S.pitch.sel = sessions[0].code;
+  const sess = sessions.find((b) => b.code === S.pitch.sel);
+
+  view().innerHTML = `<div class="screen">
+    <header class="app-head"><h1 class="app-h1">${t('app.pitches.title')}</h1></header>
+    <label class="small muted" style="display:block;margin-bottom:6px">${t('app.pitches.for_session')}</label>
+    <select id="pitch-sess" class="input" style="width:100%;margin-bottom:10px">
+      ${sessions.map((b) => `<option value="${esc(b.code)}" ${b.code === S.pitch.sel ? 'selected' : ''}>
+        ${esc(fmtDate(b.date))} ${fmtTime(b.hour)} · ${esc(b.customer)} · ${esc(I18N.server(b.location))}</option>`).join('')}
+    </select>
+    <input id="pitch-q" class="input" type="search" value="${esc(S.pitch.q)}"
+      placeholder="${esc(t('app.pitches.search_ph'))}" style="width:100%;margin-bottom:8px">
+    <p class="small muted" style="margin:0 0 12px">${t('app.pitches.note')}</p>
+    <div id="pitch-list"><div class="app-loading">${t('app.loading')}</div></div>
+  </div>`;
+
+  document.getElementById('pitch-sess').addEventListener('change', (e) => {
+    S.pitch.sel = e.target.value;
+    renderPitches();
+  });
+  document.getElementById('pitch-q').addEventListener('input', (e) => {
+    S.pitch.q = e.target.value;
+    if (S.pitch.data) paintPitchList(sess);
+  });
+
+  try {
+    const data = await API.get(`/coach/pitches?city=${encodeURIComponent(sess.location)}&date=${sess.date}&hour=${sess.hour}`);
+    // Stale response: the coach switched sessions (or tabs) mid-fetch.
+    if (S.pitch.sel !== sess.code) return;
+    S.pitch.data = data;
+  } catch (e) {
+    if (S.pitch.sel !== sess.code) return;
+    S.pitch.data = null;
+    const list = document.getElementById('pitch-list');
+    if (list) list.innerHTML = `<div class="empty"><div class="big">${esc(I18N.server(e.message))}</div></div>`;
+    return;
+  }
+  paintPitchList(sess);
+}
+
+function paintPitchList(sess) {
+  const list = document.getElementById('pitch-list');
+  if (!list || !S.pitch.data) return;
+  const q = S.pitch.q.trim().toLowerCase();
+  let rows = S.pitch.data.pitches;
+  if (q) rows = rows.filter((p) => `${p.name} ${p.neighborhood} ${p.address}`.toLowerCase().includes(q));
+  const free = rows.filter((p) => !p.takenBy).length;
+  // Selected pitch first, then free before taken, alphabetical within.
+  rows = rows.slice().sort((a, b) =>
+    (b.id === sess.pitch_id) - (a.id === sess.pitch_id)
+    || Boolean(a.takenBy) - Boolean(b.takenBy)
+    || a.name.localeCompare(b.name, 'fi'));
+
+  list.innerHTML = `
+    <div class="small muted" style="margin-bottom:8px">${t('app.pitches.count', { total: rows.length, free })}</div>
+    ${rows.slice(0, 120).map((p) => {
+      const mine = p.id === sess.pitch_id;
+      const chip = mine
+        ? `<span class="pill confirmed">✓ ${t('app.pitches.chosen')}</span>`
+        : p.takenBy
+          ? `<span class="pill cancelled">${t('app.pitches.taken', { coach: esc(p.takenBy.coach) })}</span>`
+          : `<span class="pill completed">${t('app.pitches.free')}</span>`;
+      const btn = mine
+        ? `<button class="btn btn-ghost btn-sm" data-clearpitch>${t('app.pitches.clear')}</button>`
+        : (!p.takenBy ? `<button class="btn btn-primary btn-sm" data-setpitch="${p.id}">${t('app.pitches.pick')}</button>` : '');
+      return `<div class="sess-card">
+        <div class="sess-top">
+          <div style="min-width:0">
+            <div class="sess-name" style="font-size:.95rem">${esc(p.name)}</div>
+            <div class="sess-meta">${esc([p.neighborhood, p.address].filter(Boolean).join(' · '))}</div>
+            ${pitchTagLine(p) ? `<div class="sess-meta">${pitchTagLine(p)}</div>` : ''}
+            ${p.www ? `<div class="sess-meta"><a href="${esc(p.www)}" target="_blank" rel="noopener" style="color:var(--lime)">🔗 ${t('app.pitches.city_link')}</a></div>` : ''}
+          </div>
+          ${chip}
+        </div>
+        ${btn ? `<div class="sess-actions">${btn}</div>` : ''}
+      </div>`;
+    }).join('') || `<div class="empty"><div class="big">${esc(t('app.pitches.no_match'))}</div></div>`}
+    ${rows.length > 120 ? `<div class="small muted" style="margin-top:8px">${t('app.pitches.narrow', { shown: 120, total: rows.length })}</div>` : ''}`;
+
+  const setPitch = async (pitchId) => {
+    try {
+      await API.post(`/coach/bookings/${encodeURIComponent(sess.code)}/pitch`, { pitchId });
+      toast(t(pitchId == null ? 'app.pitches.cleared_toast' : 'app.pitches.picked_toast'));
+      await loadAll();
+      renderPitches();
+    } catch (e) { toast(I18N.server(e.message), true); }
+  };
+  list.querySelectorAll('[data-setpitch]').forEach((b) =>
+    b.addEventListener('click', () => setPitch(Number(b.dataset.setpitch))));
+  list.querySelectorAll('[data-clearpitch]').forEach((b) =>
+    b.addEventListener('click', () => setPitch(null)));
+}
+
 let openChatId = null;
 async function renderChats() {
   const v = view();
@@ -197,7 +325,9 @@ async function renderChats() {
       </div>
       <div id="app-msgs" style="display:flex;flex-direction:column;gap:10px;margin-bottom:14px">
         ${data.messages.map((m) => m.system
-          ? `<div class="msg-system" style="align-self:center;color:var(--muted);font-size:.75rem;border:1px dashed var(--line);border-radius:999px;padding:3px 12px">📅 ${t('chat.system_booking')} · ${esc(m.body.replace(/^📅\s*/, ''))}</div>`
+          ? `<div class="msg-system" style="align-self:center;color:var(--muted);font-size:.75rem;border:1px dashed var(--line);border-radius:999px;padding:3px 12px">${m.body.startsWith('📍')
+              ? `📍 ${t('chat.system_pitch')} · ${esc(m.body.replace(/^📍\s*/, ''))}`
+              : `📅 ${t('chat.system_booking')} · ${esc(m.body.replace(/^📅\s*/, ''))}`}</div>`
           : `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:80%">
               ${m.mine ? '' : `<div class="small muted">${esc(m.senderName || '?')}</div>`}
               <div style="padding:8px 13px;border-radius:14px;font-size:.9rem;white-space:pre-wrap;word-break:break-word;
@@ -354,11 +484,18 @@ function sessionCard(b) {
       ${canComplete ? `<button class="btn btn-primary btn-sm" data-done="${esc(b.code)}">${t('app.session.mark_done')}</button>` : ''}
       ${canCancel ? `<button class="btn btn-danger btn-sm" data-cancel="${esc(b.code)}">${t('app.session.cancel')}</button>` : ''}
     </div>` : '';
+  // Pitch line: shown once picked; upcoming on-pitch sessions get a picker link.
+  const canPickPitch = b.status === 'confirmed' && !b.is_online;
+  const pitchLine = (b.pitch_name || canPickPitch)
+    ? `<div class="sess-meta" style="margin-top:6px">📍 ${b.pitch_name ? esc(b.pitch_name) : `<span class="muted">${t('app.pitches.none')}</span>`}
+        ${canPickPitch ? `<button class="link-btn" data-pickpitch="${esc(b.code)}" style="padding:0 0 0 6px">${t(b.pitch_name ? 'app.pitches.change' : 'app.pitches.choose')}</button>` : ''}
+      </div>` : '';
   return `<div class="sess-card" data-code="${esc(b.code)}">
     <div class="sess-top">
       <div>
         <div class="sess-name">${esc(b.customer)}</div>
         <div class="sess-meta">${esc(cap(fmtDate(b.date)))} · ${fmtTime(b.hour)}<br>${sessionWhat(b)}</div>
+        ${pitchLine}
         ${b.notes ? `<div class="sess-meta" style="margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--lime);border-radius:6px">📝 ${esc(b.notes)}</div>` : ''}
       </div>
       <span class="pill ${b.status}">${esc(t('common.status.' + b.status))}</span>
@@ -399,6 +536,12 @@ function wireSessionActions() {
   }));
   view().querySelectorAll('[data-done]').forEach((btn) => btn.addEventListener('click', () =>
     statusAction(btn.dataset.done, 'completed', 'app.session.done_toast', btn)));
+  // "Choose pitch" jumps to the Pitches tab with this session preselected.
+  view().querySelectorAll('[data-pickpitch]').forEach((btn) => btn.addEventListener('click', () => {
+    S.pitch.sel = btn.dataset.pickpitch;
+    S.pitch.q = '';
+    location.hash = '#pitches';
+  }));
 }
 async function statusAction(code, status, okKey, btn) {
   btn.disabled = true;

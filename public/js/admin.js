@@ -65,6 +65,45 @@ async function refresh() {
   renderCharts();
   renderCoachTable();
   renderExports();
+  renderEmailStatus();
+}
+
+// --- email delivery status + test button -------------------------------------
+// Customer emails fail SILENTLY (fire-and-forget) — this banner surfaces the
+// last SMTP error and lets the admin send themselves a test email.
+function renderEmailStatus() {
+  const box = document.getElementById('email-note');
+  if (!box || !A.email) return;
+  const e = A.email;
+  const bad = !e.configured || e.verified === false || Boolean(e.lastError);
+  box.hidden = false;
+  box.style.borderColor = bad ? 'rgba(255,107,107,.5)' : 'var(--line)';
+  box.innerHTML = `
+    <strong style="color:${bad ? '#ff6b6b' : 'var(--lime)'}">📧 ${bad ? t('admin.email.problem') : t('admin.email.ok')}</strong>
+    <span class="muted small">${e.configured
+      ? t('admin.email.host', { host: esc(e.host || '?') })
+        + (e.lastSentAt ? ` · ${t('admin.email.lastsent', { time: new Date(e.lastSentAt).toLocaleString() })}` : '')
+      : t('admin.email.notconfigured')}</span>
+    ${e.lastError ? `<div class="small" style="color:#ff6b6b;margin-top:6px">${esc(e.lastError)}
+      <span class="muted">(${esc(e.lastErrorAt ? new Date(e.lastErrorAt).toLocaleString() : '')})</span></div>` : ''}
+    ${e.configured ? `<div style="margin-top:8px"><button class="btn btn-ghost btn-sm" id="test-email">${t('admin.email.test')}</button>
+      <span class="small muted" id="test-email-result"></span></div>` : ''}`;
+  const btn = document.getElementById('test-email');
+  if (btn) btn.addEventListener('click', async () => {
+    const out = document.getElementById('test-email-result');
+    btn.disabled = true;
+    out.style.color = '';
+    out.textContent = t('admin.email.testing');
+    try {
+      const r = await API.post('/admin/test-email', {});
+      out.style.color = r.delivered ? 'var(--lime)' : '#ff6b6b';
+      out.textContent = r.delivered ? t('admin.email.test_ok', { to: r.to }) : (r.error || t('admin.email.test_fail'));
+    } catch (err) {
+      out.style.color = '#ff6b6b';
+      out.textContent = I18N.server(err.message);
+    }
+    btn.disabled = false;
+  });
 }
 
 // --- headline stats ---------------------------------------------------------
@@ -549,7 +588,7 @@ function renderCRM() {
   ct.innerHTML = CRM.customers.length ? `
     <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.table.email')}</th><th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th>
       <th>${t('admin.crm.table.dnc')}</th><th>${t('admin.crm.table.paid')}</th><th>${t('admin.crm.table.outstanding')}</th>
-      <th>${t('admin.crm.table.credits')}</th><th>${t('admin.crm.table.lastsession')}</th></tr>` +
+      <th>${t('admin.crm.table.credits')}</th><th>${t('admin.crm.table.lastsession')}</th><th></th></tr>` +
     CRM.customers.map((c) => `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
@@ -561,7 +600,28 @@ function renderCRM() {
         <td>${c.outstanding_cents ? `<strong style="color:#f7a13a">${eur(c.outstanding_cents)}</strong>` : eur(0)}</td>
         <td>${c.free_credits || ''}</td>
         <td class="muted">${c.last_session ? esc(fmtDate(c.last_session)) : '—'}</td>
+        <td><button class="btn btn-ghost btn-sm" data-del-customer="${c.id}"
+          data-name="${esc(c.name)}" data-bookings="${c.bookings || 0}" data-upcoming="${c.upcoming || 0}"
+          title="${esc(t('admin.crm.delete.title'))}">🗑</button></td>
       </tr>`).join('') : '';
+
+  // Deleting an account is permanent: double confirm, the second listing exactly
+  // what goes with it (bookings free their slots, invoices, chats, credits).
+  ct.querySelectorAll('[data-del-customer]').forEach((btn) => btn.addEventListener('click', async () => {
+    const name = btn.dataset.name;
+    if (!confirm(t('admin.crm.delete.confirm1', { name }))) return;
+    if (!confirm(t('admin.crm.delete.confirm2',
+      { name, bookings: btn.dataset.bookings, upcoming: btn.dataset.upcoming }))) return;
+    btn.disabled = true;
+    try {
+      await API.del(`/admin/customers/${btn.dataset.delCustomer}`);
+      toast(t('admin.crm.delete.done', { name }));
+      await Promise.all([refresh(), loadCRM()]);
+    } catch (e) {
+      btn.disabled = false;
+      toast(I18N.server(e.message), true);
+    }
+  }));
 
   const today = A ? A.today : '';
   const rows = CRM.invoices.filter((i) => !INVOICE_FILTER || i.status === INVOICE_FILTER);

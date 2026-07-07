@@ -12,6 +12,7 @@ const sheets = require('../sheets');
 const tiers = require('../tiers');
 const stripe = require('../stripe');
 const i18n = require('../i18n');
+const pitches = require('../pitches');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
 const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
@@ -108,8 +109,12 @@ function slotHasEnded(date, hour) {
 // Credit rules keep value conserved:
 //  - a PAID booking cancelled -> grant ONE new goodwill credit (deduped by code)
 //  - a FREE (credit-funded) booking cancelled -> return the credit that paid for
-//    it to "unused" instead of minting a second one (no free-session farming).
+//    it to "unused" instead of minting a second one (no free-session farming)
+//  - an UNPAID booking cancelled -> no credit: with the 72 h payment window a
+//    booking sits unpaid for days, and the customer hasn't lost any money.
 function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
+  const wasPaid = Boolean(db.prepare(
+    "SELECT 1 FROM invoices WHERE booking_id = ? AND status = 'paid'").get(booking.id));
   db.prepare("UPDATE bookings SET status = 'cancelled', completed_at = NULL WHERE id = ?").run(booking.id);
   // Remember the pre-void invoice status so reactivation can restore paid vs sent.
   db.prepare("UPDATE invoices SET prev_status = status, status = 'void' WHERE booking_id = ? AND status != 'void'")
@@ -117,12 +122,12 @@ function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
   const customer = db.prepare('SELECT id, name, email, lang FROM users WHERE id = ?').get(booking.customer_id);
 
-  let creditKey;
+  let creditKey = null;
   if (booking.credit_applied) {
     // Free session cancelled — hand the customer's credit back, don't create one.
     db.prepare('UPDATE credits SET used_by_booking_id = NULL WHERE used_by_booking_id = ?').run(booking.id);
     creditKey = 'email.credit.returned';
-  } else {
+  } else if (wasPaid) {
     // Paid session cancelled — one goodwill credit, but never a duplicate.
     db.prepare(`INSERT INTO credits (customer_id, reason, created_at)
       SELECT ?, ?, ? WHERE NOT EXISTS (SELECT 1 FROM credits WHERE reason = ?)`)
@@ -136,8 +141,8 @@ function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
     actor: i18n.tr(lang, actorKey === 'coach' ? 'email.actor.coach' : 'email.actor.team'),
     coach: coach.name, date: i18n.localDate(lang, booking.date),
     hour: String(booking.hour).padStart(2, '0'),
-    creditMsg: i18n.tr(lang, creditKey),
-  });
+    creditMsg: creditKey ? i18n.tr(lang, creditKey) : '',
+  }).trim();
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
     .run(customer.id, msgFor('en'), nowISO());
   // The email is a one-shot document — send it in the customer's language.
@@ -176,9 +181,20 @@ function reactivateBooking(booking) {
   }
 
   db.prepare("UPDATE bookings SET status = 'confirmed', completed_at = NULL WHERE id = ?").run(booking.id);
+  // The pitch may have been claimed by another session while this one was cancelled.
+  if (booking.pitch_id && db.prepare(`SELECT 1 FROM bookings WHERE pitch_id = ? AND date = ? AND hour = ?
+      AND status != 'cancelled' AND id != ?`).get(booking.pitch_id, booking.date, booking.hour, booking.id)) {
+    db.prepare("UPDATE bookings SET pitch_id = NULL, pitch_name = '' WHERE id = ?").run(booking.id);
+  }
   // Restore the invoice to whatever it was before the void (paid stays paid).
   db.prepare("UPDATE invoices SET status = COALESCE(prev_status, 'sent'), prev_status = NULL WHERE booking_id = ? AND status = 'void'")
     .run(booking.id);
+  // A reactivated card invoice gets a FRESH 72 h payment window — its old
+  // deadline has usually passed, and without this the unpaid-booking sweep
+  // would release the booking again on the very next request.
+  db.prepare(`UPDATE invoices SET pay_by = ?, pay_reminder_sent = 0
+    WHERE booking_id = ? AND status = 'sent' AND pay_by IS NOT NULL`)
+    .run(new Date(Date.now() + 72 * 3600000).toISOString(), booking.id);
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
     .run(booking.customer_id,
@@ -588,10 +604,18 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   recordEvent(req, 'booking_completed', { coachId, code });
   sheets.scheduleSync();
 
-  // Payment is due AT booking: hand back a ready Checkout URL (unless the
-  // booking is free or Stripe isn't configured). If Stripe is briefly down,
-  // the booking still exists and Omat varaukset shows a pay button — the
-  // 45-minute expiry sweep releases it if the payment never completes.
+  // The coach hears about the new booking right away (app Alerts tab).
+  // English-canonical text; the frontend translates it at display time.
+  if (coach.user_id && coach.user_id !== req.user.id) {
+    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+      .run(coach.user_id, `New booking: ${req.user.name} on ${date} at `
+        + `${String(hour).padStart(2, '0')}:00 — ${focus.id} (${location}).`, nowISO());
+  }
+
+  // The booking is confirmed now and holds the slot; the card payment is due
+  // within 72 hours (and before the session starts). The customer can pay
+  // right away via this Checkout URL or later from Omat varaukset — the
+  // expiry sweep releases the booking if the deadline passes unpaid.
   let payUrl = null;
   if (stripe.enabled() && price - discount > 0) {
     try {
@@ -617,7 +641,8 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
       priceCents: price, discountCents: discount, totalCents: price - discount,
       creditApplied: Boolean(credit),
     },
-    invoice: { number: invoice.number, dueDate: invoice.due_date, amountCents: invoice.amount_cents },
+    invoice: { number: invoice.number, dueDate: invoice.due_date, amountCents: invoice.amount_cents,
+      payBy: invoice.pay_by || null },
   });
 });
 
@@ -625,7 +650,8 @@ router.get('/my-bookings', requireRole('customer', 'admin'), (req, res) => {
   autoCompleteBookings();
   const rows = db.prepare(`
     SELECT b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
-           b.total_cents, c.name AS coach, i.number AS invoice_number, i.status AS invoice_status
+           b.total_cents, b.pitch_name, c.name AS coach,
+           i.number AS invoice_number, i.status AS invoice_status, i.pay_by
     FROM bookings b JOIN coaches c ON c.id = b.coach_id
     LEFT JOIN invoices i ON i.booking_id = b.id
     WHERE b.customer_id = ? ORDER BY b.date DESC, b.hour DESC`).all(req.user.id);
@@ -652,6 +678,9 @@ router.get('/invoices/:number', requireRole('customer', 'admin', 'coach'), (req,
 // Start an online card payment for an invoice (Stripe Checkout redirect).
 router.post('/invoices/:number/pay', requireRole('customer', 'admin'), async (req, res) => {
   if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  // Sweep first: an invoice past its 72 h payment window voids here, so the
+  // guards below refuse to mint a Checkout session for a released booking.
+  autoCompleteBookings();
   const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(String(req.params.number));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
   if (req.user.role !== 'admin' && inv.customer_email !== req.user.email) {
@@ -695,7 +724,11 @@ router.post('/invoices/:number/refresh-payment', requireRole('customer', 'admin'
   try {
     const session = await stripe.retrieveSession(inv.stripe_session_id);
     if (session.payment_status === 'paid') stripe.markInvoicePaid(inv.number);
-    res.json({ status: session.payment_status === 'paid' ? 'paid' : inv.status });
+    // Report the invoice's REAL state: if the payment landed after the booking
+    // was released and could not be restored (slot re-booked / cancelled), the
+    // invoice is still void and the customer must not be told "paid".
+    const after = db.prepare('SELECT status FROM invoices WHERE number = ?').get(inv.number);
+    res.json({ status: after ? after.status : inv.status });
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message });
   }
@@ -724,7 +757,7 @@ router.get('/coach/availability', requireRole('coach', 'admin'), (req, res) => {
   const slots = db.prepare('SELECT date, hour FROM availability WHERE coach_id = ? AND date BETWEEN ? AND ?')
     .all(coach.id, from, to);
   const bookings = db.prepare(`
-    SELECT b.date, b.hour, b.location, b.position, b.focus, b.status, u.name AS customer
+    SELECT b.date, b.hour, b.location, b.position, b.focus, b.status, b.pitch_name, u.name AS customer
     FROM bookings b JOIN users u ON u.id = b.customer_id
     WHERE b.coach_id = ? AND b.date BETWEEN ? AND ? AND b.status != 'cancelled'`)
     .all(coach.id, from, to);
@@ -804,7 +837,8 @@ router.get('/coach/bookings', requireRole('coach', 'admin'), (req, res) => {
   autoCompleteBookings();
   const rows = db.prepare(`
     SELECT b.id, b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
-           b.price_cents, b.total_cents, b.credit_applied, b.notes, u.name AS customer, u.email AS customer_email
+           b.price_cents, b.total_cents, b.credit_applied, b.notes, b.pitch_id, b.pitch_name,
+           u.name AS customer, u.email AS customer_email
     FROM bookings b JOIN users u ON u.id = b.customer_id
     WHERE b.coach_id = ?
     ORDER BY b.date DESC, b.hour DESC LIMIT 200`).all(coach.id);
@@ -875,6 +909,9 @@ router.get('/coach/reviews', requireRole('coach', 'admin'), (req, res) => {
 router.post('/coach/bookings/:code/status', requireRole('coach', 'admin'), (req, res) => {
   const coach = myCoach(req);
   if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  // Sweep first: an unpaid booking past its payment deadline must be released
+  // here too, or the coach could mark it "completed" (= paid out) unpaid.
+  autoCompleteBookings();
   const to = String(req.body?.status || '');
   if (!['confirmed', 'completed', 'cancelled'].includes(to)) return res.status(400).json({ error: 'Bad status.' });
   const booking = db.prepare('SELECT * FROM bookings WHERE code = ? AND coach_id = ?')
@@ -900,6 +937,85 @@ router.post('/coach/bookings/:code/status', requireRole('coach', 'admin'), (req,
   }
   sheets.scheduleSync();
   res.json({ ok: true, status: to });
+});
+
+// ---------------------------------------------------------------------------
+// Pitches (playing fields), from the LIPAS national registry. With ?date=&hour=
+// each pitch is marked with the Proballers session occupying it at that time
+// (takenBy) — LIPAS publishes no live occupancy, so external bookings are
+// invisible; the UI links each city's own reservation page instead.
+// ---------------------------------------------------------------------------
+router.get('/coach/pitches', requireRole('coach', 'admin'), async (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  const city = String(req.query.city || '');
+  if (!pitches.knownCity(city)) return res.status(400).json({ error: 'Unknown city.' });
+  let data;
+  try { data = await pitches.getCityPitches(city); }
+  catch (err) { return res.status(err.status || 502).json({ error: err.message }); }
+
+  // Proballers sessions holding a pitch at the requested slot.
+  const date = /^\d{4}-\d{2}-\d{2}$/.test(String(req.query.date)) ? String(req.query.date) : null;
+  const hour = Number.isInteger(Number(req.query.hour)) && req.query.hour !== '' ? Number(req.query.hour) : null;
+  const taken = new Map();
+  if (date != null && hour != null) {
+    for (const b of db.prepare(`
+      SELECT b.pitch_id, b.code, b.coach_id, c.name AS coach_name
+      FROM bookings b JOIN coaches c ON c.id = b.coach_id
+      WHERE b.date = ? AND b.hour = ? AND b.status != 'cancelled' AND b.pitch_id IS NOT NULL`)
+      .all(date, hour)) {
+      taken.set(b.pitch_id, { coach: b.coach_name, code: b.code, mine: b.coach_id === coach.id });
+    }
+  }
+  res.json({
+    city, updatedAt: data.fetchedAt,
+    pitches: data.pitches.map((p) => ({ ...p, takenBy: taken.get(p.id) || null })),
+  });
+});
+
+// The coach picks (or clears) the pitch for one of their upcoming sessions.
+router.post('/coach/bookings/:code/pitch', requireRole('coach', 'admin'), async (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  const booking = db.prepare('SELECT * FROM bookings WHERE code = ? AND coach_id = ?')
+    .get(String(req.params.code), coach.id);
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  if (booking.status !== 'confirmed') return res.status(400).json({ error: 'Only an upcoming session can have its pitch set.' });
+  if (booking.is_online) return res.status(400).json({ error: 'An online session has no pitch.' });
+
+  const pitchId = req.body?.pitchId == null ? null : Number(req.body.pitchId);
+  if (pitchId == null) { // clear the selection
+    db.prepare("UPDATE bookings SET pitch_id = NULL, pitch_name = '' WHERE id = ?").run(booking.id);
+    return res.json({ ok: true, pitch: null });
+  }
+
+  // The pitch must exist in the LIPAS list for the session's own city — the
+  // name is taken from the registry, never from the request.
+  if (!pitches.knownCity(booking.location)) return res.status(400).json({ error: 'An online session has no pitch.' });
+  let data;
+  try { data = await pitches.getCityPitches(booking.location); }
+  catch (err) { return res.status(err.status || 502).json({ error: err.message }); }
+  const pitch = pitches.findPitch(data, pitchId);
+  if (!pitch) return res.status(404).json({ error: 'Pitch not found in that city.' });
+
+  const clash = db.prepare(`
+    SELECT 1 FROM bookings WHERE pitch_id = ? AND date = ? AND hour = ?
+      AND status != 'cancelled' AND id != ?`)
+    .get(pitch.id, booking.date, booking.hour, booking.id);
+  if (clash) return res.status(409).json({ error: 'Another Proballers session is already on that pitch at that time.' });
+
+  db.prepare('UPDATE bookings SET pitch_id = ?, pitch_name = ? WHERE id = ?')
+    .run(pitch.id, pitch.name, booking.id);
+  // Tell the customer where to show up, in the thread they already have. The
+  // coach triggered this line, so it doesn't count as unread for them.
+  if (booking.pitch_id !== pitch.id) {
+    const chat = ensureChat(coach.id, booking.customer_id);
+    const msgId = postChatMessage(chat.id, null, `📍 ${booking.code} · ${pitch.name}${pitch.address ? ' · ' + pitch.address : ''}`);
+    db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
+      ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
+      .run(chat.id, req.user.id, msgId);
+  }
+  res.json({ ok: true, pitch: { id: pitch.id, name: pitch.name } });
 });
 
 // ---------------------------------------------------------------------------
@@ -1011,8 +1127,16 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
     generatedAt: nowISO(), today,
     visitors, sessions, funnel, revenue, customers, coaches, series,
     sheets: sheets.status(),
+    email: require('../mailer').emailStatus(),
     demoDataPresent: Boolean(db.prepare("SELECT 1 FROM meta WHERE key='demo_seeded'").get()),
   });
+});
+
+// Send a test email to the logged-in admin and report the exact SMTP outcome —
+// the only way for the owner to see WHY customer emails aren't arriving.
+router.post('/admin/test-email', requireRole('admin'), async (req, res) => {
+  const result = await require('../mailer').sendTestEmail(req.user.email);
+  res.json({ ...result, to: req.user.email });
 });
 
 // Read-only view of any coach's calendar for the admin overview.
@@ -1191,7 +1315,7 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
     ? String(req.query.status) : null;
   const rows = db.prepare(`
     SELECT b.id, b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online,
-           b.total_cents, b.status, b.created_at, b.notes,
+           b.total_cents, b.status, b.created_at, b.notes, b.pitch_name,
            c.name AS coach, u.name AS customer, u.email AS customer_email,
            i.number AS invoice_number, i.status AS invoice_status
     FROM bookings b
@@ -1204,6 +1328,7 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
 });
 
 router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
+  autoCompleteBookings(); // release overdue unpaid bookings before acting on one
   const to = String(req.body?.status || '');
   if (!['completed', 'cancelled', 'confirmed'].includes(to)) return res.status(400).json({ error: 'Bad status.' });
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(Number(req.params.id));
@@ -1277,6 +1402,57 @@ router.post('/admin/reviews/:id/delete', requireRole('admin'), (req, res) => {
   const info = db.prepare('DELETE FROM reviews WHERE id = ?').run(Number(req.params.id));
   if (!info.changes) return res.status(404).json({ error: 'Review not found.' });
   res.json({ ok: true });
+});
+
+// Delete a customer account and everything it owns: bookings (slots free up),
+// invoices, chats, credits, reviews, notifications, sessions. Coaches are told
+// about removed upcoming sessions. Admin/coach accounts can NOT be deleted
+// here. Destructive and permanent — the admin UI double-confirms.
+router.delete('/admin/customers/:id', requireRole('admin'), (req, res) => {
+  const user = db.prepare("SELECT * FROM users WHERE id = ? AND role = 'customer'").get(Number(req.params.id));
+  if (!user) return res.status(404).json({ error: 'Customer not found.' });
+
+  const bookings = db.prepare('SELECT * FROM bookings WHERE customer_id = ?').all(user.id);
+  const upcoming = bookings.filter((b) => b.status === 'confirmed');
+  // The rendered invoice documents hold the customer's name and email — a
+  // "permanently deleted" account must not leave them on the disk.
+  const invoiceFiles = db.prepare(
+    'SELECT html_path FROM invoices WHERE booking_id IN (SELECT id FROM bookings WHERE customer_id = ?)')
+    .all(user.id).map((r) => r.html_path).filter(Boolean);
+  db.exec('BEGIN');
+  try {
+    // Chats cascade to their messages and read cursors.
+    db.prepare('DELETE FROM chats WHERE customer_id = ?').run(user.id);
+    // Credits reference bookings (used_by_booking_id) — drop them first.
+    db.prepare('DELETE FROM credits WHERE customer_id = ?').run(user.id);
+    db.prepare('DELETE FROM reviews WHERE customer_id = ?').run(user.id);
+    db.prepare('DELETE FROM invoices WHERE booking_id IN (SELECT id FROM bookings WHERE customer_id = ?)').run(user.id);
+    db.prepare('DELETE FROM bookings WHERE customer_id = ?').run(user.id);
+    db.prepare('DELETE FROM notifications WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM sessions WHERE user_id = ?').run(user.id);
+    // Keep anonymous analytics rows, but detach them from the deleted account.
+    db.prepare('UPDATE events SET user_id = NULL WHERE user_id = ?').run(user.id);
+    db.prepare('DELETE FROM users WHERE id = ?').run(user.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  for (const f of invoiceFiles) {
+    try { fs.unlinkSync(path.join(OUTBOX, path.basename(f))); } catch { /* already gone */ }
+  }
+  // Outside the transaction: coaches lose their upcoming sessions with this customer.
+  for (const b of upcoming) {
+    const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(b.coach_id);
+    if (coachUser && coachUser.user_id) {
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(coachUser.user_id, `Booking ${b.code} on ${b.date} at `
+          + `${String(b.hour).padStart(2, '0')}:00 was removed because the customer's `
+          + 'account was deleted. The slot is open again.', nowISO());
+    }
+  }
+  sheets.scheduleSync();
+  res.json({ ok: true, deletedBookings: bookings.length, releasedUpcoming: upcoming.length });
 });
 
 router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => {

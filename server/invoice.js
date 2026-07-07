@@ -137,22 +137,27 @@ function createInvoiceForBooking(bookingId) {
   const focus = config.focusTypes.find(f => f.id === booking.focus);
   const lang = pickLang(customer.lang);
 
+  const free = booking.total_cents === 0;
+  // Card payments are due within 72 h of booking (and before the session —
+  // expireUnpaidBookings enforces both). pay_by stays NULL on free and legacy
+  // bank-transfer invoices so the sweep never touches them.
+  const cardFlow = !free && Boolean(config.stripe.secretKey);
   const inv = {
     number: nextInvoiceNumber(),
     issued_at: nowISO(),
-    due_date: helsinkiDateOffset(config.invoice.dueDays),
+    due_date: cardFlow ? helsinkiDateOffset(3) : helsinkiDateOffset(config.invoice.dueDays),
+    pay_by: cardFlow ? new Date(Date.now() + 72 * 3600000).toISOString() : null,
   };
-  const free = booking.total_cents === 0;
   const html = renderInvoiceHTML(inv, booking, customer, coach.name, focus || booking.focus, lang,
     free ? { method: 'credit', date: helsinkiNow().date } : null);
   const fileName = `${inv.number}.html`;
   fs.writeFileSync(path.join(OUTBOX, fileName), html);
 
   const res = db.prepare(`INSERT INTO invoices
-    (booking_id, number, customer_email, amount_cents, issued_at, due_date, status, html_path)
-    VALUES (?,?,?,?,?,?,?,?)`)
+    (booking_id, number, customer_email, amount_cents, issued_at, due_date, status, html_path, pay_by)
+    VALUES (?,?,?,?,?,?,?,?,?)`)
     .run(bookingId, inv.number, customer.email, booking.total_cents, inv.issued_at, inv.due_date,
-      free ? 'paid' : 'sent', fileName);
+      free ? 'paid' : 'sent', fileName, inv.pay_by);
 
   // Fire-and-forget: never let email problems break a booking.
   if (free) {
@@ -166,7 +171,7 @@ function createInvoiceForBooking(bookingId) {
       .catch(err => console.error('[mailer]', err.message));
   }
 
-  return { id: res.lastInsertRowid, ...inv, amount_cents: booking.total_cents, htmlFile: fileName };
+  return { id: res.lastInsertRowid, ...inv, amount_cents: booking.total_cents, htmlFile: fileName, cardFlow };
 }
 
 module.exports = { createInvoiceForBooking, sendReceiptForInvoice, OUTBOX };

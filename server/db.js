@@ -205,9 +205,27 @@ for (const stmt of [
   "ALTER TABLE bookings ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
   // Stripe Checkout session behind an online card payment (NULL = none started).
   'ALTER TABLE invoices ADD COLUMN stripe_session_id TEXT',
+  // Card-payment deadline (UTC ISO, booking time + 72 h). Set only on invoices
+  // created while Stripe is enabled; NULL = legacy bank-transfer invoice, which
+  // the unpaid-booking sweep must never touch.
+  'ALTER TABLE invoices ADD COLUMN pay_by TEXT',
+  // One-shot flag: the "24 h left to pay" reminder notification went out.
+  'ALTER TABLE invoices ADD COLUMN pay_reminder_sent INTEGER NOT NULL DEFAULT 0',
+  // Pitch (playing field) the coach picked for the session, from the LIPAS
+  // national sports-site registry. NULL/'' = not chosen yet.
+  'ALTER TABLE bookings ADD COLUMN pitch_id INTEGER',
+  "ALTER TABLE bookings ADD COLUMN pitch_name TEXT NOT NULL DEFAULT ''",
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }
+
+// Backfill for invoices created in the brief pay-at-booking era BEFORE pay_by
+// existed: still-unpaid card invoices get a 72 h window from this boot, so the
+// sweep can release them instead of letting the bookings complete unpaid.
+// Idempotent — after the first run no row matches (pay_by is set).
+db.prepare(`UPDATE invoices SET pay_by = ?
+  WHERE pay_by IS NULL AND status = 'sent' AND stripe_session_id IS NOT NULL`)
+  .run(new Date(Date.now() + 72 * 3600000).toISOString());
 
 // ---------------------------------------------------------------------------
 // Europe/Helsinki time helpers. All business dates/hours are Helsinki-local.
@@ -242,6 +260,9 @@ function nowISO() { return new Date().toISOString(); }
 // completed session. Runs cheaply before reads that depend on status.
 // ---------------------------------------------------------------------------
 function autoCompleteBookings() {
+  // Expire FIRST: an unpaid card-payment booking must be released (cancelled)
+  // at its deadline, never silently "completed" into a free session.
+  expireUnpaidBookings();
   const { date, hour } = helsinkiNow();
   // completed_at is the session end in Helsinki local time (naive, no numeric
   // offset — the old hard-coded +02:00 was wrong during summer time / EEST).
@@ -251,30 +272,62 @@ function autoCompleteBookings() {
         completed_at = date || 'T' || printf('%02d', hour + 1) || ':00:00'
     WHERE status = 'confirmed' AND (date < ? OR (date = ? AND hour + 1 <= ?))
   `).run(date, date, hour);
-  expireUnpaidBookings();
 }
 
-// Card payment is mandatory at booking time (when Stripe is configured): a
-// booking whose Checkout payment hasn't completed is released — cancelled,
-// invoice voided, slot free again, customer notified. The Stripe session
-// itself expires at 30 minutes, and this sweep runs at 45, so a payment can
-// never land on an already-released booking. Only rows WITH a
-// stripe_session_id are eligible: legacy bank-transfer invoices from before
-// this feature are never touched.
+// Card payments are due within 72 HOURS of booking — and always before the
+// session itself starts, whichever comes first. The booking is confirmed right
+// away and holds the slot; this sweep (a) reminds the customer in-app when
+// ~24 h remain, and (b) releases the booking at the deadline: cancelled,
+// invoice voided, slot free again, customer AND coach notified. Only invoices
+// with a pay_by deadline are eligible — legacy bank-transfer invoices (pay_by
+// NULL) are never touched.
 function expireUnpaidBookings() {
-  if (!config.stripe.secretKey) return;
-  const cutoff = new Date(Date.now() - 45 * 60000).toISOString();
-  const stale = db.prepare(`
-    SELECT b.id, b.customer_id, i.number AS invoice_number
+  // No Stripe guard here: the sweep only ever touches invoices that carry a
+  // pay_by deadline (created while card payments were on). If the key is later
+  // removed, those bookings must still expire instead of completing unpaid.
+  const now = new Date().toISOString();
+  const hki = helsinkiNow();
+
+  // One-shot payment reminder when less than 24 h of the window remains
+  // (skipped when the session-start deadline arrives first — close to the
+  // session the customer is looking at the booking anyway).
+  const remindBefore = new Date(Date.now() + 24 * 3600000).toISOString();
+  const toRemind = db.prepare(`
+    SELECT b.code, b.date, b.hour, b.customer_id, i.id AS invoice_id
     FROM bookings b JOIN invoices i ON i.booking_id = b.id
-    WHERE b.status = 'confirmed' AND b.total_cents > 0 AND b.created_at < ?
-      AND i.status = 'sent' AND i.stripe_session_id IS NOT NULL`).all(cutoff);
+    WHERE b.status = 'confirmed' AND i.status = 'sent'
+      AND i.pay_by IS NOT NULL AND i.pay_by > ? AND i.pay_by <= ?
+      AND i.pay_reminder_sent = 0`).all(now, remindBefore);
+  for (const r of toRemind) {
+    db.prepare('UPDATE invoices SET pay_reminder_sent = 1 WHERE id = ?').run(r.invoice_id);
+    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+      .run(r.customer_id, `Payment reminder: your booking ${r.code} on ${r.date} at `
+        + `${String(r.hour).padStart(2, '0')}:00 is still unpaid — pay it on the My bookings page `
+        + 'within 24 hours (before the session, if it is sooner) or the booking will be cancelled automatically.', nowISO());
+  }
+
+  // Release: the 72 h window has passed, or the session is about to start.
+  const stale = db.prepare(`
+    SELECT b.id, b.code, b.date, b.hour, b.customer_id, b.coach_id, i.number AS invoice_number
+    FROM bookings b JOIN invoices i ON i.booking_id = b.id
+    WHERE b.status = 'confirmed' AND b.total_cents > 0
+      AND i.status = 'sent' AND i.pay_by IS NOT NULL
+      AND (i.pay_by < ? OR b.date < ? OR (b.date = ? AND b.hour <= ?))`)
+    .all(now, hki.date, hki.date, hki.hour);
   for (const s of stale) {
     db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(s.id);
     db.prepare("UPDATE invoices SET status = 'void' WHERE number = ?").run(s.invoice_number);
     db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
       .run(s.customer_id, 'Your booking was cancelled because the payment was not completed. '
         + 'The slot is open again — you are welcome to book a new time.', nowISO());
+    // The coach sees the released slot in their app alerts too.
+    const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(s.coach_id);
+    if (coachUser && coachUser.user_id) {
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(coachUser.user_id, `Booking ${s.code} on ${s.date} at `
+          + `${String(s.hour).padStart(2, '0')}:00 was released because the payment `
+          + 'was not completed. The slot is open again.', nowISO());
+    }
   }
 }
 

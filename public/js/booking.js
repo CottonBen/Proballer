@@ -368,18 +368,30 @@ function renderAuthPanel() {
 
 // --- success ----------------------------------------------------------------
 function renderSuccess({ booking, invoice, payUrl }) {
-  // Payment is due NOW: show a brief confirmation, then hand over to Stripe.
+  // Card flow: the booking IS confirmed and holds the slot, but the payment is
+  // due within 72 hours (and before the session) — pay now, or later from
+  // Omat varaukset. The deadline is spelled out; unpaid bookings auto-cancel.
   if (payUrl) {
+    const deadline = invoice.payBy
+      ? new Date(invoice.payBy).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
+          { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' })
+      : '';
     body().innerHTML = `
-      <div style="text-align:center;padding:26px 0">
+      <div style="text-align:center;padding:20px 0">
         <div style="font-size:3.2rem">⚽</div>
-        <h2>${t('booking.success.pay_title')}</h2>
+        <h2>${t('booking.success.title')}</h2>
         <p class="muted">${esc(booking.coach)} · ${esc(fmtDate(booking.date))}
           ${fmtHourRange(booking.hour)} · ${eur(invoice.amountCents)}</p>
-        <p class="small muted">${t('booking.success.redirecting')}</p>
-        <a class="btn btn-primary" href="${esc(payUrl)}" style="margin-top:8px">💳 ${t('booking.success.paybtn')}</a>
+        <p>${t('booking.success.reference', { code: `<strong>${esc(booking.code)}</strong>` })}</p>
+        <div class="card" style="text-align:left;margin:16px 0">
+          <p style="margin:0 0 6px"><strong>${t('booking.success.pay_window_title')}</strong></p>
+          <p class="small muted" style="margin:0">${t('booking.success.pay_window', { deadline: esc(deadline) })}
+            ${t('booking.success.pay_before_session')}</p>
+        </div>
+        <a class="btn btn-primary" href="${esc(payUrl)}" style="margin-top:4px">💳 ${t('booking.success.paybtn')}</a>
+        <p class="small muted" style="margin-top:12px">${t('booking.success.pay_later',
+          { myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>
       </div>`;
-    setTimeout(() => { location.href = payUrl; }, 1500);
     return;
   }
   body().innerHTML = `

@@ -370,10 +370,16 @@ const I18N_DICT = {
   "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
 
   // --- card payments (Stripe) ---
-  "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
+  "booking.review.pay_note": { fi: "Varaus vahvistetaan heti. Maksa turvallisella korttimaksulla ({price}) heti tai 72 tunnin kuluessa varauksesta (kuitenkin ennen treeniä) — maksamaton varaus perutaan automaattisesti. Kuitti tulee sähköpostiisi.", en: "Your booking is confirmed right away. Pay securely by card ({price}) now or within 72 hours of booking (before the session, at the latest) — an unpaid booking is cancelled automatically. A receipt lands in your email." },
   "booking.success.pay_title": { fi: "Varaus tehty — viimeistele maksu", en: "Booked — complete your payment" },
   "booking.success.redirecting": { fi: "Siirryt turvalliseen korttimaksuun hetken kuluttua…", en: "Taking you to secure card payment…" },
   "booking.success.paybtn": { fi: "Siirry maksuun", en: "Go to payment" },
+  "booking.success.pay_window_title": { fi: "Maksuaika: 72 tuntia", en: "Payment window: 72 hours" },
+  "booking.success.pay_window": { fi: "Varauksesi on vahvistettu ja aika on varattu sinulle. Maksa korttimaksu viimeistään {deadline} — muuten varaus perutaan automaattisesti ja aika vapautuu muille.", en: "Your booking is confirmed and the slot is held for you. Pay by card by {deadline} — otherwise the booking is cancelled automatically and the slot opens up again." },
+  "booking.success.pay_before_session": { fi: "Jos treenisi alkaa tätä ennen, maksu on tehtävä ennen treenin alkua.", en: "If your session starts before that, the payment is due before the session begins." },
+  "booking.success.pay_later": { fi: "Voit maksaa myös myöhemmin — {myBookingsLink}-sivulla on Maksa kortilla -painike ja maksun takaraja.", en: "You can also pay later — {myBookingsLink} has a Pay by card button and shows the deadline." },
+  "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
+  "pay.refund_pending": { fi: "Maksusi ehti perille vasta varauksen peruunnuttua, eikä varausta voitu enää palauttaa. Palautamme maksun sinulle — otamme yhteyttä.", en: "Your payment arrived after the booking had already been cancelled and it could not be restored. We will refund the payment and be in touch." },
   "pay.card": { fi: "Maksa kortilla", en: "Pay by card" },
   "pay.now": { fi: "Maksa nyt kortilla", en: "Pay now by card" },
   "pay.received": { fi: "Maksu vastaanotettu — kiitos! Lasku on merkitty maksetuksi.", en: "Payment received — thank you! The invoice is marked paid." },
@@ -395,6 +401,7 @@ const I18N_DICT = {
   "chat.admin_badge": { fi: "ylläpito", en: "admin" },
   "chat.coach_badge": { fi: "valmentaja", en: "coach" },
   "chat.system_booking": { fi: "Uusi varaus", en: "New booking" },
+  "chat.system_pitch": { fi: "Kenttä valittu", en: "Pitch picked" },
   "chat.loading": { fi: "Ladataan…", en: "Loading…" },
 
   // --- admin dashboard ---
@@ -568,6 +575,58 @@ const I18N_DICT = {
   "admin.editor.login.create": { fi: "Luo tunnukset", en: "Create login" },
   "admin.editor.login.created": { fi: "Tunnukset luotu.", en: "Login created." },
   "admin.editor.login.updated": { fi: "Tunnukset päivitetty.", en: "Login updated." },
+
+  // --- coach app: pitches tab (LIPAS directory) -------------------------------
+  "app.nav.pitches": { fi: "Kentät", en: "Pitches" },
+  "app.pitches.title": { fi: "Kentät", en: "Pitches" },
+  "app.pitches.for_session": { fi: "Treeni", en: "Session" },
+  "app.pitches.search_ph": { fi: "Hae nimellä tai alueella…", en: "Search by name or area…" },
+  "app.pitches.note": { fi: "Vapaa/varattu kattaa vain Proballers-treenit — kaupungit eivät julkaise varauskalentereitaan avoimena datana. Tarkista kentän todellinen tilanne sen omasta linkistä. Lähde: LIPAS-liikuntapaikkarekisteri.", en: "Free/taken covers Proballers sessions only — the cities publish no open booking calendars. Check the pitch's own link for its real availability. Source: the LIPAS sports-facility registry." },
+  "app.pitches.count": { fi: "{total} kenttää · {free} vapaana Proballers-varauksista", en: "{total} pitches · {free} free of Proballers bookings" },
+  "app.pitches.free": { fi: "Vapaa", en: "Free" },
+  "app.pitches.taken": { fi: "Varattu · {coach}", en: "Taken · {coach}" },
+  "app.pitches.chosen": { fi: "Valittu", en: "Chosen" },
+  "app.pitches.pick": { fi: "Valitse tähän treeniin", en: "Pick for this session" },
+  "app.pitches.clear": { fi: "Poista valinta", en: "Remove selection" },
+  "app.pitches.picked_toast": { fi: "Kenttä valittu — asiakas näkee sen varauksessaan ja chatissa.", en: "Pitch picked — the customer sees it on their booking and in the chat." },
+  "app.pitches.cleared_toast": { fi: "Kenttävalinta poistettu.", en: "Pitch selection removed." },
+  "app.pitches.no_sessions": { fi: "Ei tulevia kenttätreenejä", en: "No upcoming on-pitch sessions" },
+  "app.pitches.no_sessions_sub": { fi: "Kenttälista näytetään varattujen treeniesi ajankohdille.", en: "The pitch list is shown for the times of your booked sessions." },
+  "app.pitches.no_match": { fi: "Ei osumia haullesi", en: "No pitches match your search" },
+  "app.pitches.narrow": { fi: "Näytetään {shown}/{total} — tarkenna hakua", en: "Showing {shown}/{total} — narrow the search" },
+  "app.pitches.none": { fi: "Kenttä valitsematta", en: "No pitch chosen" },
+  "app.pitches.choose": { fi: "Valitse kenttä →", en: "Choose a pitch →" },
+  "app.pitches.change": { fi: "Vaihda →", en: "Change →" },
+  "app.pitches.lit": { fi: "valaistus", en: "floodlit" },
+  "app.pitches.indoor": { fi: "halli", en: "indoor hall" },
+  "app.pitches.stadium": { fi: "stadion", en: "stadium" },
+  "app.pitches.city_link": { fi: "Kentän tiedot / varaus", en: "Pitch info / booking" },
+  // LIPAS surface-material tokens (rare ones fall back to the raw token)
+  "app.pitches.surface.artificial-turf": { fi: "tekonurmi", en: "artificial turf" },
+  "app.pitches.surface.grass": { fi: "nurmi", en: "grass" },
+  "app.pitches.surface.rock-dust": { fi: "kivituhka", en: "rock dust" },
+  "app.pitches.surface.sand": { fi: "hiekka", en: "sand" },
+  "app.pitches.surface.gravel": { fi: "sora", en: "gravel" },
+  "app.pitches.surface.asphalt": { fi: "asfaltti", en: "asphalt" },
+  "app.pitches.surface.concrete": { fi: "betoni", en: "concrete" },
+  "app.pitches.surface.sand-infilled-artificial-turf": { fi: "hiekkatekonurmi", en: "sand-infilled artificial turf" },
+
+  // --- admin: email delivery status + test ------------------------------------
+  "admin.email.problem": { fi: "Sähköpostien lähetyksessä on ongelma", en: "Email delivery has a problem" },
+  "admin.email.ok": { fi: "Sähköpostit: käytössä", en: "Email delivery: on" },
+  "admin.email.host": { fi: "Palvelin: {host}", en: "Server: {host}" },
+  "admin.email.lastsent": { fi: "viimeksi lähetetty {time}", en: "last sent {time}" },
+  "admin.email.notconfigured": { fi: "SMTP-asetuksia ei ole määritetty (SMTP_HOST ym. puuttuvat Renderin Environment-välilehdeltä) — laskut ja kuitit EIVÄT lähde sähköpostiin ennen kuin ne on lisätty.", en: "SMTP is not configured (SMTP_HOST etc. are missing from Render's Environment tab) — invoices and receipts are NOT emailed until they are set." },
+  "admin.email.test": { fi: "Lähetä testisähköposti itsellesi", en: "Send a test email to yourself" },
+  "admin.email.testing": { fi: "Lähetetään…", en: "Sending…" },
+  "admin.email.test_ok": { fi: "Lähetetty osoitteeseen {to} — tarkista postilaatikko (myös roskaposti).", en: "Sent to {to} — check your inbox (and the spam folder)." },
+  "admin.email.test_fail": { fi: "Lähetys epäonnistui.", en: "Send failed." },
+
+  // --- admin: delete customer account -----------------------------------------
+  "admin.crm.delete.title": { fi: "Poista asiakastili", en: "Delete customer account" },
+  "admin.crm.delete.confirm1": { fi: "Poistetaanko asiakastili {name}? Tili poistetaan pysyvästi.", en: "Delete the customer account {name}? The account is removed permanently." },
+  "admin.crm.delete.confirm2": { fi: "VIIMEINEN VARMISTUS — {name}: poistetaan {bookings} varausta (joista {upcoming} tulevaa; niiden ajat vapautuvat), kaikki laskut, chatit, ilmaiskerrat ja arvostelut. Poisto vaikuttaa myös tilastoihin ja valmentajien palkkiolaskelmiin pidettyjen treenien osalta. Tätä EI voi perua. Jatketaanko?", en: "FINAL CONFIRMATION — {name}: this deletes {bookings} bookings ({upcoming} upcoming; their slots open up), all invoices, chats, credits and reviews. Past sessions also disappear from statistics and coach payout figures. This CANNOT be undone. Continue?" },
+  "admin.crm.delete.done": { fi: "Asiakastili {name} poistettu.", en: "Customer account {name} deleted." },
 };
 
 // Server-sent strings (API error messages, notification texts, config labels).
@@ -653,6 +712,16 @@ const I18N_SERVER_EXACT = {
   "Nothing to pay.": "Ei maksettavaa.",
   "Empty message.": "Tyhjä viesti.",
   "Message is too long (max 2000 characters).": "Viesti on liian pitkä (enintään 2000 merkkiä).",
+  "Unknown city.": "Tuntematon kaupunki.",
+  "Only an upcoming session can have its pitch set.": "Kentän voi valita vain tulevalle treenille.",
+  "An online session has no pitch.": "Etätreenillä ei ole kenttää.",
+  "Pitch not found in that city.": "Kenttää ei löytynyt tästä kaupungista.",
+  "Another Proballers session is already on that pitch at that time.": "Toinen Proballers-treeni on jo tuolla kentällä samaan aikaan.",
+  "The pitch registry (LIPAS) is not responding — try again in a moment.": "Kenttärekisteri (LIPAS) ei vastaa — yritä hetken kuluttua uudelleen.",
+  "Customer not found.": "Asiakasta ei löytynyt.",
+  "Helsinki": "Helsinki",
+  "Espoo": "Espoo",
+  "Vantaa": "Vantaa",
 
   // --- focus ids as stored on bookings (displayed via I18N.server) ---
   "conditioning": "kunto",
@@ -684,6 +753,31 @@ const I18N_SERVER_PATTERNS = [
     (m) => `${I18N_SERVER_EXACT[m[4]] || m[4]} perui treenisi valmentajan ${m[1]} kanssa ${fiDate(m[2])} klo ${m[3]}.00. Olemme pahoillamme!${m[5] ? ' ' + (I18N_SERVER_EXACT[m[5].trim()] || m[5]) : ''}`],
   [/^Good news — your session with (.+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 is back on\.$/,
     (m) => `Hyviä uutisia — treenisi valmentajan ${m[1]} kanssa ${fiDate(m[2])} klo ${m[3]}.00 järjestetään sittenkin.`],
+  // Coach alert: a customer just booked (focus id + city resolve via the exact map).
+  [/^New booking: (.+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 — ([\w-]+) \((.+)\)\.$/,
+    (m) => `Uusi varaus: ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 — ${I18N_SERVER_EXACT[m[4]] || m[4]} (${I18N_SERVER_EXACT[m[5]] || m[5]}).`],
+  // Coach alert: an unpaid booking was auto-released.
+  [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was released because the payment was not completed\. The slot is open again\.$/,
+    (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 vapautettiin, koska maksua ei suoritettu. Aika on jälleen vapaana.`],
+  // Coach alert: booking removed because the customer account was deleted.
+  [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was removed because the customer's account was deleted\. The slot is open again\.$/,
+    (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 poistettiin, koska asiakkaan tili poistettiin. Aika on jälleen vapaana.`],
+  // Customer: 24 h payment reminder.
+  [/^Payment reminder: your booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 is still unpaid — pay it on the My bookings page within 24 hours \(before the session, if it is sooner\) or the booking will be cancelled automatically\.$/,
+    (m) => `Maksumuistutus: varauksesi ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 on yhä maksamatta — maksa se 24 tunnin kuluessa (kuitenkin ennen treeniä) Omat varaukset -sivulla, tai varaus perutaan automaattisesti.`],
+  // Customer: payment landed just after the release — booking restored.
+  [/^Good news — we received your payment and your booking (\S+) is confirmed again\.$/,
+    (m) => `Hyviä uutisia — saimme maksusi ja varauksesi ${m[1]} on jälleen vahvistettu.`],
+  // Coach: the released booking came back once the late payment landed.
+  [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 is confirmed again — the payment arrived just after the release\.$/,
+    (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 on jälleen vahvistettu — maksu saapui heti vapautuksen jälkeen.`],
+  // Admin: money arrived for a booking that can't come back -> manual Stripe refund.
+  [/^Payment received for invoice (\S+) AFTER its booking (\S+) was released and the slot re-booked — please refund the payment in Stripe\.$/,
+    (m) => `Maksu laskusta ${m[1]} saapui vasta sen jälkeen, kun varaus ${m[2]} oli vapautettu ja aika ehditty varata uudelleen — palauta maksu Stripessä.`],
+  [/^Payment received for invoice (\S+), but its booking (\S+) was cancelled — the booking stays cancelled; please refund the payment in Stripe\.$/,
+    (m) => `Maksu laskusta ${m[1]} saapui, mutta sen varaus ${m[2]} on peruttu — varaus pysyy peruttuna; palauta maksu Stripessä.`],
+  [/^Payment received for invoice (\S+), but that invoice no longer exists \(was the customer account deleted\?\) — please refund the payment in Stripe\.$/,
+    (m) => `Maksu laskusta ${m[1]} saapui, mutta laskua ei enää ole (poistettiinko asiakastili?) — palauta maksu Stripessä.`],
 ];
 
 const I18N = (() => {

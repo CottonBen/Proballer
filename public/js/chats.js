@@ -74,6 +74,10 @@ function renderMessages(messages) {
   const box = document.getElementById('chat-msgs');
   box.innerHTML = messages.map((m) => {
     if (m.system) {
+      // 📅 = booking created, 📍 = coach picked the pitch; body carries the values.
+      if (m.body.startsWith('📍')) {
+        return `<div class="msg-system">📍 ${t('chat.system_pitch')} · ${esc(m.body.replace(/^📍\s*/, ''))}</div>`;
+      }
       return `<div class="msg-system">📅 ${t('chat.system_booking')} · ${esc(m.body.replace(/^📅\s*/, ''))}</div>`;
     }
     const roleBadge = m.senderRole === 'admin' && !m.mine

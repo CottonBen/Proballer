@@ -24,6 +24,7 @@ const API = {
   get: (p) => API.req(p),
   post: (p, body) => API.req(p, { method: 'POST', body }),
   put: (p, body) => API.req(p, { method: 'PUT', body }),
+  del: (p) => API.req(p, { method: 'DELETE' }),
 };
 
 function toast(msg, isError = false) {

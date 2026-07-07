@@ -55,8 +55,9 @@ function createCheckoutSession({ invoiceNumber, amountCents, description, custom
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     locale: lang === 'fi' ? 'fi' : 'en',
-    // Payment is due AT booking: the session dies after 30 min (Stripe's
-    // minimum), and the unpaid booking is released by expireUnpaidBookings().
+    // Each Checkout session dies after 30 min (Stripe's minimum). The customer
+    // has 72 h to pay — clicking "Pay" again simply mints a fresh session; the
+    // unpaid booking itself is released by expireUnpaidBookings() at deadline.
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     customer_email: customerEmail,
     line_items: [{
@@ -84,8 +85,80 @@ function markInvoicePaid(invoiceNumber) {
     require('./sheets').scheduleSync();
     require('./invoice').sendReceiptForInvoice(invoiceNumber, 'card')
       .catch((err) => console.error('[receipt]', err.message));
+    return true;
   }
-  return r.changes > 0;
+  // Race: the payment landed AFTER the unpaid-booking sweep released the
+  // booking (a Checkout session lives up to 30 min past the deadline). The
+  // customer HAS paid, so restore the booking if its slot is still free;
+  // otherwise flag the admins — the money must be refunded by hand.
+  return recoverPaidButReleased(invoiceNumber);
+}
+
+// One notification to every admin. Deduped on the exact message text, because
+// the webhook AND the success-URL refresh both fire on a normal payment.
+function alertAdmins(message) {
+  const { nowISO } = require('./db');
+  if (db.prepare('SELECT 1 FROM notifications WHERE message = ? LIMIT 1').get(message)) return;
+  for (const a of db.prepare("SELECT id FROM users WHERE role = 'admin'").all()) {
+    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+      .run(a.id, message, nowISO());
+  }
+  console.error('[stripe] ' + message);
+}
+
+function recoverPaidButReleased(invoiceNumber) {
+  const { nowISO } = require('./db');
+  const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(invoiceNumber);
+  if (!inv) {
+    // The invoice rows are gone (customer account deleted) but the money is real.
+    alertAdmins(`Payment received for invoice ${invoiceNumber}, but that invoice no longer exists `
+      + '(was the customer account deleted?) — please refund the payment in Stripe.');
+    return false;
+  }
+  if (inv.status !== 'void') return false;
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(inv.booking_id);
+  if (!booking || booking.status !== 'cancelled') return false;
+
+  // ONLY the unpaid-payment sweep's releases may be recovered. The sweep voids
+  // without prev_status; a coach/admin cancellation (cancelWithCredit) stamps
+  // prev_status — money landing on one of those must NOT resurrect a session
+  // the coach deliberately cancelled. It needs a refund instead.
+  const sweepReleased = inv.prev_status == null && inv.pay_by != null;
+  if (!sweepReleased) {
+    alertAdmins(`Payment received for invoice ${invoiceNumber}, but its booking ${booking.code} `
+      + 'was cancelled — the booking stays cancelled; please refund the payment in Stripe.');
+    return false;
+  }
+  const clash = db.prepare(`SELECT 1 FROM bookings
+    WHERE coach_id = ? AND date = ? AND hour = ? AND status != 'cancelled' AND id != ?`)
+    .get(booking.coach_id, booking.date, booking.hour, booking.id);
+  if (clash) {
+    alertAdmins(`Payment received for invoice ${invoiceNumber} AFTER its booking `
+      + `${booking.code} was released and the slot re-booked — please refund the payment in Stripe.`);
+    return false;
+  }
+  db.prepare("UPDATE bookings SET status = 'confirmed', completed_at = NULL WHERE id = ?").run(booking.id);
+  // The pitch may have been taken by another session while this one was released.
+  if (booking.pitch_id && db.prepare(`SELECT 1 FROM bookings WHERE pitch_id = ? AND date = ? AND hour = ?
+      AND status != 'cancelled' AND id != ?`).get(booking.pitch_id, booking.date, booking.hour, booking.id)) {
+    db.prepare("UPDATE bookings SET pitch_id = NULL, pitch_name = '' WHERE id = ?").run(booking.id);
+  }
+  db.prepare("UPDATE invoices SET status = 'paid', prev_status = NULL WHERE id = ?").run(inv.id);
+  db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+    .run(booking.customer_id, `Good news — we received your payment and your booking ${booking.code} `
+      + 'is confirmed again.', nowISO());
+  // The coach saw the release alert, so they must see the restore too.
+  const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(booking.coach_id);
+  if (coachUser && coachUser.user_id) {
+    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+      .run(coachUser.user_id, `Booking ${booking.code} on ${booking.date} at `
+        + `${String(booking.hour).padStart(2, '0')}:00 is confirmed again — the payment arrived `
+        + 'just after the release.', nowISO());
+  }
+  require('./sheets').scheduleSync();
+  require('./invoice').sendReceiptForInvoice(invoiceNumber, 'card')
+    .catch((err) => console.error('[receipt]', err.message));
+  return true;
 }
 
 // Stripe-Signature: t=<ts>,v1=<hmac>. HMAC-SHA256 of `${t}.${rawBody}` with the

@@ -37,7 +37,10 @@
   if (params.get('paid')) {
     try {
       const r = await API.post(`/invoices/${encodeURIComponent(params.get('paid'))}/refresh-payment`, {});
-      toast(r.status === 'paid' ? t('pay.received') : t('pay.pending'));
+      // 'void' = the money arrived after the booking was released and it could
+      // not be restored — be honest, a refund is on its way.
+      toast(r.status === 'paid' ? t('pay.received')
+        : r.status === 'void' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'void');
     } catch { toast(t('pay.pending')); }
     history.replaceState(null, '', '/my-bookings');
   } else if (params.get('paycancel')) {
@@ -54,6 +57,9 @@
   if (!rows.length) return;
 
   const hourSep = I18N.lang === 'fi' ? '.' : ':'; // FI '08.00', EN '08:00'
+  // Card-payment deadline (72 h from booking, from the server) in local time.
+  const payDeadline = (iso) => new Date(iso).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
+    { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
   tbl.innerHTML = `
     <tr><th>${t('mybookings.table.ref')}</th><th>${t('mybookings.table.when')}</th><th>${t('mybookings.table.coach')}</th><th>${t('mybookings.table.session')}</th><th>${t('mybookings.table.where')}</th>
       <th>${t('mybookings.table.total')}</th><th>${t('mybookings.table.status')}</th><th>${t('mybookings.table.invoice')}</th></tr>` +
@@ -63,13 +69,16 @@
         <td>${esc(fmtDate(b.date))} ${String(b.hour).padStart(2, '0')}${hourSep}00</td>
         <td>${esc(b.coach)}</td>
         <td>${esc(posLabel(b.position))} · ${esc(I18N.server(b.focus))}</td>
-        <td>${b.is_online ? t('mybookings.table.online') : esc(b.location)}</td>
+        <td>${b.is_online ? t('mybookings.table.online') : esc(b.location)}${
+          b.pitch_name ? `<br><span class="small muted">📍 ${esc(b.pitch_name)}</span>` : ''}</td>
         <td>${eur(b.total_cents)}</td>
         <td><span class="status-tag status-${esc(b.status)}">${esc(t('common.status.' + b.status))}</span></td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>${
               stripeOn && b.invoice_status === 'sent' && b.total_cents > 0
-                ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" data-pay="${esc(b.invoice_number)}">💳 ${t('pay.card')}</button>` : ''
+                ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" data-pay="${esc(b.invoice_number)}">💳 ${t('pay.card')}</button>${
+                    b.pay_by ? `<br><span class="small muted">⏳ ${t('pay.deadline', { deadline: esc(payDeadline(b.pay_by)) })}</span>` : ''
+                  }` : ''
             }` : '—'}</td>
       </tr>`).join('');
 
