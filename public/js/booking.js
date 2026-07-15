@@ -283,6 +283,12 @@ async function renderReview() {
   body().querySelector('#confirm-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true; btn.textContent = t('booking.review.confirm_button_busy');
+    // Card flow: the server round-trip includes creating the Stripe Checkout
+    // session, so show the payment screen IMMEDIATELY — the wait reads as
+    // "moving to payment" instead of a frozen button, and the redirect fires
+    // the instant the URL arrives.
+    const cardFlow = W.site.payment.stripeEnabled && !hasCredit && price - discount > 0;
+    if (cardFlow) renderPayRedirect(null);
     try {
       const result = await API.post('/bookings', {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
@@ -293,7 +299,10 @@ async function renderReview() {
       W.step = 6;
       renderSuccess(result);
     } catch (err) {
-      btn.disabled = false; btn.textContent = t('booking.review.confirm_button');
+      // The interstitial may have replaced the form — rebuild the review step
+      // before showing the error on it.
+      if (cardFlow) await renderReview();
+      else { btn.disabled = false; btn.textContent = t('booking.review.confirm_button'); }
       body().querySelector('#confirm-error').textContent = err.message;
       if (err.status === 409) { // slot taken — refresh slots and go back to the picker
         const data = await API.get(`/coaches/${W.coach.id}/slots`).catch(() => null);
@@ -374,20 +383,27 @@ function renderAuthPanel() {
 }
 
 // --- success ----------------------------------------------------------------
+
+// The moment between "confirm" and Stripe: one big obvious screen. Rendered
+// optimistically (payUrl = null, no button yet) while the server creates the
+// booking + Checkout session, then again with the real URL to navigate — the
+// button is the fallback if the browser is slow to follow the redirect.
+function renderPayRedirect(payUrl) {
+  body().innerHTML = `
+    <div style="text-align:center;padding:70px 0 60px">
+      <h2 style="font-size:clamp(2rem,6vw,3rem);margin-bottom:14px">${t('booking.success.redirecting_title')}</h2>
+      <p class="muted" style="font-size:1.15rem;max-width:34ch;margin:0 auto 26px">${t('booking.success.redirecting')}</p>
+      ${payUrl ? `<a class="btn btn-primary" href="${esc(payUrl)}"
+        style="font-size:1.1rem;padding:16px 38px">${t('booking.success.paybtn')}</a>` : ''}
+    </div>`;
+  if (payUrl) location.href = payUrl;
+}
+
 function renderSuccess({ booking, invoice, payUrl }) {
   // Payment is due AT booking: go STRAIGHT to Stripe — no interim "success"
-  // screen that could read as "already confirmed". The minimal interstitial
-  // below only shows if the browser is slow to navigate (its link goes to the
-  // same payment page).
+  // screen that could read as "already confirmed".
   if (payUrl) {
-    body().innerHTML = `
-      <div style="text-align:center;padding:70px 0 60px">
-        <h2 style="font-size:clamp(2rem,6vw,3rem);margin-bottom:14px">${t('booking.success.redirecting_title')}</h2>
-        <p class="muted" style="font-size:1.15rem;max-width:34ch;margin:0 auto 26px">${t('booking.success.redirecting')}</p>
-        <a class="btn btn-primary" href="${esc(payUrl)}"
-          style="font-size:1.1rem;padding:16px 38px">${t('booking.success.paybtn')}</a>
-      </div>`;
-    location.href = payUrl;
+    renderPayRedirect(payUrl);
     return;
   }
   body().innerHTML = `
@@ -405,6 +421,7 @@ function renderSuccess({ booking, invoice, payUrl }) {
         <div class="review-row" style="border:none"><span class="muted">${t('booking.success.due_label')}</span><strong>${esc(I18N.lang === 'fi' ? fiDate(invoice.dueDate) : invoice.dueDate)}</strong></div>
       </div>
       <p class="small muted">${W.site.emailDelivery
+          && (invoice.amountCents === 0 || !W.site.payment.stripeEnabled)
         ? t('booking.success.invoice_emailed')
         : t('booking.success.invoice_ready')} ${t('booking.success.payment_note',
           { myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>

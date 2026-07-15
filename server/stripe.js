@@ -55,9 +55,10 @@ function createCheckoutSession({ invoiceNumber, amountCents, description, custom
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     locale: lang === 'fi' ? 'fi' : 'en',
-    // Each Checkout session dies after 30 min (Stripe's minimum). The customer
-    // has 72 h to pay — clicking "Pay" again simply mints a fresh session; the
-    // unpaid booking itself is released by expireUnpaidBookings() at deadline.
+    // Each Checkout session dies after 30 min (Stripe's minimum). The booking
+    // itself is held for config.stripe.payWindowMinutes — clicking "Pay" again
+    // simply mints a fresh session; an unpaid booking is released by
+    // expireUnpaidBookings() at its deadline.
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     customer_email: customerEmail,
     line_items: [{

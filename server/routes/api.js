@@ -602,7 +602,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   // is interrupted, Omat varaukset has a pay button until the sweep releases
   // the unpaid booking at the deadline.
   let payUrl = null;
-  if (stripe.enabled() && price - discount > 0) {
+  if (cardFlow) {
     try {
       const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
       const session = await stripe.createCheckoutSession({

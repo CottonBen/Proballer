@@ -383,7 +383,7 @@ const I18N_DICT = {
   // --- card payments (Stripe) ---
   "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
   "booking.success.redirecting_title": { fi: "Siirrytään maksuun", en: "Moving to payment" },
-  "booking.success.redirecting": { fi: "Ohjaamme sinut turvalliseen korttimaksuun. Jos mitään ei tapahdu, paina alla olevaa painiketta.", en: "We are taking you to secure card payment. If nothing happens, press the button below." },
+  "booking.success.redirecting": { fi: "Ohjaamme sinut turvalliseen korttimaksuun.", en: "We are taking you to secure card payment." },
   "booking.success.paybtn": { fi: "Siirry maksuun", en: "Move to payment" },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
   "pay.refund_pending": { fi: "Maksusi ehti perille vasta varauksen peruunnuttua, eikä varausta voitu enää palauttaa. Palautamme maksun sinulle — otamme yhteyttä.", en: "Your payment arrived after the booking had already been cancelled and it could not be restored. We will refund the payment and be in touch." },
