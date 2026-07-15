@@ -34,6 +34,8 @@ const I18N_DICT = {
   'common.anonymous':      { fi: 'Nimetön', en: 'Anonymous' },
   'common.weekdays':       { fi: 'su,ma,ti,ke,to,pe,la', en: 'Sun,Mon,Tue,Wed,Thu,Fri,Sat' },
   'common.close':          { fi: 'Sulje', en: 'Close' },
+  'common.password.show':  { fi: 'Näytä salasana', en: 'Show password' },
+  'common.password.hide':  { fi: 'Piilota salasana', en: 'Hide password' },
 
   // --- config labels (position groups; matched by id) ------------------------
   'cfg.position.goalkeepers':  { fi: 'Maalivahdit', en: 'Goalkeepers' },
@@ -68,6 +70,7 @@ const I18N_DICT = {
   'gate.title':              { fi: 'Tervetuloa Proballers Coachingiin', en: 'Welcome to Proballers Coaching' },
   'gate.intro':              { fi: 'Kirjaudu sisään tai luo ilmainen tili, niin pääset tutustumaan valmentajiin ja varaamaan treenejä.',
                                en: 'Sign in or create a free account to meet the coaches and book sessions.' },
+  'gate.skip':               { fi: 'Jatka sivustolle ilman tiliä →', en: 'Continue to the website without an account →' },
   'landing.footer.tagline':  { fi: 'Henkilökohtaista valmennusta nuorille jalkapalloilijoille.', en: '1-on-1 coaching for young footballers.' },
   'landing.wizard.aria':     { fi: 'Varaa treeni', en: 'Book a session' },
   'landing.dots.aria':       { fi: 'Diat', en: 'Slides' },
@@ -495,6 +498,11 @@ const I18N_DICT = {
   "admin.crm.leads.sub": { fi: "Asiakkaat, jotka antoivat puhelinnumeronsa tiliä luodessaan.", en: "Customers who left a phone number when creating their account." },
   "admin.crm.leads.empty": { fi: "Ei vielä puhelinnumeroita — numero kysytään (vapaaehtoisena) tilin luonnin yhteydessä.", en: "No phone numbers yet — the number is asked (optionally) when an account is created." },
   "admin.crm.leads.phone": { fi: "Puhelin", en: "Phone" },
+  "admin.crm.leads.status": { fi: "Tila", en: "Status" },
+  "admin.crm.leads.called": { fi: "Soitettu", en: "Called" },
+  "admin.crm.leads.open": { fi: "Avoin", en: "Open" },
+  "admin.crm.leads.toggle_title": { fi: "Merkitse soitetuksi / takaisin avoimeksi", en: "Mark as called / back to open" },
+  "admin.crm.leads.booked_on": { fi: "· varaus tehty {date}", en: "· booked {date}" },
   "admin.crm.table.signedup": { fi: "Rekisteröitynyt", en: "Signed up" },
   "admin.crm.table.bookings": { fi: "Varaukset", en: "Bookings" },
   "admin.crm.table.dnc": { fi: "Pidetyt / tulevat / perutut", en: "Done / upcoming / cancelled" },

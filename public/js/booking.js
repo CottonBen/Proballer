@@ -333,6 +333,7 @@ function renderAuthPanel() {
       </form>
     </div>`;
   if (isCoachOrAdmin) return;
+  initPasswordToggles(panel);
 
   let mode = 'login';
   panel.querySelectorAll('[data-tab]').forEach((b) => b.addEventListener('click', () => {

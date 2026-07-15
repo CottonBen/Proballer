@@ -256,6 +256,8 @@ for (const stmt of [
   'ALTER TABLE bookings ADD COLUMN coach_notified INTEGER NOT NULL DEFAULT 1',
   // Optional contact number, asked at signup (leads list on the admin CRM).
   "ALTER TABLE users ADD COLUMN phone TEXT NOT NULL DEFAULT ''",
+  // When the admin marked this lead as called (NULL = still open).
+  'ALTER TABLE users ADD COLUMN lead_called_at TEXT',
   // One-shot flags for the scheduled follow-up emails (server/emails.js):
   // review request the day after the session, book-again nudge 3 days after.
   'ALTER TABLE bookings ADD COLUMN review_email_sent INTEGER NOT NULL DEFAULT 0',

@@ -104,6 +104,36 @@ async function initHeaderAuth() {
   return me.user;
 }
 
+// Adds a show/hide toggle (👁) to every password input under `root`, so
+// people can check what they typed. Safe to call repeatedly after re-renders.
+function initPasswordToggles(root = document) {
+  root.querySelectorAll('input[type="password"]').forEach((input) => {
+    if (input.dataset.hasToggle) return;
+    input.dataset.hasToggle = '1';
+    const wrap = document.createElement('div');
+    wrap.className = 'pw-wrap';
+    input.parentNode.insertBefore(wrap, input);
+    wrap.appendChild(input);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pw-toggle';
+    btn.setAttribute('aria-label', t('common.password.show'));
+    btn.textContent = '👁';
+    btn.addEventListener('click', () => {
+      const show = input.type === 'password';
+      input.type = show ? 'text' : 'password';
+      btn.textContent = show ? '🙈' : '👁';
+      btn.setAttribute('aria-label', t(show ? 'common.password.hide' : 'common.password.show'));
+      input.focus();
+    });
+    wrap.appendChild(btn);
+  });
+}
+
+// Static pages (e.g. /login) get their toggles automatically; dynamically
+// rendered forms call initPasswordToggles(container) after each render.
+document.addEventListener('DOMContentLoaded', () => initPasswordToggles());
+
 // Reveal-on-scroll animation for elements with .reveal
 function initReveal() {
   const io = new IntersectionObserver((entries) => {

@@ -398,6 +398,7 @@ async function openCoachEditor(id) {
       ${id ? accountSection() : ''}`;
 
     renderPhotos();
+    initPasswordToggles(box);
     box.querySelectorAll('.chip-toggle').forEach((c) => c.addEventListener('click', () => c.classList.toggle('on')));
 
     box.querySelector('#ce-file').addEventListener('change', async (e) => {
@@ -669,20 +670,45 @@ function renderCRM() {
     }
   }));
 
-  // Leads: every customer who left a phone number at signup.
+  // Leads: every customer who left a phone number at signup. The status button
+  // toggles called <-> open (stored server-side with the call date); the
+  // bookings cell shows whether the lead already booked, and when.
   const leads = CRM.customers.filter((c) => c.phone);
   document.getElementById('crm-leads-empty').hidden = leads.length > 0;
   document.getElementById('crm-leads').innerHTML = leads.length ? `
-    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.leads.phone')}</th><th>${t('admin.crm.table.email')}</th>
-      <th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th></tr>` +
+    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.leads.phone')}</th><th>${t('admin.crm.leads.status')}</th>
+      <th>${t('admin.crm.table.email')}</th><th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th></tr>` +
     leads.map((c) => `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
         <td><a href="tel:${esc(c.phone.replace(/[^0-9+]/g, ''))}">${esc(c.phone)}</a></td>
+        <td>
+          <button class="btn btn-sm ${c.lead_called_at ? 'btn-primary' : 'btn-ghost'}" data-lead-called="${c.id}"
+            title="${esc(t('admin.crm.leads.toggle_title'))}">
+            ${c.lead_called_at ? '✓ ' + t('admin.crm.leads.called') : t('admin.crm.leads.open')}</button>
+          ${c.lead_called_at ? `<span class="muted small">${esc(fmtDate(c.lead_called_at.slice(0, 10)))}</span>` : ''}
+        </td>
         <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
         <td class="muted">${esc(c.signed_up)}</td>
-        <td>${c.bookings}</td>
+        <td>${c.bookings
+          ? `<strong>${c.bookings}</strong> <span class="muted small">${t('admin.crm.leads.booked_on',
+              { date: esc(fmtDate(c.last_booking_made)) })}</span>`
+          : `<span class="muted">0</span>`}</td>
       </tr>`).join('') : '';
+
+  document.querySelectorAll('[data-lead-called]').forEach((btn) => btn.addEventListener('click', async () => {
+    const id = Number(btn.dataset.leadCalled);
+    const lead = CRM.customers.find((c) => c.id === id);
+    btn.disabled = true;
+    try {
+      const r = await API.post(`/admin/customers/${id}/called`, { called: !lead.lead_called_at });
+      lead.lead_called_at = r.calledAt;
+      renderCRM();
+    } catch (e) {
+      btn.disabled = false;
+      toast(I18N.server(e.message), true);
+    }
+  }));
 
   const today = A ? A.today : '';
   const rows = CRM.invoices.filter((i) => !INVOICE_FILTER || i.status === INVOICE_FILTER);

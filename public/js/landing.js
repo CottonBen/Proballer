@@ -190,7 +190,8 @@ async function toggleReviews(coachId, btn) {
 function initGate(user) {
   const gate = document.getElementById('gate');
   if (!gate) return;
-  if (user) { gate.hidden = true; return; }
+  // Logged in, or already chose "continue without an account" in this tab.
+  if (user || sessionStorage.getItem('pbf_gate_skipped')) { gate.hidden = true; return; }
   gate.hidden = false;
   document.body.classList.add('gated');
   const langBox = document.getElementById('gate-lang');
@@ -221,10 +222,21 @@ function initGate(user) {
         <div class="form-error" id="gate-error"></div>
         <button class="btn btn-primary" type="submit" style="width:100%">
           ${mode === 'signup' ? t('login.action.signup') : t('login.action.login')}</button>
-      </form>`;
+      </form>
+      <div style="text-align:center;margin-top:14px">
+        <button class="gate-skip" id="gate-skip" type="button">${t('gate.skip')}</button>
+      </div>`;
     bodyEl.querySelectorAll('[data-gate-tab]').forEach((b) =>
       b.addEventListener('click', () => { mode = b.dataset.gateTab; render(); }));
     bodyEl.querySelector('#gate-form').addEventListener('submit', onSubmit);
+    // Browsing without an account is fine — the wizard asks again at booking
+    // time. Remembered per tab, so the gate doesn't nag on every page load.
+    bodyEl.querySelector('#gate-skip').addEventListener('click', () => {
+      sessionStorage.setItem('pbf_gate_skipped', '1');
+      gate.hidden = true;
+      document.body.classList.remove('gated');
+    });
+    initPasswordToggles(bodyEl);
   }
 
   async function onSubmit(e) {

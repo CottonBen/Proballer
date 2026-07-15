@@ -1402,8 +1402,9 @@ router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
 router.get('/admin/crm', requireRole('admin'), (req, res) => {
   autoCompleteBookings();
   const customers = db.prepare(`
-    SELECT u.id, u.name, u.email, u.phone, substr(u.created_at, 1, 10) AS signed_up,
+    SELECT u.id, u.name, u.email, u.phone, u.lead_called_at, substr(u.created_at, 1, 10) AS signed_up,
       COUNT(b.id) AS bookings,
+      substr(MAX(b.created_at), 1, 10) AS last_booking_made,
       SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END) AS completed,
       SUM(CASE WHEN b.status = 'confirmed' THEN 1 ELSE 0 END) AS upcoming,
       SUM(CASE WHEN b.status = 'cancelled' THEN 1 ELSE 0 END) AS cancelled,
@@ -1443,6 +1444,16 @@ router.post('/admin/reviews/:id/delete', requireRole('admin'), (req, res) => {
   const info = db.prepare('DELETE FROM reviews WHERE id = ?').run(Number(req.params.id));
   if (!info.changes) return res.status(404).json({ error: 'Review not found.' });
   res.json({ ok: true });
+});
+
+// Lead follow-up bookkeeping: the admin marks a lead as called (or back to
+// open after a misclick). Stored as a timestamp so the list shows WHEN.
+router.post('/admin/customers/:id/called', requireRole('admin'), (req, res) => {
+  const user = db.prepare("SELECT id FROM users WHERE id = ? AND role = 'customer'").get(Number(req.params.id));
+  if (!user) return res.status(404).json({ error: 'Customer not found.' });
+  const calledAt = req.body?.called ? nowISO() : null;
+  db.prepare('UPDATE users SET lead_called_at = ? WHERE id = ?').run(calledAt, user.id);
+  res.json({ ok: true, calledAt });
 });
 
 // Delete a customer account and everything it owns: bookings (slots free up),
