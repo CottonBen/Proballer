@@ -36,7 +36,9 @@ module.exports = {
 
   positions: ['goalkeepers', 'defenders', 'midfielders', 'attackers'],
 
-  // Session focus types. `online: true` means the session is a remote video call.
+  // Session focus types. `online: true` means the session is a remote video
+  // call. (Game IQ online sessions were retired 2026-07; old bookings with
+  // focus 'game-iq' still render — display falls back to the stored id.)
   focusTypes: [
     { id: 'conditioning', label: 'Conditioning', online: false },
     { id: 'physicality',  label: 'Physicality',  online: false },
@@ -45,7 +47,6 @@ module.exports = {
     { id: 'defending',    label: 'Defending',    online: false },
     { id: 'finishing',    label: 'Finishing',    online: false },
     { id: 'passing',      label: 'Passing',      online: false },
-    { id: 'game-iq',      label: 'Game IQ (online meeting)', online: true },
   ],
 
   pricing: {

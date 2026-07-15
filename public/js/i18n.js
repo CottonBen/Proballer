@@ -63,8 +63,8 @@ const I18N_DICT = {
     en: 'Choose a coach and one of the times they have opened in their calendar. Sessions run 8:00–20:00, every day.' },
   'landing.how.step2.title': { fi: '2 · Räätälöi treeni', en: '2 · Shape the session' },
   'landing.how.step2.body': {
-    fi: 'Kerro pelipaikkasi — maalivahti, puolustaja, keskikenttäpelaaja tai hyökkääjä — ja valitse treenin painopiste viimeistelystä Game IQ:hun.',
-    en: 'Tell us your position — goalkeeper, defender, midfielder or attacker — and pick a focus, from finishing to Game IQ.' },
+    fi: 'Kerro pelipaikkasi — maalivahti, puolustaja, keskikenttäpelaaja tai hyökkääjä — ja valitse treenin painopiste viimeistelystä syöttöpeliin.',
+    en: 'Tell us your position — goalkeeper, defender, midfielder or attacker — and pick a focus, from finishing to passing.' },
   'landing.how.step3.title': { fi: '3 · Vahvista ja treenaa', en: '3 · Confirm & train' },
   'landing.how.step3.body': {
     fi: 'Maksa varaus turvallisesti kortilla — vahvistus ja kuitti tulevat sähköpostiisi. Sitten jäljellä olette vain sinä, valmentaja ja kenttä.',
@@ -380,8 +380,9 @@ const I18N_DICT = {
 
   // --- card payments (Stripe) ---
   "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
-  "booking.success.redirecting": { fi: "Siirrytään turvalliseen korttimaksuun…", en: "Taking you to secure card payment…" },
-  "booking.success.paybtn": { fi: "Siirry maksuun", en: "Go to payment" },
+  "booking.success.redirecting_title": { fi: "Siirrytään maksuun", en: "Moving to payment" },
+  "booking.success.redirecting": { fi: "Ohjaamme sinut turvalliseen korttimaksuun. Jos mitään ei tapahdu, paina alla olevaa painiketta.", en: "We are taking you to secure card payment. If nothing happens, press the button below." },
+  "booking.success.paybtn": { fi: "Siirry maksuun", en: "Move to payment" },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
   "pay.refund_pending": { fi: "Maksusi ehti perille vasta varauksen peruunnuttua, eikä varausta voitu enää palauttaa. Palautamme maksun sinulle — otamme yhteyttä.", en: "Your payment arrived after the booking had already been cancelled and it could not be restored. We will refund the payment and be in touch." },
   "pay.card": { fi: "Maksa kortilla", en: "Pay by card" },
@@ -496,6 +497,9 @@ const I18N_DICT = {
   "admin.crm.stats.overdue": { fi: "erääntyneitä: {count}", en: "{count} overdue" },
   "admin.crm.stats.accounts": { fi: "Asiakastilit", en: "Customer accounts" },
   "admin.crm.table.email": { fi: "Sähköposti", en: "Email" },
+  "admin.bookings.delete.title": { fi: "Poista varaus kokonaan", en: "Delete this booking entirely" },
+  "admin.bookings.delete.confirm": { fi: "Poistetaanko varaus {code} ({customer}) pysyvästi? Myös lasku poistetaan, aika vapautuu ja käytetty ilmainen treenikerta palautuu asiakkaalle. Tätä ei voi perua.", en: "Permanently delete booking {code} ({customer})? Its invoice is deleted too, the slot frees up, and a used free-session credit returns to the customer. This cannot be undone." },
+  "admin.bookings.delete.done": { fi: "Varaus {code} poistettu.", en: "Booking {code} deleted." },
   "admin.crm.leads.heading": { fi: "Liidit — puhelinnumerot", en: "Leads — phone numbers" },
   "admin.crm.leads.sub": { fi: "Asiakkaat, jotka antoivat puhelinnumeronsa tiliä luodessaan.", en: "Customers who left a phone number when creating their account." },
   "admin.crm.leads.empty": { fi: "Ei vielä puhelinnumeroita — numero kysytään (vapaaehtoisena) tilin luonnin yhteydessä.", en: "No phone numbers yet — the number is asked (optionally) when an account is created." },
@@ -822,6 +826,9 @@ const I18N_SERVER_PATTERNS = [
   // Coach alert: booking removed because the customer account was deleted.
   [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was removed because the customer's account was deleted\. The slot is open again\.$/,
     (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 poistettiin, koska asiakkaan tili poistettiin. Aika on jälleen vapaana.`],
+  // Coach: an upcoming booking was hard-deleted by the admin.
+  [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was removed by the admin\. The slot is open again\.$/,
+    (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 poistettiin ylläpidon toimesta. Aika on jälleen vapaana.`],
   // Customer: 24 h payment reminder.
   [/^Payment reminder: your booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 is still unpaid — pay it on the My bookings page within 24 hours \(before the session, if it is sooner\) or the booking will be cancelled automatically\.$/,
     (m) => `Maksumuistutus: varauksesi ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 on yhä maksamatta — maksa se 24 tunnin kuluessa (kuitenkin ennen treeniä) Omat varaukset -sivulla, tai varaus perutaan automaattisesti.`],

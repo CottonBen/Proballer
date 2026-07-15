@@ -381,10 +381,11 @@ function renderSuccess({ booking, invoice, payUrl }) {
   // same payment page).
   if (payUrl) {
     body().innerHTML = `
-      <div style="text-align:center;padding:26px 0">
-        <div style="font-size:3.2rem">💳</div>
-        <p class="muted">${t('booking.success.redirecting')}</p>
-        <a class="btn btn-primary" href="${esc(payUrl)}" style="margin-top:8px">💳 ${t('booking.success.paybtn')}</a>
+      <div style="text-align:center;padding:70px 0 60px">
+        <h2 style="font-size:clamp(2rem,6vw,3rem);margin-bottom:14px">${t('booking.success.redirecting_title')}</h2>
+        <p class="muted" style="font-size:1.15rem;max-width:34ch;margin:0 auto 26px">${t('booking.success.redirecting')}</p>
+        <a class="btn btn-primary" href="${esc(payUrl)}"
+          style="font-size:1.1rem;padding:16px 38px">${t('booking.success.paybtn')}</a>
       </div>`;
     location.href = payUrl;
     return;
@@ -409,7 +410,7 @@ function renderSuccess({ booking, invoice, payUrl }) {
           { myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap">
         ${invoice.amountCents > 0 && W.site.payment.stripeEnabled
-          ? `<button class="btn btn-primary" id="pay-now">💳 ${t('pay.now')}</button>` : ''}
+          ? `<button class="btn btn-primary" id="pay-now">${t('pay.now')}</button>` : ''}
         <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">${t('booking.success.view_invoice')}</a>
         <a class="btn ${invoice.amountCents > 0 && W.site.payment.stripeEnabled ? 'btn-ghost' : 'btn-primary'}" href="/my-bookings">${t('common.nav.my_bookings')}</a>
       </div>

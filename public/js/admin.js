@@ -213,18 +213,18 @@ function renderCharts() {
   document.getElementById('charts').innerHTML = `
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">${t('admin.chart.visitors.title')}</h3></div>
-      ${legend([['#ffffff', t('admin.chart.visitors.legend')]])}
-      ${lineChart([s.pageviews], range, ['#ffffff'])}
+      ${legend([['#3ee586', t('admin.chart.visitors.legend')]])}
+      ${lineChart([s.pageviews], range, ['#3ee586'])}
     </div>
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">${t('admin.chart.sessions.title')}</h3></div>
-      ${legend([['#ffffff', t('admin.chart.sessions.legend')]])}
-      ${lineChart([s.completedSessions], range, ['#ffffff'])}
+      ${legend([['#4ade80', t('admin.chart.sessions.legend')]])}
+      ${lineChart([s.completedSessions], range, ['#4ade80'])}
     </div>
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">${t('admin.chart.funnel.title')}</h3></div>
-      ${legend([['#8b8b90', t('admin.chart.funnel.started')], ['#ffffff', t('admin.chart.funnel.finished')]])}
-      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#8b8b90', '#ffffff'])}
+      ${legend([['#7fb5fb', t('admin.chart.funnel.started')], ['#3ee586', t('admin.chart.funnel.finished')]])}
+      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#7fb5fb', '#3ee586'])}
     </div>`;
 }
 
@@ -510,9 +510,9 @@ async function openCoachCalendar(id) {
       <div class="cal-scroll">${grid}</div>
       <div class="cal-legend">
         <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>${t('admin.cal.legend.notavailable')}</span>
-        <span><i style="background:rgba(255,255,255,0.25)"></i>${t('admin.cal.legend.open')}</span>
+        <span><i style="background:rgba(62,229,134,0.25)"></i>${t('admin.cal.legend.open')}</span>
         <span><i style="background:var(--lime)"></i>${t('admin.cal.legend.booked')}</span>
-        <span><i style="background:rgba(255,255,255,0.5)"></i>${t('admin.cal.legend.unsaved')}</span>
+        <span><i style="background:rgba(62,229,134,0.5)"></i>${t('admin.cal.legend.unsaved')}</span>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:14px">
         <button class="btn btn-primary btn-sm" id="cal-save" ${pending.size ? '' : 'disabled'}>
@@ -583,8 +583,25 @@ async function loadBookings(status) {
               ${b.date > A.today ? `disabled title="${t('admin.bookings.done.disabled')}"` : ''}>${t('admin.bookings.done')}</button>
             <button class="btn btn-danger btn-sm" data-act="cancelled" data-id="${b.id}">${t('admin.bookings.cancel')}</button>` : ''}
           ${b.invoice_status === 'sent' ? `<button class="btn btn-ghost btn-sm" data-paid="${esc(b.invoice_number)}">${t('admin.invoices.markpaid')}</button>` : ''}
+          <button class="btn btn-ghost btn-sm" data-del-booking="${b.id}" data-code="${esc(b.code)}"
+            data-customer="${esc(b.customer)}" title="${esc(t('admin.bookings.delete.title'))}">🗑</button>
         </td>
       </tr>`).join('');
+
+  // Hard removal: the booking, its invoice and the slot hold all disappear;
+  // a consumed free-session credit returns to the customer.
+  tbl.querySelectorAll('[data-del-booking]').forEach((btn) => btn.addEventListener('click', async () => {
+    if (!confirm(t('admin.bookings.delete.confirm', { code: btn.dataset.code, customer: btn.dataset.customer }))) return;
+    btn.disabled = true;
+    try {
+      await API.del(`/admin/bookings/${btn.dataset.delBooking}`);
+      toast(t('admin.bookings.delete.done', { code: btn.dataset.code }));
+      await Promise.all([refresh(), loadBookings(status), loadCRM()]);
+    } catch (err) {
+      btn.disabled = false;
+      toast(I18N.server(err.message), true);
+    }
+  }));
 
   tbl.querySelectorAll('[data-act]').forEach((btn) => btn.addEventListener('click', async () => {
     if (btn.dataset.act === 'cancelled' && !confirm(t('admin.bookings.cancel.confirm'))) return;

@@ -1368,6 +1368,43 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
   res.json(rows);
 });
 
+// Remove a booking outright (admin cleanup tool): the invoice and its rendered
+// HTML file go with it, a consumed free-session credit returns to the
+// customer, and the slot frees up. A coach who already knew about an upcoming
+// session is told it was removed. For a normal customer-facing cancellation
+// (notification + goodwill credit) use the cancel action instead.
+router.delete('/admin/bookings/:id', requireRole('admin'), (req, res) => {
+  const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(Number(req.params.id));
+  if (!booking) return res.status(404).json({ error: 'Booking not found.' });
+  const inv = db.prepare('SELECT html_path FROM invoices WHERE booking_id = ?').get(booking.id);
+  db.exec('BEGIN');
+  try {
+    db.prepare('UPDATE credits SET used_by_booking_id = NULL WHERE used_by_booking_id = ?').run(booking.id);
+    db.prepare('DELETE FROM invoices WHERE booking_id = ?').run(booking.id);
+    db.prepare('DELETE FROM bookings WHERE id = ?').run(booking.id);
+    db.exec('COMMIT');
+  } catch (err) {
+    db.exec('ROLLBACK');
+    throw err;
+  }
+  if (inv && inv.html_path) {
+    try { fs.unlinkSync(path.join(OUTBOX, path.basename(inv.html_path))); } catch { /* already gone */ }
+  }
+  // An upcoming session the coach already knew about must not silently vanish.
+  const now = helsinkiNow();
+  if (booking.status === 'confirmed' && booking.coach_notified
+      && (booking.date > now.date || (booking.date === now.date && booking.hour > now.hour))) {
+    const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(booking.coach_id);
+    if (coachUser && coachUser.user_id) {
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(coachUser.user_id, `Booking ${booking.code} on ${booking.date} at `
+          + `${String(booking.hour).padStart(2, '0')}:00 was removed by the admin. The slot is open again.`, nowISO());
+    }
+  }
+  sheets.scheduleSync();
+  res.json({ ok: true });
+});
+
 router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
   autoCompleteBookings(); // release overdue unpaid bookings before acting on one
   const to = String(req.body?.status || '');

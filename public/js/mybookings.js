@@ -76,7 +76,7 @@
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>${
               stripeOn && b.invoice_status === 'sent' && b.total_cents > 0
-                ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" data-pay="${esc(b.invoice_number)}">💳 ${t('pay.card')}</button>${
+                ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" data-pay="${esc(b.invoice_number)}">${t('pay.card')}</button>${
                     b.pay_by ? `<br><span class="small muted">⏳ ${t('pay.deadline', { deadline: esc(payDeadline(b.pay_by)) })}</span>` : ''
                   }` : ''
             }` : '—'}</td>

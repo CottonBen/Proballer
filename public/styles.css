@@ -547,6 +547,55 @@ footer .wrap { display: flex; justify-content: space-between; gap: 20px; flex-wr
   .profile-gallery .main { aspect-ratio: 4/3.2; }
 }
 
+/* ---------- green theme (admin dashboard only) ----------
+   The customer-facing site is monochrome like the brand mark; the admin
+   "command centre" keeps the original emerald + lime look. Most colors flow
+   through the variables; the rest of this block re-points the accents that
+   the monochrome theme moved onto var(--text). */
+body.theme-green {
+  --bg: #08211a;
+  --bg-2: #0c2b21;
+  --card: rgba(255, 255, 255, 0.06);
+  --card-solid: #0f2e23;
+  --line: rgba(255, 255, 255, 0.13);
+  --text: #f2fbf6;
+  --muted: #9cc0ad;
+  --lime: #3ee586;
+  --lime-dark: #1fc468;
+  --gold: #ffd166;
+  --ink: #10160a;
+}
+body.theme-green::before {
+  background:
+    radial-gradient(700px 400px at 85% -5%, rgba(62, 229, 134, 0.14), transparent 60%),
+    radial-gradient(900px 500px at -10% 30%, rgba(18, 112, 74, 0.45), transparent 65%),
+    radial-gradient(600px 500px at 60% 110%, rgba(18, 112, 74, 0.35), transparent 60%);
+}
+.theme-green .site-header { background: rgba(8, 33, 26, 0.8); }
+.theme-green .site-header.scrolled { background: rgba(8, 33, 26, 0.92); }
+.theme-green .brand em { color: var(--lime); }
+.theme-green :focus-visible { outline-color: rgba(62, 229, 134, 0.7); }
+.theme-green input:focus, .theme-green textarea:focus { outline-color: rgba(62, 229, 134, 0.5); }
+.theme-green .btn-primary { background: var(--lime); box-shadow: 0 0 24px rgba(62, 229, 134, 0.25); }
+.theme-green .btn-primary:hover { box-shadow: 0 6px 34px rgba(62, 229, 134, 0.45); }
+.theme-green .btn-ghost:hover { border-color: var(--lime); color: var(--lime); }
+.theme-green .stat-card .value { color: var(--lime); }
+.theme-green .window-pills button.on { background: var(--lime); border-color: var(--lime); }
+.theme-green .window-pills button:not(.on):hover { border-color: rgba(62, 229, 134, 0.5); }
+.theme-green .lang-opt.on { background: rgba(62, 229, 134, 0.16); color: var(--lime); }
+.theme-green .chip { background: rgba(62, 229, 134, 0.12); color: var(--lime); border-color: rgba(62, 229, 134, 0.25); }
+.theme-green .chip.gray { background: rgba(255,255,255,0.06); color: var(--muted); border-color: var(--line); }
+.theme-green .chip-toggle { background: rgba(255,255,255,0.05); color: var(--muted); border-color: var(--line); }
+.theme-green .chip-toggle.on { background: rgba(62, 229, 134, 0.16); color: var(--lime); border-color: var(--lime); }
+.theme-green .cal .hd.today .num { border-bottom: none; color: var(--lime); }
+.theme-green .cal-cell:hover { border-color: rgba(62, 229, 134, 0.6); }
+.theme-green .cal-cell.avail { background: rgba(62, 229, 134, 0.22); border-color: rgba(62, 229, 134, 0.55); }
+.theme-green .cal-cell.pending-add { background: rgba(62, 229, 134, 0.45); border-color: var(--lime); }
+.theme-green .cal-cell.booked { background: var(--lime); border-color: var(--lime); }
+.theme-green #toast { border-color: var(--lime); }
+.theme-green #toast.error { border-color: var(--danger); }
+.theme-green .pw-toggle:hover { color: var(--lime); }
+
 /* ---------- reduced motion: every animation becomes a simple state change ---------- */
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after {
