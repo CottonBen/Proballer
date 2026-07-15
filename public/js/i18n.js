@@ -73,6 +73,8 @@ const I18N_DICT = {
   'gate.intro':              { fi: 'Kirjaudu sisään tai luo ilmainen tili, niin pääset tutustumaan valmentajiin ja varaamaan treenejä.',
                                en: 'Sign in or create a free account to meet the coaches and book sessions.' },
   'gate.skip':               { fi: 'Jatka sivustolle ilman tiliä →', en: 'Continue to the website without an account →' },
+  'landing.contact.title':   { fi: 'Ota yhteyttä', en: 'Get in touch' },
+  'landing.contact.sub':     { fi: 'Soita tai laita viestiä — ja seuraa treenejämme somessa.', en: 'Call or drop us a message — and follow our sessions on social media.' },
   'landing.footer.tagline':  { fi: 'Henkilökohtaista valmennusta nuorille jalkapalloilijoille.', en: '1-on-1 coaching for young footballers.' },
   'landing.wizard.aria':     { fi: 'Varaa treeni', en: 'Book a session' },
   'landing.dots.aria':       { fi: 'Diat', en: 'Slides' },
