@@ -431,8 +431,8 @@ async function renderChats() {
           : `<div style="align-self:${m.mine ? 'flex-end' : 'flex-start'};max-width:80%">
               ${m.mine ? '' : `<div class="small muted">${esc(m.senderName || '?')}</div>`}
               <div style="padding:8px 13px;border-radius:14px;font-size:.9rem;white-space:pre-wrap;word-break:break-word;
-                background:${m.mine ? 'rgba(62,229,134,0.16)' : 'rgba(255,255,255,0.07)'};
-                border:1px solid ${m.mine ? 'rgba(62,229,134,0.3)' : 'var(--line)'}">${esc(m.body)}</div>
+                background:${m.mine ? 'rgba(255,255,255,0.16)' : 'rgba(255,255,255,0.07)'};
+                border:1px solid ${m.mine ? 'rgba(255,255,255,0.3)' : 'var(--line)'}">${esc(m.body)}</div>
             </div>`).join('')}
       </div>
       <form id="app-compose" style="display:flex;gap:8px">
@@ -462,7 +462,7 @@ async function renderChats() {
     <header class="app-head"><h1 class="app-h1">${t('chat.heading')}</h1></header>
     ${chats.length ? chats.map((c) => `
       <button class="sess-card" data-chat="${c.id}" style="width:100%;text-align:left;cursor:pointer;display:flex;gap:12px;align-items:center;font-family:var(--body);color:var(--text)">
-        <span style="width:42px;height:42px;border-radius:50%;overflow:hidden;flex-shrink:0;display:grid;place-items:center;background:rgba(62,229,134,0.12)">
+        <span style="width:42px;height:42px;border-radius:50%;overflow:hidden;flex-shrink:0;display:grid;place-items:center;background:rgba(255,255,255,0.1)">
           ${c.coachPhoto ? `<img src="${esc(c.coachPhoto)}" alt="" style="width:100%;height:100%;object-fit:cover">` : '💬'}</span>
         <span style="flex:1;min-width:0">
           <span style="display:block;font-weight:700">${S.me.user.id === c.customerId ? esc(c.coachName) : esc(c.customerName)}</span>
@@ -677,7 +677,7 @@ function fmtDateTime(isoStr) {
 function showGate() {
   document.getElementById('tabbar').hidden = true;
   view().innerHTML = `<div class="screen" style="text-align:center;padding-top:60px">
-    <div class="pf-avatar" style="margin:0 auto 20px"><img src="/assets/logo.svg" alt="" style="object-fit:contain;padding:16px"></div>
+    <div class="pf-avatar" style="margin:0 auto 20px"><img src="/assets/logo.svg?v=2" alt="" style="object-fit:contain;padding:16px"></div>
     <h1 class="app-h1">${t('app.notcoach.title')}</h1>
     <p class="app-msg">${t('app.notcoach.body')}</p>
     <a class="btn btn-primary" href="/login?next=${encodeURIComponent('/app')}">${t('app.notcoach.login')}</a>

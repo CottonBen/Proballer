@@ -1,33 +1,16 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900" font-family="'Big Shoulders','Arial Narrow','Impact',sans-serif">
-  <!-- Proballers Coaching — one-colour light-blue mark: flying ball + wave, bold italic wordmark -->
-  <g fill="#45C7F5">
-    <!-- speed lines -->
-    <g transform="skewX(-10)">
-      <rect x="770" y="150" width="300" height="22" rx="11"/>
-      <rect x="700" y="210" width="290" height="22" rx="11" opacity="0.75"/>
-      <rect x="780" y="270" width="230" height="22" rx="11" opacity="0.5"/>
-    </g>
-    <!-- football -->
-    <g transform="translate(1190 215)">
-      <circle r="118" fill="none" stroke="#45C7F5" stroke-width="16"/>
-      <polygon points="0,-62 59,-19 36,50 -36,50 -59,-19"/>
-      <g fill="none" stroke="#45C7F5" stroke-width="11" stroke-linecap="round">
-        <path d="M0 -62 L0 -110"/>
-        <path d="M59 -19 L104 -34"/>
-        <path d="M36 50 L64 92"/>
-        <path d="M-36 50 L-64 92"/>
-        <path d="M-59 -19 L-104 -34"/>
-      </g>
-    </g>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1600 900"
+  font-family="'Helvetica Neue', Helvetica, Arial, sans-serif">
+  <!-- Proballers Coaching — monochrome lockup for dark surfaces:
+       white circle with the black italic P, white wordmark below -->
+  <circle cx="800" cy="255" r="185" fill="#ffffff"/>
+  <g transform="translate(754.5,166.5) scale(5.2) skewX(-14)">
+    <path fill="#0a0a0b" fill-rule="evenodd"
+      d="M0,0 H15 Q26,0 26,8.5 Q26,17 15,17 H8 V28 L0,34 Z
+         M8,6 H14.5 Q19,6 19,8.5 Q19,11 14.5,11 H8 Z"/>
+    <rect x="-7" y="11.2" width="15.5" height="3.2" fill="#ffffff" transform="rotate(-12 0.75 12.8)"/>
   </g>
-  <!-- wordmark -->
-  <text x="800" y="580" text-anchor="middle" font-size="252" font-weight="700" font-style="italic"
-    fill="#45C7F5" letter-spacing="6">PROBALLERS</text>
-  <text x="800" y="688" text-anchor="middle" font-size="86" font-weight="700"
-    fill="#45C7F5" letter-spacing="46">COACHING</text>
-  <!-- waves -->
-  <g fill="none" stroke="#45C7F5" stroke-linecap="round">
-    <path d="M120 775 C 320 715, 520 835, 800 785 C 1080 735, 1280 845, 1480 775" stroke-width="30"/>
-    <path d="M240 850 C 420 805, 600 885, 820 850 C 1040 815, 1200 880, 1360 845" stroke-width="18" opacity="0.6"/>
-  </g>
+  <text x="800" y="632" text-anchor="middle" font-size="150" font-weight="800"
+    fill="#ffffff" letter-spacing="14">PROBALLERS</text>
+  <text x="812" y="722" text-anchor="middle" font-size="64" font-weight="600"
+    fill="#ffffff" letter-spacing="42">COACHING</text>
 </svg>

@@ -130,7 +130,7 @@ function buildCoachGrid() {
     const reviewsToggle = c.rating && c.rating.count
       ? `<button class="reviews-toggle small" data-reviews="${c.id}">${t('landing.readreviews')}</button>` : '';
     card.innerHTML = `
-      <div class="photo"><img src="${esc(c.photos[0] || '/assets/logo.svg')}" alt="${t('landing.coachalt', { name: esc(c.name) })}" loading="lazy"></div>
+      <div class="photo"><img src="${esc(c.photos[0] || '/assets/logo.svg?v=2')}" alt="${t('landing.coachalt', { name: esc(c.name) })}" loading="lazy"></div>
       <div class="body">
         <h3>${esc(c.name)}</h3>
         <div style="display:flex;align-items:center;gap:10px;flex-wrap:wrap">

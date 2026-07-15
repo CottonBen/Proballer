@@ -28,29 +28,29 @@ const esc = (s) => String(s).replace(/[&<>"']/g,
 // ---------------------------------------------------------------------------
 function shell(lang, title, bodyHtml) {
   return `<!doctype html>
-<html lang="${lang}"><body style="margin:0;background:#eef2ee;padding:26px 12px">
+<html lang="${lang}"><body style="margin:0;background:#f0f0f1;padding:26px 12px">
   <div style="max-width:560px;margin:0 auto;background:#ffffff;border-radius:14px;overflow:hidden;
-      font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#15231a;border:1px solid #dfe6df">
-    <div style="background:#08211a;padding:16px 28px">
-      <span style="color:#c9f24d;font-weight:800;letter-spacing:.08em;font-size:.95rem">
+      font-family:-apple-system,'Segoe UI',Roboto,sans-serif;color:#18181b;border:1px solid #e4e4e7">
+    <div style="background:#0a0a0b;padding:16px 28px">
+      <span style="color:#ffffff;font-weight:800;letter-spacing:.08em;font-size:.95rem">
         ${esc(config.siteName).toUpperCase()}</span>
     </div>
     <div style="padding:26px 28px 18px">
       <h2 style="margin:0 0 14px;font-size:1.4rem">${esc(title)}</h2>
       ${bodyHtml}
-      <p style="color:#5b6b5e;font-size:.9rem;margin-top:26px">${esc(tr(lang, 'email.signoff'))}</p>
+      <p style="color:#6b6b70;font-size:.9rem;margin-top:26px">${esc(tr(lang, 'email.signoff'))}</p>
     </div>
   </div>
 </body></html>`;
 }
 
 const button = (href, label) =>
-  `<p style="margin:22px 0"><a href="${esc(href)}" style="background:#c9f24d;color:#08211a;
+  `<p style="margin:22px 0"><a href="${esc(href)}" style="background:#0a0a0b;color:#ffffff;
     text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block">
     ${esc(label)}</a></p>`;
 
 const detailBox = (lines) =>
-  `<div style="background:#f3f7f0;border-radius:10px;padding:14px 18px;margin:14px 0">
+  `<div style="background:#f4f4f5;border-radius:10px;padding:14px 18px;margin:14px 0">
     ${lines.map((l) => `<p style="margin:4px 0"><strong>${esc(l)}</strong></p>`).join('')}</div>`;
 
 // ---------------------------------------------------------------------------
@@ -104,7 +104,7 @@ function sendBookingConfirmedEmail(bookingId) {
        }),
        tr(lang, 'email.booking.ref', { code: b.code }),
      ])}
-     ${b.is_online ? '' : `<p style="color:#5b6b5e">${esc(tr(lang, 'email.booking.pitchNote'))}</p>`}
+     ${b.is_online ? '' : `<p style="color:#6b6b70">${esc(tr(lang, 'email.booking.pitchNote'))}</p>`}
      ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.booking.cta'))}`);
   deliver({ type: 'booking', userId: customer.id, bookingCode: b.code, to: customer.email, subject, html });
 }

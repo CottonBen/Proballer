@@ -199,9 +199,9 @@ function lineChart(series, labels, colors) {
       ${i === 0 ? `<polygon points="${area(arr)}" fill="${colors[i]}" opacity="0.12"/>` : ''}
       <polyline points="${pts(arr)}" fill="none" stroke="${colors[i]}" stroke-width="2.5"
         stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
-    <text x="${pad}" y="${Ht + 18}" fill="#94a49a" font-size="12">${labels.from}</text>
-    <text x="${Wd - pad}" y="${Ht + 18}" fill="#94a49a" font-size="12" text-anchor="end">${labels.to}</text>
-    <text x="${Wd - pad}" y="${pad + 12}" fill="#94a49a" font-size="12" text-anchor="end">${t('admin.chart.peak', { max })}</text>
+    <text x="${pad}" y="${Ht + 18}" fill="#a6a6ab" font-size="12">${labels.from}</text>
+    <text x="${Wd - pad}" y="${Ht + 18}" fill="#a6a6ab" font-size="12" text-anchor="end">${labels.to}</text>
+    <text x="${Wd - pad}" y="${pad + 12}" fill="#a6a6ab" font-size="12" text-anchor="end">${t('admin.chart.peak', { max })}</text>
   </svg>`;
 }
 
@@ -213,18 +213,18 @@ function renderCharts() {
   document.getElementById('charts').innerHTML = `
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">${t('admin.chart.visitors.title')}</h3></div>
-      ${legend([['#3ee586', t('admin.chart.visitors.legend')]])}
-      ${lineChart([s.pageviews], range, ['#3ee586'])}
+      ${legend([['#ffffff', t('admin.chart.visitors.legend')]])}
+      ${lineChart([s.pageviews], range, ['#ffffff'])}
     </div>
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">${t('admin.chart.sessions.title')}</h3></div>
-      ${legend([['#4ade80', t('admin.chart.sessions.legend')]])}
-      ${lineChart([s.completedSessions], range, ['#4ade80'])}
+      ${legend([['#ffffff', t('admin.chart.sessions.legend')]])}
+      ${lineChart([s.completedSessions], range, ['#ffffff'])}
     </div>
     <div class="card chart-card">
       <div class="chart-title"><h3 style="margin:0">${t('admin.chart.funnel.title')}</h3></div>
-      ${legend([['#7fb5fb', t('admin.chart.funnel.started')], ['#3ee586', t('admin.chart.funnel.finished')]])}
-      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#7fb5fb', '#3ee586'])}
+      ${legend([['#8b8b90', t('admin.chart.funnel.started')], ['#ffffff', t('admin.chart.funnel.finished')]])}
+      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#8b8b90', '#ffffff'])}
     </div>`;
 }
 
@@ -510,9 +510,9 @@ async function openCoachCalendar(id) {
       <div class="cal-scroll">${grid}</div>
       <div class="cal-legend">
         <span><i style="background:rgba(255,255,255,0.05);border:1px solid var(--line)"></i>${t('admin.cal.legend.notavailable')}</span>
-        <span><i style="background:rgba(62,229,134,0.25)"></i>${t('admin.cal.legend.open')}</span>
+        <span><i style="background:rgba(255,255,255,0.25)"></i>${t('admin.cal.legend.open')}</span>
         <span><i style="background:var(--lime)"></i>${t('admin.cal.legend.booked')}</span>
-        <span><i style="background:rgba(62,229,134,0.5)"></i>${t('admin.cal.legend.unsaved')}</span>
+        <span><i style="background:rgba(255,255,255,0.5)"></i>${t('admin.cal.legend.unsaved')}</span>
       </div>
       <div style="display:flex;justify-content:flex-end;margin-top:14px">
         <button class="btn btn-primary btn-sm" id="cal-save" ${pending.size ? '' : 'disabled'}>

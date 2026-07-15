@@ -22,7 +22,7 @@ function renderProfile(coach, reviewsData) {
   const root = document.getElementById('profile-root');
   document.title = t('profile.doctitle', { coachName: coach.name });
 
-  const photos = coach.photos.length ? coach.photos : ['/assets/logo.svg'];
+  const photos = coach.photos.length ? coach.photos : ['/assets/logo.svg?v=2'];
   root.innerHTML = `
     <div class="profile-hero">
       <div class="profile-gallery reveal in">

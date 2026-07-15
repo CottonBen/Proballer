@@ -134,13 +134,30 @@ function initPasswordToggles(root = document) {
 // rendered forms call initPasswordToggles(container) after each render.
 document.addEventListener('DOMContentLoaded', () => initPasswordToggles());
 
-// Reveal-on-scroll animation for elements with .reveal
+// Reveal-on-scroll animation for elements with .reveal. Elements that enter
+// together get a slight stagger (60 ms steps); the delay is cleared once the
+// reveal finishes so it never slows down hover transitions afterwards.
 function initReveal() {
   const io = new IntersectionObserver((entries) => {
-    for (const e of entries) if (e.isIntersecting) { e.target.classList.add('in'); io.unobserve(e.target); }
+    entries.filter((e) => e.isIntersecting).forEach((e, i) => {
+      const el = e.target;
+      el.style.transitionDelay = `${Math.min(i, 5) * 60}ms`;
+      el.classList.add('in');
+      el.addEventListener('transitionend', () => { el.style.transitionDelay = ''; }, { once: true });
+      io.unobserve(el);
+    });
   }, { threshold: 0.12 });
   document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
 }
+
+// The sticky header lifts off the page (darker, shadowed) once you scroll.
+document.addEventListener('DOMContentLoaded', () => {
+  const hdr = document.querySelector('.site-header');
+  if (!hdr) return;
+  const onScroll = () => hdr.classList.toggle('scrolled', window.scrollY > 8);
+  window.addEventListener('scroll', onScroll, { passive: true });
+  onScroll();
+});
 
 // Redirects to /login (with return path) — used by pages that need a role.
 function requireLoginRedirect() {
