@@ -13,6 +13,7 @@ const tiers = require('../tiers');
 const stripe = require('../stripe');
 const i18n = require('../i18n');
 const pitches = require('../pitches');
+const emails = require('../emails');
 const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
@@ -327,16 +328,22 @@ router.post('/auth/signup', loginThrottle, (req, res) => {
   const name = String(req.body?.name || '').trim();
   const email = String(req.body?.email || '').trim().toLowerCase();
   const password = String(req.body?.password || '');
+  // Optional contact number (shown on the admin CRM's leads list).
+  const phone = String(req.body?.phone || '').trim();
   if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Please give your name.' });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'That email address does not look right.' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
+  if (phone && !/^[0-9+\-() ]{5,25}$/.test(phone)) {
+    return res.status(400).json({ error: 'That phone number does not look right.' });
+  }
   if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
-  const info = db.prepare('INSERT INTO users (email, password_hash, name, role, lang, created_at) VALUES (?,?,?,?,?,?)')
-    .run(email, bcrypt.hashSync(password, 10), name, 'customer', readLang(req.body) || 'fi', nowISO());
+  const info = db.prepare('INSERT INTO users (email, password_hash, name, role, lang, phone, created_at) VALUES (?,?,?,?,?,?,?)')
+    .run(email, bcrypt.hashSync(password, 10), name, 'customer', readLang(req.body) || 'fi', phone, nowISO());
   createSession(res, Number(info.lastInsertRowid));
   recordEvent(req, 'signup', {});
+  emails.sendWelcomeEmail(Number(info.lastInsertRowid));
   res.json({ user: { id: Number(info.lastInsertRowid), name, email, role: 'customer' } });
 });
 
@@ -1026,14 +1033,16 @@ router.post('/coach/bookings/:code/pitch', requireRole('coach', 'admin'), async 
 
   db.prepare('UPDATE bookings SET pitch_id = ?, pitch_name = ? WHERE id = ?')
     .run(pitch.id, pitch.name, booking.id);
-  // Tell the customer where to show up, in the thread they already have. The
-  // coach triggered this line, so it doesn't count as unread for them.
+  // Tell the customer where to show up: a line in the thread they already
+  // have, plus a confirmation email. The coach triggered this, so the chat
+  // line doesn't count as unread for them.
   if (booking.pitch_id !== pitch.id) {
     const chat = ensureChat(coach.id, booking.customer_id);
     const msgId = postChatMessage(chat.id, null, `📍 ${booking.code} · ${pitch.name}${pitch.address ? ' · ' + pitch.address : ''}`);
     db.prepare(`INSERT INTO chat_reads (chat_id, user_id, last_read_id) VALUES (?,?,?)
       ON CONFLICT(chat_id, user_id) DO UPDATE SET last_read_id = max(last_read_id, excluded.last_read_id)`)
       .run(chat.id, req.user.id, msgId);
+    emails.sendPitchConfirmedEmail(booking.id, pitch);
   }
   res.json({ ok: true, pitch: { id: pitch.id, name: pitch.name } });
 });
@@ -1157,6 +1166,18 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
 router.post('/admin/test-email', requireRole('admin'), async (req, res) => {
   const result = await require('../mailer').sendTestEmail(req.user.email);
   res.json({ ...result, to: req.user.email });
+});
+
+// Email communications panel: last automation sweep, per-type counters, and
+// the most recent sends/failures from email_log.
+router.get('/admin/emails', requireRole('admin'), (req, res) => {
+  res.json(emails.automationStatus());
+});
+
+// "Send due emails now" — runs the same sweep the server runs on its own
+// (review requests the day after a session, book-again nudges 3 days after).
+router.post('/admin/emails/run', requireRole('admin'), (req, res) => {
+  res.json({ ok: true, sent: emails.runEmailAutomation() });
 });
 
 // Read-only view of any coach's calendar for the admin overview.
@@ -1381,7 +1402,7 @@ router.post('/admin/bookings/:id/status', requireRole('admin'), (req, res) => {
 router.get('/admin/crm', requireRole('admin'), (req, res) => {
   autoCompleteBookings();
   const customers = db.prepare(`
-    SELECT u.id, u.name, u.email, substr(u.created_at, 1, 10) AS signed_up,
+    SELECT u.id, u.name, u.email, u.phone, substr(u.created_at, 1, 10) AS signed_up,
       COUNT(b.id) AS bookings,
       SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END) AS completed,
       SUM(CASE WHEN b.status = 'confirmed' THEN 1 ELSE 0 END) AS upcoming,

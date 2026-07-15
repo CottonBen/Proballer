@@ -22,7 +22,8 @@
   </header>
 
   <main>
-    <!-- Hero: rotating coach spotlight, changes every 5 seconds -->
+    <!-- Hero: rotating coach spotlight, changes every 10 seconds (a clicked
+         spotlight stays until another one is clicked) -->
     <section class="hero">
       <div class="wrap">
         <div class="carousel" id="carousel" aria-live="polite"></div>
@@ -54,8 +55,8 @@
             valmentaja ja jokin hänen kalenteriinsa avaamistaan ajoista. Treenejä on tarjolla klo 8–20 joka päivä.</p></div>
           <div class="card"><h3 data-i18n="landing.how.step2.title">2 · Räätälöi treeni</h3><p class="muted" data-i18n="landing.how.step2.body">Kerro
             pelipaikkasi — maalivahti, puolustaja, keskikenttäpelaaja tai hyökkääjä — ja valitse kehityskohde viimeistelystä Game IQ:hun.</p></div>
-          <div class="card"><h3 data-i18n="landing.how.step3.title">3 · Vahvista ja treenaa</h3><p class="muted" data-i18n="landing.how.step3.body">Vahvista
-            varaus, niin lasku saapuu sähköpostiisi. Sen jälkeen jäljellä ovat vain sinä, valmentaja ja kenttä.</p></div>
+          <div class="card"><h3 data-i18n="landing.how.step3.title">3 · Vahvista ja treenaa</h3><p class="muted" data-i18n="landing.how.step3.body">Maksa
+            varaus turvallisesti kortilla — vahvistus ja kuitti tulevat sähköpostiisi. Sen jälkeen jäljellä ovat vain sinä, valmentaja ja kenttä.</p></div>
         </div>
       </div>
     </section>
@@ -71,6 +72,19 @@
       <div><span data-i18n="landing.footer.tagline">Henkilökohtaista valmennusta nuorille jalkapalloilijoille.</span></div>
     </div>
   </footer>
+
+  <!-- Entry gate: logged-out visitors sign in / create an account first.
+       Content is rendered by landing.js (initGate). -->
+  <div class="gate" id="gate" hidden>
+    <div class="gate-card">
+      <img src="/assets/logo-full.svg" alt="Proballers Coaching" style="width:200px;display:block;margin:0 auto 10px">
+      <h2 style="text-align:center;margin:0 0 6px" data-i18n="gate.title">Tervetuloa Proballers Coachingiin</h2>
+      <p class="muted small" style="text-align:center;margin:0 0 16px" data-i18n="gate.intro">Kirjaudu sisään
+        tai luo ilmainen tili, niin pääset tutustumaan valmentajiin ja varaamaan treenejä.</p>
+      <div id="gate-body"></div>
+      <div id="gate-lang" style="display:flex;justify-content:center;margin-top:14px"></div>
+    </div>
+  </div>
 
   <!-- Booking wizard modal -->
   <div class="modal-backdrop" id="wizard-backdrop">

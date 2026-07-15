@@ -277,8 +277,25 @@ a { color: var(--lime); text-decoration: none; }
 .dot .fill {
   position: absolute; inset: 0; width: 0%; background: var(--lime); border-radius: 99px;
 }
-.dot.active .fill { animation: dotfill 5s linear forwards; }
+.dot.active .fill { animation: dotfill 10s linear forwards; }
 @keyframes dotfill { from { width: 0; } to { width: 100%; } }
+/* A clicked spotlight is pinned: no countdown fill, the chosen dot just stays lit. */
+.dots.pinned .dot.active .fill { animation: none; width: 100%; }
+
+/* ---------- entry gate (landing page: sign in / create account first) ---------- */
+.gate {
+  position: fixed; inset: 0; z-index: 200; background: rgba(4, 16, 12, 0.78);
+  backdrop-filter: blur(16px); -webkit-backdrop-filter: blur(16px);
+  display: flex; align-items: flex-start; justify-content: center;
+  overflow-y: auto; padding: 6vh 16px 6vh;
+}
+.gate[hidden] { display: none; }
+.gate-card {
+  background: var(--card-solid); border: 1px solid var(--line); border-radius: 20px;
+  width: 100%; max-width: 440px; padding: 30px 28px;
+  animation: slideIn 0.3s ease both;
+}
+body.gated { overflow: hidden; }
 
 /* ---------- coach grid ---------- */
 .section { padding: 88px 0; }
@@ -362,7 +379,7 @@ a { color: var(--lime); text-decoration: none; }
 /* ---------- forms ---------- */
 label.f { display: block; margin-bottom: 14px; }
 label.f span { display: block; font-size: 0.85rem; color: var(--muted); margin-bottom: 6px; }
-input[type="text"], input[type="email"], input[type="password"], select, textarea, .input {
+input[type="text"], input[type="email"], input[type="password"], input[type="tel"], select, textarea, .input {
   width: 100%; padding: 12px 14px; border-radius: 12px; font: inherit;
   background: rgba(255,255,255,0.05); color: var(--text); border: 1px solid var(--line);
 }

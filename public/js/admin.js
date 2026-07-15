@@ -50,11 +50,57 @@ const WIN_LABEL = {
       renderCRM();
     }));
 
+  // "Send due emails now": runs the same sweep the server runs automatically.
+  document.getElementById('emails-run').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    btn.disabled = true;
+    try {
+      const r = await API.post('/admin/emails/run', {});
+      toast(t('admin.emails.run.done', { review: r.sent.review, rebook: r.sent.rebook }));
+      await loadEmails();
+    } catch (err) {
+      toast(I18N.server(err.message), true);
+    }
+    btn.disabled = false;
+  });
+
   CONFIG = await API.get('/config');
   await refresh();
   await loadBookings('');
   await loadCRM();
+  await loadEmails();
 })().catch((e) => toast(I18N.server(e.message), true));
+
+// --- email communications: automation status + send log ----------------------
+async function loadEmails() {
+  const data = await API.get('/admin/emails');
+  const typeLabel = (ty) => {
+    const key = 'admin.emails.type.' + ty;
+    return I18N_DICT[key] ? t(key) : ty;
+  };
+  const counts = Object.entries(data.counts || {})
+    .map(([ty, c]) => `${typeLabel(ty)} ${c.ok}/${c.total}`).join(' · ');
+  document.getElementById('emails-status').textContent =
+    (data.lastRun
+      ? t('admin.emails.lastrun', { time: new Date(data.lastRun).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB') })
+      : t('admin.emails.norun'))
+    + (counts ? ` · ${t('admin.emails.counts')}: ${counts}` : '');
+
+  const recent = data.recent || [];
+  document.getElementById('email-log-empty').hidden = recent.length > 0;
+  document.getElementById('email-log').innerHTML = recent.length ? `
+    <tr><th>${t('admin.emails.log.time')}</th><th>${t('admin.emails.log.type')}</th><th>${t('admin.emails.log.to')}</th>
+      <th>${t('admin.emails.log.subject')}</th><th>${t('admin.emails.log.status')}</th></tr>` +
+    recent.map((r) => `
+      <tr>
+        <td class="muted">${esc(new Date(r.created_at).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB'))}</td>
+        <td>${esc(typeLabel(r.type))}${r.booking_code ? ` <span class="muted small">${esc(r.booking_code)}</span>` : ''}</td>
+        <td>${esc(r.to_email)}</td>
+        <td class="muted">${esc(r.subject)}</td>
+        <td>${r.ok ? '<span style="color:var(--lime)">✓</span>'
+          : `<span style="color:#ff6b6b" title="${esc(r.error || '')}">✗ ${esc((r.error || '').slice(0, 40))}</span>`}</td>
+      </tr>`).join('') : '';
+}
 
 async function refresh() {
   A = await API.get('/admin/analytics');
@@ -622,6 +668,21 @@ function renderCRM() {
       toast(I18N.server(e.message), true);
     }
   }));
+
+  // Leads: every customer who left a phone number at signup.
+  const leads = CRM.customers.filter((c) => c.phone);
+  document.getElementById('crm-leads-empty').hidden = leads.length > 0;
+  document.getElementById('crm-leads').innerHTML = leads.length ? `
+    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.leads.phone')}</th><th>${t('admin.crm.table.email')}</th>
+      <th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th></tr>` +
+    leads.map((c) => `
+      <tr>
+        <td><strong>${esc(c.name)}</strong></td>
+        <td><a href="tel:${esc(c.phone.replace(/[^0-9+]/g, ''))}">${esc(c.phone)}</a></td>
+        <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
+        <td class="muted">${esc(c.signed_up)}</td>
+        <td>${c.bookings}</td>
+      </tr>`).join('') : '';
 
   const today = A ? A.today : '';
   const rows = CRM.invoices.filter((i) => !INVOICE_FILTER || i.status === INVOICE_FILTER);

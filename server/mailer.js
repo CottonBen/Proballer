@@ -37,28 +37,55 @@ function recordError(err) {
   status.lastErrorAt = new Date().toISOString();
 }
 
-const fromAddress = () =>
-  process.env.SMTP_FROM || `${config.siteName} <${config.invoice.replyEmail}>`;
+// The sender line customers see. SMTP_FROM may be a bare address
+// (info@example.com) or a full "Name <address>"; a bare address gets the site
+// name as its display name so inboxes show "Proballers Coaching" either way.
+// NOTE for Gmail SMTP: Gmail only honors a From that is the login account or
+// one of its verified "Send mail as" aliases — anything else is rewritten
+// back to the login address.
+const fromAddress = () => {
+  const raw = process.env.SMTP_FROM || config.invoice.replyEmail;
+  return raw.includes('<') ? raw : `${config.siteName} <${raw}>`;
+};
 
-async function sendMail({ to, subject, html }) {
+// Every attempt lands in email_log so the admin dashboard can show exactly
+// what was (not) sent and why. `log` = { type, userId, bookingCode }, all
+// optional — plain calls are recorded as type 'other'.
+function recordLog(log, to, subject, ok, error) {
+  try {
+    const { db, nowISO } = require('./db');
+    db.prepare(`INSERT INTO email_log (type, user_id, booking_code, to_email, subject, ok, error, created_at)
+      VALUES (?,?,?,?,?,?,?,?)`)
+      .run((log && log.type) || 'other', (log && log.userId) ?? null, (log && log.bookingCode) ?? null,
+        to, subject, ok ? 1 : 0, error || null, nowISO());
+  } catch (e) {
+    console.error('[mailer] email_log write failed:', e.message);
+  }
+}
+
+async function sendMail({ to, subject, html, log }) {
   if (!transport) {
     console.log(`[mailer] SMTP not configured — "${subject}" for ${to} not emailed (see data/outbox/)`);
+    recordLog(log, to, subject, false, 'smtp-not-configured');
     return { delivered: false, reason: 'smtp-not-configured' };
   }
   try {
     await transport.sendMail({ from: fromAddress(), to, subject, html });
   } catch (err) {
     recordError(err);
+    recordLog(log, to, subject, false, String(err.message || err).slice(0, 300));
     throw err;
   }
   status.lastSentAt = new Date().toISOString();
+  recordLog(log, to, subject, true, null);
   console.log(`[mailer] "${subject}" emailed to ${to}`);
   return { delivered: true };
 }
 
-function sendInvoiceEmail({ to, number, html, lang }) {
+function sendInvoiceEmail({ to, number, html, lang, log }) {
   const { tr } = require('./i18n');
-  return sendMail({ to, subject: tr(lang, 'email.invoiceSubject', { siteName: config.siteName, number }), html });
+  return sendMail({ to, subject: tr(lang, 'email.invoiceSubject', { siteName: config.siteName, number }),
+    html, log: { type: 'invoice', ...log } });
 }
 
 // Admin "Send test email" button. Returns rather than throws, so the exact
@@ -71,6 +98,7 @@ async function sendTestEmail(to) {
       subject: `${config.siteName} — test email`,
       html: `<p>This is a test email from ${config.siteName}.</p>
 <p>If you can read this, email delivery works. Sent ${new Date().toISOString()} from ${process.env.SMTP_HOST}.</p>`,
+      log: { type: 'test' },
     });
     return { delivered: true };
   } catch (err) {

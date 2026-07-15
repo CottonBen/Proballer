@@ -20,6 +20,10 @@ module.exports = {
   siteName: 'Proballers Coaching',
   tagline: 'Pro-level 1-on-1 coaching for young footballers',
 
+  // Public address of the site, used for links inside emails (the scheduled
+  // review/rebook emails have no browser request to take an origin from).
+  siteUrl: (process.env.SITE_URL || 'https://proballerscoaching.com').replace(/\/+$/, ''),
+
   // Europe/Helsinki drives what "today", "past session" and slot times mean,
   // regardless of which country the server is deployed in.
   timezone: 'Europe/Helsinki',

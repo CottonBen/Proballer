@@ -167,6 +167,20 @@ CREATE TABLE IF NOT EXISTS meta (
   value TEXT NOT NULL
 );
 
+-- Every customer email the app sends (transactional + scheduled), so the
+-- admin dashboard can show what went out and what failed. See server/emails.js.
+CREATE TABLE IF NOT EXISTS email_log (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  type TEXT NOT NULL,          -- welcome|booking|pitch|review|rebook|invoice|receipt|test
+  user_id INTEGER,
+  booking_code TEXT,
+  to_email TEXT NOT NULL,
+  subject TEXT NOT NULL,
+  ok INTEGER NOT NULL DEFAULT 0,
+  error TEXT,
+  created_at TEXT NOT NULL
+);
+
 -- Admin curation of the coach app's pitch list (on top of the LIPAS registry):
 -- own venues added by hand, and LIPAS pitches hidden from the list. Custom
 -- pitches are exposed with NEGATIVE ids so they can never collide with LIPAS
@@ -240,6 +254,12 @@ for (const stmt of [
   // are announced when the payment confirms (server/notify.js); the DEFAULT 1
   // makes every pre-existing row count as already announced.
   'ALTER TABLE bookings ADD COLUMN coach_notified INTEGER NOT NULL DEFAULT 1',
+  // Optional contact number, asked at signup (leads list on the admin CRM).
+  "ALTER TABLE users ADD COLUMN phone TEXT NOT NULL DEFAULT ''",
+  // One-shot flags for the scheduled follow-up emails (server/emails.js):
+  // review request the day after the session, book-again nudge 3 days after.
+  'ALTER TABLE bookings ADD COLUMN review_email_sent INTEGER NOT NULL DEFAULT 0',
+  'ALTER TABLE bookings ADD COLUMN rebook_email_sent INTEGER NOT NULL DEFAULT 0',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

@@ -87,6 +87,18 @@
         ne ilmestyvät tänne heti, kun joku rekisteröityy sivustolla.</p>
     </div>
     <div class="dash-title">
+      <div>
+        <h3 style="margin:0" data-i18n="admin.crm.leads.heading">Liidit — puhelinnumerot</h3>
+        <p class="muted small" style="margin:0" data-i18n="admin.crm.leads.sub">Asiakkaat, jotka antoivat
+          puhelinnumeronsa tiliä luodessaan.</p>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="crm-leads"></table>
+      <p class="muted small" id="crm-leads-empty" hidden style="margin:12px 0 4px" data-i18n="admin.crm.leads.empty">Ei vielä
+        puhelinnumeroita — numero kysytään (vapaaehtoisena) tilin luonnin yhteydessä.</p>
+    </div>
+    <div class="dash-title">
       <h3 style="margin:0" data-i18n="admin.invoices.heading">Laskut</h3>
       <div class="window-pills" id="invoice-filter">
         <button data-f="" class="on" data-i18n="admin.filter.all">Kaikki</button>
@@ -102,6 +114,23 @@
     <div class="card" style="overflow-x:auto">
       <table class="data" id="crm-reviews"></table>
       <p class="muted small" id="crm-reviews-empty" hidden style="margin:12px 0 4px" data-i18n="admin.reviews.empty">Ei vielä arvosteluja.</p>
+    </div>
+
+    <!-- email communications: automated customer emails + log -->
+    <div class="dash-title">
+      <div>
+        <h2 style="font-size:1.8rem" data-i18n="admin.emails.heading">Sähköpostiviestintä</h2>
+        <p class="muted small" style="margin:0" data-i18n="admin.emails.sub">Tervetuloviestit, varaus- ja
+          kenttävahvistukset sekä arvostelu- ja uusintapyynnöt lähtevät automaattisesti. Painike lähettää
+          erääntyneet viestit heti.</p>
+      </div>
+      <button class="btn btn-primary btn-sm" id="emails-run" data-i18n="admin.emails.run">Lähetä erääntyneet nyt</button>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <p class="small muted" id="emails-status" style="margin:0 0 10px"></p>
+      <table class="data" id="email-log"></table>
+      <p class="muted small" id="email-log-empty" hidden style="margin:12px 0 4px" data-i18n="admin.emails.empty">Ei vielä
+        lähetettyjä sähköposteja.</p>
     </div>
 
     <!-- data & export -->

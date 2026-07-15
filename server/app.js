@@ -138,6 +138,17 @@ if (sheets.configured()) {
   setInterval(() => sheets.syncAll().catch(e => console.error('[sheets]', e.message)), 3600000);
 }
 
+// Scheduled customer emails (review request the day after a session, book-again
+// nudge 3 days after — both at 12:00 Helsinki). Checked every 5 minutes; each
+// email is one-shot flagged, so the sweep is idempotent. The admin dashboard
+// has a "send due emails now" button that runs the same sweep on demand.
+const runEmails = () => {
+  try { require('./emails').runEmailAutomation(); }
+  catch (e) { console.error('[emails]', e.message); }
+};
+setTimeout(runEmails, 15000); // shortly after boot (catches up if the host slept over noon)
+setInterval(runEmails, 5 * 60000);
+
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => {
   console.log(`${config.siteName} running on http://localhost:${PORT}`);

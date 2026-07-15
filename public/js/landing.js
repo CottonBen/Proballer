@@ -1,4 +1,5 @@
-// Landing page: hero carousel (rotates every 5 s) + coaches grid.
+// Landing page: entry gate (sign in / create account first), hero carousel
+// (rotates every 10 s; a clicked spotlight stays pinned) + coaches grid.
 'use strict';
 
 let SITE = null;      // /api/config payload
@@ -73,6 +74,7 @@ function buildSlides() {
   let current = 0;
   let timer = null;
   let photoTimer = null;
+  let pinned = false; // a hand-picked spotlight stays until another dot is clicked
 
   function rotatePhotos(slideEl) {
     clearInterval(photoTimer);
@@ -97,12 +99,19 @@ function buildSlides() {
     void dot.offsetWidth;
     dot.classList.add('active');
     rotatePhotos(els[current]);
-    if (manual) restart();
+    // Clicking a dot pins that spotlight: rotation stops for good, and the
+    // dots stop showing the countdown fill (CSS .dots.pinned).
+    if (manual) {
+      pinned = true;
+      dots.classList.add('pinned');
+      clearInterval(timer);
+    }
   }
 
   function restart() {
+    if (pinned) return;
     clearInterval(timer);
-    timer = setInterval(() => show(current + 1), 5000); // design changes every 5 seconds
+    timer = setInterval(() => show(current + 1), 10000); // spotlight rotates every 10 seconds
   }
 
   carousel.addEventListener('mouseenter', () => clearInterval(timer));
@@ -174,10 +183,80 @@ async function toggleReviews(coachId, btn) {
   btn.textContent = t('landing.hidereviews');
 }
 
+// --- entry gate ---------------------------------------------------------------
+// The first thing a visitor does is sign in or create an account (the owner's
+// call: accounts and email contact first). The gate covers the page until the
+// visitor is logged in; coaches are bounced to their own dashboard.
+function initGate(user) {
+  const gate = document.getElementById('gate');
+  if (!gate) return;
+  if (user) { gate.hidden = true; return; }
+  gate.hidden = false;
+  document.body.classList.add('gated');
+  const langBox = document.getElementById('gate-lang');
+  langBox.innerHTML = '';
+  langBox.appendChild(langToggleEl());
+
+  const bodyEl = document.getElementById('gate-body');
+  let mode = 'signup'; // most first-time visitors need an account
+
+  function render() {
+    bodyEl.innerHTML = `
+      <div style="display:flex;gap:8px;margin-bottom:14px;justify-content:center">
+        <button class="btn btn-sm ${mode === 'signup' ? 'btn-primary' : 'btn-ghost'}" data-gate-tab="signup">${t('login.action.signup')}</button>
+        <button class="btn btn-sm ${mode === 'login' ? 'btn-primary' : 'btn-ghost'}" data-gate-tab="login">${t('login.action.login')}</button>
+      </div>
+      <form id="gate-form">
+        ${mode === 'signup' ? `
+        <label class="f"><span>${t('login.form.name')}</span>
+          <input type="text" name="name" required autocomplete="name"></label>` : ''}
+        <label class="f"><span>${t('common.form.email')}</span>
+          <input type="email" name="email" required autocomplete="email"></label>
+        ${mode === 'signup' ? `
+        <label class="f"><span>${t('login.form.phone')}</span>
+          <input type="tel" name="phone" autocomplete="tel" placeholder="+358 40 123 4567"></label>` : ''}
+        <label class="f"><span>${t('common.form.password')}</span>
+          <input type="password" name="password" required minlength="8"
+            autocomplete="${mode === 'signup' ? 'new-password' : 'current-password'}"></label>
+        <div class="form-error" id="gate-error"></div>
+        <button class="btn btn-primary" type="submit" style="width:100%">
+          ${mode === 'signup' ? t('login.action.signup') : t('login.action.login')}</button>
+      </form>`;
+    bodyEl.querySelectorAll('[data-gate-tab]').forEach((b) =>
+      b.addEventListener('click', () => { mode = b.dataset.gateTab; render(); }));
+    bodyEl.querySelector('#gate-form').addEventListener('submit', onSubmit);
+  }
+
+  async function onSubmit(e) {
+    e.preventDefault();
+    const fd = new FormData(e.currentTarget);
+    const err = bodyEl.querySelector('#gate-error');
+    err.textContent = '';
+    try {
+      const payload = { email: fd.get('email'), password: fd.get('password'), lang: I18N.lang };
+      if (mode === 'signup') {
+        payload.name = fd.get('name');
+        payload.phone = String(fd.get('phone') || '').trim();
+      }
+      const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
+      // Coaches have their own app; customers and admins stay to browse/book.
+      if (res.user.role === 'coach') { location.href = DASH_FOR_ROLE.coach; return; }
+      gate.hidden = true;
+      document.body.classList.remove('gated');
+      initHeaderAuth();
+    } catch (ex) {
+      err.textContent = ex.message;
+    }
+  }
+
+  render();
+}
+
 // --- init -------------------------------------------------------------------
 (async function init() {
-  initHeaderAuth();
+  const userPromise = initHeaderAuth();
   [SITE, COACHES] = await Promise.all([API.get('/config'), API.get('/coaches')]);
+  initGate(await userPromise);
 
   const banner = document.getElementById('sale-banner');
   if (SITE.pricing.salePercent > 0) {

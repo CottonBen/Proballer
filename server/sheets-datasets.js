@@ -27,7 +27,7 @@ module.exports = function datasets() {
         SUM(CASE WHEN type='booking_started' THEN 1 ELSE 0 END) AS booking_started,
         SUM(CASE WHEN type='booking_completed' THEN 1 ELSE 0 END) AS booking_completed
       FROM events WHERE type LIKE 'booking_%' GROUP BY day ORDER BY day DESC`),
-    Customers: q(`SELECT name, email, created_at,
+    Customers: q(`SELECT name, email, phone, created_at,
         (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id) AS bookings
       FROM users u WHERE role='customer' ORDER BY created_at DESC`),
     Reviews: q(`SELECT c.name AS coach, r.author_name AS reviewer, r.rating, r.body,

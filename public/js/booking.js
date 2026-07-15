@@ -324,6 +324,8 @@ function renderAuthPanel() {
           <input type="text" name="name" autocomplete="name"></label>
         <label class="f"><span>${t('common.form.email')}</span>
           <input type="email" name="email" required autocomplete="email"></label>
+        <label class="f" id="f-phone" hidden><span>${t('login.form.phone')}</span>
+          <input type="tel" name="phone" autocomplete="tel" placeholder="+358 40 123 4567"></label>
         <label class="f"><span>${t('common.form.password')}</span>
           <input type="password" name="password" required autocomplete="current-password"></label>
         <div class="form-error" id="auth-error"></div>
@@ -340,6 +342,7 @@ function renderAuthPanel() {
       x.classList.toggle('btn-ghost', x !== b);
     });
     panel.querySelector('#f-name').hidden = mode === 'login';
+    panel.querySelector('#f-phone').hidden = mode === 'login';
     panel.querySelector('button[type="submit"]').textContent =
       mode === 'login' ? t('booking.auth.submit_login') : t('booking.auth.submit_signup');
   }));
@@ -352,7 +355,10 @@ function renderAuthPanel() {
     try {
       // lang: invoices + emails follow the language the customer uses the site in
       const payload = { email: fd.get('email'), password: fd.get('password'), lang: I18N.lang };
-      if (mode === 'signup') payload.name = fd.get('name');
+      if (mode === 'signup') {
+        payload.name = fd.get('name');
+        payload.phone = String(fd.get('phone') || '').trim();
+      }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       if (res.user.role !== 'customer' && res.user.role !== 'admin') {
         err.textContent = t('booking.auth.staff_error');
@@ -368,25 +374,18 @@ function renderAuthPanel() {
 
 // --- success ----------------------------------------------------------------
 function renderSuccess({ booking, invoice, payUrl }) {
-  // Payment is due AT booking: brief confirmation, then straight to Stripe.
-  // The slot is held only until the pay_by deadline — the note says when.
+  // Payment is due AT booking: go STRAIGHT to Stripe — no interim "success"
+  // screen that could read as "already confirmed". The minimal interstitial
+  // below only shows if the browser is slow to navigate (its link goes to the
+  // same payment page).
   if (payUrl) {
-    const holdUntil = invoice.payBy
-      ? new Date(invoice.payBy).toLocaleTimeString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
-          { hour: '2-digit', minute: '2-digit' })
-      : '';
     body().innerHTML = `
       <div style="text-align:center;padding:26px 0">
-        <div style="font-size:3.2rem">⚽</div>
-        <h2>${t('booking.success.pay_title')}</h2>
-        <p class="muted">${esc(booking.coach)} · ${esc(fmtDate(booking.date))}
-          ${fmtHourRange(booking.hour)} · ${eur(invoice.amountCents)}</p>
-        <p class="small muted">${t('booking.success.redirecting')}</p>
+        <div style="font-size:3.2rem">💳</div>
+        <p class="muted">${t('booking.success.redirecting')}</p>
         <a class="btn btn-primary" href="${esc(payUrl)}" style="margin-top:8px">💳 ${t('booking.success.paybtn')}</a>
-        ${holdUntil ? `<p class="small muted" style="margin-top:14px">${t('booking.success.pay_hold',
-          { time: esc(holdUntil), myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>` : ''}
       </div>`;
-    setTimeout(() => { location.href = payUrl; }, 1500);
+    location.href = payUrl;
     return;
   }
   body().innerHTML = `

@@ -117,6 +117,20 @@ SMTP_USER=... SMTP_PASS=... SMTP_FROM="Proballers Coaching <you@example.com>" np
 
 Until then, every invoice is still generated and viewable in the app (and in `data/outbox/`).
 
+**Customer lifecycle emails** are automatic once SMTP works: a welcome email at signup,
+a booking confirmation when the payment lands, a pitch confirmation when the coach picks
+the field, a review request the day after each session (12:00), and a book-again nudge
+three days after (12:00). The admin dashboard's *Email communications* panel shows the
+send log and has a *Send due emails now* button.
+
+**Changing the sender address**: set the `SMTP_FROM` environment variable (on Render:
+Environment tab), e.g. `SMTP_FROM=info@proballerscoaching.com` or with a display name
+`SMTP_FROM=Proballers Coaching <info@proballerscoaching.com>`. Note for Gmail SMTP:
+Gmail only honors a From address that is the logged-in account or one of its verified
+aliases — add the address first in Gmail → Settings → Accounts → *Send mail as*,
+otherwise Gmail silently rewrites the sender back to the login address. `SITE_URL`
+(default `https://proballerscoaching.com`) controls the links inside the emails.
+
 ## Configuration
 
 Business rules live in [config.js](config.js): prices, the sale percentage, training

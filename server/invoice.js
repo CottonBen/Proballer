@@ -123,6 +123,7 @@ async function sendReceiptForInvoice(invoiceNumber, method) {
     to: b.customer.email,
     subject: tr(b.lang, 'email.receiptSubject', { siteName: config.siteName, number: b.inv.number }),
     html,
+    log: { type: 'receipt', userId: b.booking.customer_id, bookingCode: b.booking.code },
   });
 }
 
@@ -166,9 +167,11 @@ function createInvoiceForBooking(bookingId) {
       to: customer.email,
       subject: tr(lang, 'email.receiptSubject', { siteName: config.siteName, number: inv.number }),
       html,
+      log: { type: 'receipt', userId: booking.customer_id, bookingCode: booking.code },
     }).catch(err => console.error('[mailer]', err.message));
   } else if (!config.stripe.secretKey) {
-    sendInvoiceEmail({ to: customer.email, number: inv.number, html, lang })
+    sendInvoiceEmail({ to: customer.email, number: inv.number, html, lang,
+      log: { userId: booking.customer_id, bookingCode: booking.code } })
       .catch(err => console.error('[mailer]', err.message));
   }
 

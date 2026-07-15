@@ -19,6 +19,7 @@ function safeNext(raw) {
       x.classList.toggle('btn-ghost', x !== b);
     });
     document.getElementById('f-name').hidden = mode === 'login';
+    document.getElementById('f-phone').hidden = mode === 'login';
     document.getElementById('submit-btn').textContent = mode === 'login' ? t('login.action.login') : t('login.action.signup');
   }));
 
@@ -30,7 +31,10 @@ function safeNext(raw) {
     try {
       // lang: invoices + emails follow the language the customer uses the site in
       const payload = { email: fd.get('email'), password: fd.get('password'), lang: I18N.lang };
-      if (mode === 'signup') payload.name = fd.get('name');
+      if (mode === 'signup') {
+        payload.name = fd.get('name');
+        payload.phone = String(fd.get('phone') || '').trim();
+      }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       location.href = next || DASH_FOR_ROLE[res.user.role] || '/';
     } catch (ex) {
