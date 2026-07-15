@@ -679,6 +679,7 @@ const I18N_DICT = {
   "admin.emails.type.pitch": { fi: "Kenttävahvistus", en: "Pitch confirmation" },
   "admin.emails.type.review": { fi: "Arvostelupyyntö", en: "Review request" },
   "admin.emails.type.rebook": { fi: "Uusintapyyntö", en: "Book-again nudge" },
+  "admin.emails.type.release": { fi: "Varaus peruuntui (maksamatta)", en: "Booking released (unpaid)" },
   "admin.emails.type.invoice": { fi: "Lasku", en: "Invoice" },
   "admin.emails.type.receipt": { fi: "Kuitti", en: "Receipt" },
   "admin.emails.type.test": { fi: "Testiviesti", en: "Test email" },

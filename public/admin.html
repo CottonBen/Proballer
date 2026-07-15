@@ -100,18 +100,9 @@
       <p class="muted small" id="crm-leads-empty" hidden style="margin:12px 0 4px" data-i18n="admin.crm.leads.empty">Ei vielä
         puhelinnumeroita — numero kysytään (vapaaehtoisena) tilin luonnin yhteydessä.</p>
     </div>
-    <div class="dash-title">
-      <h3 style="margin:0" data-i18n="admin.invoices.heading">Laskut</h3>
-      <div class="window-pills" id="invoice-filter">
-        <button data-f="" class="on" data-i18n="admin.filter.all">Kaikki</button>
-        <button data-f="sent" data-i18n="admin.invoices.filter.unpaid">Maksamatta</button>
-        <button data-f="paid" data-i18n="admin.invoices.filter.paid">Maksetut</button>
-        <button data-f="void" data-i18n="admin.invoices.filter.void">Mitätöidyt</button>
-      </div>
-    </div>
-    <div class="card" style="overflow-x:auto">
-      <table class="data" id="crm-invoices"></table>
-    </div>
+    <!-- (The old invoice ledger lived here — removed: payment happens at
+         booking, so there is nothing to chase. Receipts stay linked on the
+         booking rows above.) -->
     <div class="dash-title"><h3 style="margin:0" data-i18n="admin.reviews.heading">Valmentajien arvostelut</h3></div>
     <div class="card" style="overflow-x:auto">
       <table class="data" id="crm-reviews"></table>

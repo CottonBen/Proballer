@@ -43,13 +43,6 @@ const WIN_LABEL = {
   document.getElementById('sheets-sync').addEventListener('click', syncSheets);
   document.getElementById('remove-demo').addEventListener('click', removeDemo);
 
-  document.querySelectorAll('#invoice-filter button').forEach((b) =>
-    b.addEventListener('click', () => {
-      document.querySelectorAll('#invoice-filter button').forEach((x) => x.classList.toggle('on', x === b));
-      INVOICE_FILTER = b.dataset.f;
-      renderCRM();
-    }));
-
   // "Send due emails now": runs the same sweep the server runs automatically.
   document.getElementById('emails-run').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -628,9 +621,8 @@ async function loadBookings(status) {
   }));
 }
 
-// --- CRM: customers + invoices -------------------------------------------------
+// --- CRM: customers + leads + reviews -------------------------------------------
 let CRM = null;
-let INVOICE_FILTER = '';
 
 async function loadCRM() {
   CRM = await API.get('/admin/crm');
@@ -727,33 +719,8 @@ function renderCRM() {
     }
   }));
 
-  const today = A ? A.today : '';
-  const rows = CRM.invoices.filter((i) => !INVOICE_FILTER || i.status === INVOICE_FILTER);
-  document.getElementById('crm-invoices').innerHTML = `
-    <tr><th>${t('mybookings.table.invoice')}</th><th>${t('admin.table.customer')}</th><th>${t('mybookings.table.coach')}</th><th>${t('admin.crm.invoices.amount')}</th>
-      <th>${t('admin.crm.invoices.issued')}</th><th>${t('admin.crm.invoices.due')}</th><th>${t('mybookings.table.status')}</th><th></th></tr>` +
-    rows.map((i) => {
-      const overdue = i.status === 'sent' && today && i.due_date < today;
-      return `
-      <tr>
-        <td><a href="/api/invoices/${encodeURIComponent(i.number)}" target="_blank">${esc(i.number)}</a></td>
-        <td title="${esc(i.customer_email)}">${esc(i.customer)}</td>
-        <td>${esc(i.coach)}</td>
-        <td>${eur(i.amount_cents)}</td>
-        <td class="muted">${esc(i.issued)}</td>
-        <td class="${overdue ? '' : 'muted'}" ${overdue ? 'style="color:var(--danger)"' : ''}>
-          ${esc(i.due_date)}${overdue ? ' ⚠' : ''}</td>
-        <td><span class="status-tag ${i.status === 'paid' ? 'status-completed' : i.status === 'void' ? 'status-cancelled' : 'status-confirmed'}">${esc(t('admin.invoicestatus.' + i.status))}</span></td>
-        <td>${i.status === 'sent'
-          ? `<button class="btn btn-ghost btn-sm" data-crm-paid="${esc(i.number)}">${t('admin.invoices.markpaid')}</button>` : ''}</td>
-      </tr>`;
-    }).join('');
-
-  document.querySelectorAll('[data-crm-paid]').forEach((btn) => btn.addEventListener('click', async () => {
-    await API.post(`/admin/invoices/${encodeURIComponent(btn.dataset.crmPaid)}/paid`, {});
-    toast(t('admin.invoices.paid.toast'));
-    await Promise.all([refresh(), loadCRM(), loadBookings('')]);
-  }));
+  // (The invoice ledger table was removed: payment happens at booking, so the
+  // ledger showed nothing actionable. Receipts stay linked on booking rows.)
 
   const reviews = CRM.reviews || [];
   document.getElementById('crm-reviews-empty').hidden = reviews.length > 0;

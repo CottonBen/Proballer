@@ -370,6 +370,10 @@ function expireUnpaidBookings() {
     db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
       .run(s.customer_id, 'Your booking was cancelled because the payment was not completed. '
         + 'The slot is open again — you are welcome to book a new time.', nowISO());
+    // Email too: an interrupted checkout must never be mistaken for a
+    // confirmed session. (Lazy require — emails.js itself requires this file.)
+    try { require('./emails').sendBookingReleasedEmail(s.id); }
+    catch (e) { console.error('[emails] release:', e.message); }
     // Coaches only hear about announced bookings — one that was never sent to
     // them (unpaid card booking) also vanishes silently.
     if (s.coach_notified) {

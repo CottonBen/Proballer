@@ -124,6 +124,23 @@ function sendPitchConfirmedEmail(bookingId, pitch) {
   deliver({ type: 'pitch', userId: customer.id, bookingCode: b.code, to: customer.email, subject, html });
 }
 
+// The unpaid-booking sweep cancelled this booking (payment never completed):
+// tell the customer plainly that nothing is booked and nothing was charged,
+// so an interrupted checkout can't be mistaken for a confirmed session.
+function sendBookingReleasedEmail(bookingId) {
+  const x = bookingBundle(bookingId);
+  if (!x) return;
+  const { b, customer, coach, lang } = x;
+  const subject = tr(lang, 'email.release.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.release.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.release.body', {
+       code: b.code, date: localDate(lang, b.date), hours: hourRange(lang, b.hour), coach: coach.name }))}</p>
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.release.note'))}</p>
+     ${button(`${config.siteUrl}/#coaches`, tr(lang, 'email.release.cta'))}`);
+  deliver({ type: 'release', userId: customer.id, bookingCode: b.code, to: customer.email, subject, html });
+}
+
 // ---------------------------------------------------------------------------
 // Scheduled follow-ups
 // ---------------------------------------------------------------------------
@@ -233,6 +250,7 @@ module.exports = {
   sendWelcomeEmail,
   sendBookingConfirmedEmail,
   sendPitchConfirmedEmail,
+  sendBookingReleasedEmail,
   runEmailAutomation,
   automationStatus,
 };

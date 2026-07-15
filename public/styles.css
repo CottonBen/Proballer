@@ -509,13 +509,27 @@ table.data tr:hover td { background: rgba(255,255,255,0.025); }
 #toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
 #toast.error { border-color: var(--danger); }
 
-/* ---------- contact + socials strip (landing) ---------- */
-.contact-strip {
-  display: flex; align-items: center; justify-content: space-between;
-  gap: 20px; flex-wrap: wrap;
+/* ---------- contact + socials strip (landing) ----------
+   Four big tiles in a 2x2 grid: socials on the top row (TikTok, Instagram),
+   phone and email below. Stacks to one column on narrow screens. */
+.contact-links {
+  display: grid; grid-template-columns: 1fr 1fr; gap: 12px; margin-top: 20px;
 }
-.contact-links { display: flex; gap: 10px; flex-wrap: wrap; }
-.contact-links .btn svg { width: 18px; height: 18px; flex-shrink: 0; }
+.contact-tile {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  padding: 22px 16px; border: 1px solid var(--line); border-radius: 14px;
+  background: rgba(255, 255, 255, 0.04); color: var(--text);
+  font-weight: 700; font-size: 1.12rem; text-decoration: none;
+  transition: border-color 0.2s, background 0.2s, transform 0.18s cubic-bezier(0.2, 0.7, 0.3, 1);
+  overflow-wrap: anywhere;
+}
+.contact-tile svg { width: 26px; height: 26px; flex-shrink: 0; }
+.contact-tile:hover { border-color: var(--text); background: rgba(255, 255, 255, 0.08); transform: translateY(-2px); }
+.contact-tile:active { transform: scale(0.985); }
+@media (max-width: 640px) {
+  .contact-links { grid-template-columns: 1fr; }
+  .contact-tile { font-size: 1rem; padding: 18px 14px; }
+}
 
 /* ---------- footer ---------- */
 footer { border-top: 1px solid var(--line); padding: 44px 0; margin-top: 60px; color: var(--muted); font-size: 0.9rem; }
