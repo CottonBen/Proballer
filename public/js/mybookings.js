@@ -32,15 +32,17 @@
 
   await loadReviewsSection();   // independent of the bookings table below
 
-  // Returning from Stripe Checkout: confirm the payment server-side.
+  // Returning from Stripe Checkout: confirm the payment server-side. A
+  // successful payment gets the full "booking successful" screen; the rarer
+  // outcomes (still pending / released before the money arrived) stay toasts.
   const params = new URLSearchParams(location.search);
   if (params.get('paid')) {
     try {
       const r = await API.post(`/invoices/${encodeURIComponent(params.get('paid'))}/refresh-payment`, {});
       // 'void' = the money arrived after the booking was released and it could
       // not be restored — be honest, a refund is on its way.
-      toast(r.status === 'paid' ? t('pay.received')
-        : r.status === 'void' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'void');
+      if (r.status === 'paid') showPaySuccess();
+      else toast(r.status === 'void' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'void');
     } catch { toast(t('pay.pending')); }
     history.replaceState(null, '', '/my-bookings');
   } else if (params.get('paycancel')) {
@@ -154,4 +156,23 @@ async function loadReviewsSection() {
       toast(I18N.server(err.message), true);
     }
   }));
+}
+
+// The "booking successful" screen shown when the customer lands back from a
+// completed Stripe payment. Full-screen (reuses the gate styling); the button
+// reveals the bookings list underneath.
+function showPaySuccess() {
+  const el = document.createElement('div');
+  el.className = 'gate';
+  el.innerHTML = `
+    <div class="gate-card" style="text-align:center">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
+        stroke-linejoin="round" aria-hidden="true" style="width:64px;height:64px;margin:6px auto 12px;display:block">
+        <circle cx="12" cy="12" r="10"/><path d="m8.5 12.5 2.5 2.5 5-6"/></svg>
+      <h2 style="margin:0 0 8px">${t('pay.success.title')}</h2>
+      <p class="muted" style="margin:0 0 22px">${t('pay.success.body')}</p>
+      <button class="btn btn-primary" style="font-size:1.05rem;padding:14px 32px">${t('pay.success.cta')}</button>
+    </div>`;
+  document.body.appendChild(el);
+  el.querySelector('button').addEventListener('click', () => el.remove());
 }

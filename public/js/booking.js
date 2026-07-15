@@ -242,6 +242,10 @@ async function renderReview() {
     ? I18N.server(W.site.payment.method).toLowerCase()
     : t('booking.review.payment_method_fallback');
 
+  // Card bookings are paid right now, so the main button says so.
+  const cardFlow = W.site.payment.stripeEnabled && !hasCredit && price - discount > 0;
+  const confirmLabel = cardFlow ? t('booking.review.start_payment') : t('booking.review.confirm_button');
+
   body().innerHTML = header(t(STEP_TITLE_KEYS[5])) + `
     <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.time_label')}</span>
@@ -270,7 +274,7 @@ async function renderReview() {
     <div class="wizard-nav">
       <button class="btn btn-ghost" data-nav="back">${t('booking.nav.back')}</button>
       <button class="btn btn-primary" id="confirm-btn" ${needsAuth ? 'disabled' : ''}>
-        ${t('booking.review.confirm_button')}</button>
+        ${confirmLabel}</button>
     </div>`;
 
   body().querySelector('[data-nav="back"]').addEventListener('click', () => {
@@ -287,7 +291,6 @@ async function renderReview() {
     // session, so show the payment screen IMMEDIATELY — the wait reads as
     // "moving to payment" instead of a frozen button, and the redirect fires
     // the instant the URL arrives.
-    const cardFlow = W.site.payment.stripeEnabled && !hasCredit && price - discount > 0;
     if (cardFlow) renderPayRedirect(null);
     try {
       const result = await API.post('/bookings', {
@@ -302,7 +305,7 @@ async function renderReview() {
       // The interstitial may have replaced the form — rebuild the review step
       // before showing the error on it.
       if (cardFlow) await renderReview();
-      else { btn.disabled = false; btn.textContent = t('booking.review.confirm_button'); }
+      else { btn.disabled = false; btn.textContent = confirmLabel; }
       body().querySelector('#confirm-error').textContent = err.message;
       if (err.status === 409) { // slot taken — refresh slots and go back to the picker
         const data = await API.get(`/coaches/${W.coach.id}/slots`).catch(() => null);
