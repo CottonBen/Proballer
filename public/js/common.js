@@ -118,11 +118,11 @@ function initPasswordToggles(root = document) {
     btn.type = 'button';
     btn.className = 'pw-toggle';
     btn.setAttribute('aria-label', t('common.password.show'));
-    btn.textContent = '👁';
+    btn.textContent = t('common.password.reveal');
     btn.addEventListener('click', () => {
       const show = input.type === 'password';
       input.type = show ? 'text' : 'password';
-      btn.textContent = show ? '🙈' : '👁';
+      btn.textContent = t(show ? 'common.password.conceal' : 'common.password.reveal');
       btn.setAttribute('aria-label', t(show ? 'common.password.hide' : 'common.password.show'));
       input.focus();
     });
