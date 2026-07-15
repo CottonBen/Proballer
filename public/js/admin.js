@@ -642,13 +642,14 @@ function renderCRM() {
   const ct = document.getElementById('crm-customers');
   document.getElementById('crm-empty').hidden = CRM.customers.length > 0;
   ct.innerHTML = CRM.customers.length ? `
-    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.table.email')}</th><th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th>
+    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.table.email')}</th><th>${t('admin.crm.leads.phone')}</th><th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th>
       <th>${t('admin.crm.table.dnc')}</th><th>${t('admin.crm.table.paid')}</th><th>${t('admin.crm.table.outstanding')}</th>
       <th>${t('admin.crm.table.credits')}</th><th>${t('admin.crm.table.lastsession')}</th><th></th></tr>` +
     CRM.customers.map((c) => `
       <tr>
         <td><strong>${esc(c.name)}</strong></td>
         <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
+        <td>${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^0-9+]/g, ''))}">${esc(c.phone)}</a>` : '<span class="muted">—</span>'}</td>
         <td>${esc(c.signed_up)}</td>
         <td><strong>${c.bookings}</strong></td>
         <td>${c.completed || 0} / ${c.upcoming || 0} / ${c.cancelled || 0}</td>
