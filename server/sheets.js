@@ -3,7 +3,7 @@
 // Google Cloud *service account*, the supported way to let an app write to a
 // sheet you own. Setup (≈2 minutes, see README "Connect Google Sheets"):
 //   1. Create a service account + JSON key in Google Cloud, enable Sheets API.
-//   2. Create a blank spreadsheet in the cottonbenjaminmik@gmail.com account
+//   2. Create a blank spreadsheet in the proballerscoaching@gmail.com account
 //      and share it (Editor) with the service account's email address.
 //   3. Run the server with:
 //        GOOGLE_SERVICE_ACCOUNT=/path/to/key.json  GOOGLE_SHEET_ID=<sheet id>

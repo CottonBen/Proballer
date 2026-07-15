@@ -68,7 +68,7 @@ module.exports = {
     numberPrefix: 'PBF',
     businessLine1: 'Proballers Coaching',
     businessLine2: 'Helsinki · Espoo · Vantaa',
-    replyEmail: 'cottonbenjaminmik@gmail.com',
+    replyEmail: 'proballerscoaching@gmail.com',
   },
 
   // The one and only payment method: bank transfer to the owner's account.

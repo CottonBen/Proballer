@@ -190,8 +190,34 @@ function migrate(db, nowISO) {
     db.exec("ALTER TABLE users ADD COLUMN lang TEXT NOT NULL DEFAULT 'fi'");
   }
 
-  // Kalle is both an admin and a coach (his coach profile stays linked).
-  db.prepare("UPDATE users SET role = 'admin' WHERE email = 'kalle.sundman@icloud.com' AND role = 'coach'").run();
+  // ONE shared admin login (proballerscoaching@gmail.com) replaces the two
+  // personal admin accounts. The account is created on the first boot where
+  // ADMIN_EMAIL points at it (password from ADMIN_PASSWORD — never in code);
+  // Ben's and Kalle's own logins then become coach accounts, keeping their
+  // coach profiles, calendars and chats. Every step is guarded so the site
+  // can never end up with zero admins.
+  const SHARED_ADMIN = 'proballerscoaching@gmail.com';
+  if ((process.env.ADMIN_EMAIL || '').toLowerCase() === SHARED_ADMIN) {
+    const existing = db.prepare('SELECT id, role FROM users WHERE email = ?').get(SHARED_ADMIN);
+    if (!existing) {
+      db.prepare('INSERT INTO users (email, password_hash, name, role, lang, created_at) VALUES (?,?,?,?,?,?)')
+        .run(SHARED_ADMIN, bcrypt.hashSync(initialPassword('ADMIN_PASSWORD', `admin (${SHARED_ADMIN})`), 10),
+          'Proballers Coaching', 'admin', 'fi', nowISO());
+    } else if (existing.role !== 'admin') {
+      // The address was registered through the site earlier (e.g. as a test
+      // customer) — ADMIN_EMAIL pointing at it is the owner's say-so: promote.
+      db.prepare("UPDATE users SET role = 'admin', name = 'Proballers Coaching' WHERE id = ?").run(existing.id);
+    }
+  }
+  if (db.prepare("SELECT 1 FROM users WHERE email = ? AND role = 'admin'").get(SHARED_ADMIN)) {
+    // The shared admin is live — the personal accounts drop to coach. Their
+    // open sessions downgrade automatically (role is read per request).
+    db.prepare(`UPDATE users SET role = 'coach'
+      WHERE email IN ('cottonbenjaminmik@gmail.com', 'kalle.sundman@icloud.com') AND role = 'admin'`).run();
+  } else {
+    // Pre-shared-admin world: Kalle is both an admin and a coach.
+    db.prepare("UPDATE users SET role = 'admin' WHERE email = 'kalle.sundman@icloud.com' AND role = 'coach'").run();
+  }
 
   // Ben's coach profile belongs on the owner's own account — retire the old
   // separate ben@proballers.fi login if it exists.
@@ -297,7 +323,7 @@ function seed({ demo = true, reset = false } = {}) {
   if (userCount === 0) {
     const adminEmail = (process.env.ADMIN_EMAIL || 'admin@example.com').toLowerCase();
     insUser.run(adminEmail, bcrypt.hashSync(initialPassword('ADMIN_PASSWORD', `admin (${adminEmail})`), 10),
-      'Benjamin Cotton', 'admin', 0, now);
+      'Proballers Coaching', 'admin', 0, now);
 
     // Kalle is both an admin and a coach: admin role + a linked coach profile.
     const kalleEmail = (process.env.COACH_EMAIL || 'coach@example.com').toLowerCase();

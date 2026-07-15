@@ -45,9 +45,12 @@ clearly banner-flagged in the admin) so every screen has something to show.
 | Coach | `/coach` — availability calendar + filters |
 | Customer | `/my-bookings` — self-signup on the site |
 
-The two configured accounts (owner + Kalle) use the credentials from the
-`ADMIN_*` / `COACH_*` env vars. Ben's coach profile lives on the owner's own
-login — there is no separate account for it.
+There is ONE shared admin login (both owners use it), created from the
+`ADMIN_EMAIL` / `ADMIN_PASSWORD` env vars. Ben and Kalle keep their own
+personal logins as coach accounts (coach app, calendars, chats). Setting
+`ADMIN_EMAIL=proballerscoaching@gmail.com` on an existing database creates the
+shared admin on the next boot and automatically turns the two old personal
+admin logins into coach accounts.
 
 ### Credentials & security (read before going live)
 
@@ -90,7 +93,7 @@ The app never logs into a Google account. It uses a *service account*, Google's
 supported way to let an app edit one specific sheet you own:
 
 1. Go to [console.cloud.google.com](https://console.cloud.google.com) with the
-   cottonbenjaminmik@gmail.com account → create a project → *APIs & Services* →
+   proballerscoaching@gmail.com account → create a project → *APIs & Services* →
    enable **Google Sheets API**.
 2. *IAM & Admin → Service accounts → Create*. Then *Keys → Add key → JSON* — a key
    file downloads.
