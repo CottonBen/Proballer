@@ -63,6 +63,26 @@ function recordLog(log, to, subject, ok, error) {
   }
 }
 
+// Plain-text twin of an HTML email. HTML-only messages are a classic spam
+// signal, so every send carries both parts. Links keep their URLs.
+function htmlToText(html) {
+  return String(html)
+    .replace(/<style[\s\S]*?<\/style>/gi, '')
+    .replace(/<br\s*\/?>/gi, '\n')
+    .replace(/<\/(p|div|h[1-6]|tr|li|table)>/gi, '\n')
+    .replace(/<a [^>]*href=["'](http[^"']+)["'][^>]*>([\s\S]*?)<\/a>/gi, (m, href, label) => {
+      const text = label.replace(/<[^>]+>/g, '').trim();
+      return text ? `${text}: ${href}` : href;
+    })
+    .replace(/<[^>]+>/g, '')
+    .replace(/&nbsp;/g, ' ').replace(/&amp;/g, '&').replace(/&lt;/g, '<')
+    .replace(/&gt;/g, '>').replace(/&quot;/g, '"').replace(/&#39;/g, "'")
+    .replace(/&mdash;/g, '—').replace(/&ndash;/g, '–')
+    .split('\n').map((l) => l.replace(/\s+/g, ' ').trim()).join('\n')
+    .replace(/\n{3,}/g, '\n\n')
+    .trim();
+}
+
 async function sendMail({ to, subject, html, log }) {
   if (!transport) {
     console.log(`[mailer] SMTP not configured — "${subject}" for ${to} not emailed (see data/outbox/)`);
@@ -70,7 +90,13 @@ async function sendMail({ to, subject, html, log }) {
     return { delivered: false, reason: 'smtp-not-configured' };
   }
   try {
-    await transport.sendMail({ from: fromAddress(), to, subject, html });
+    await transport.sendMail({
+      from: fromAddress(), to, subject, html,
+      text: htmlToText(html),
+      // Replies always go to the business mailbox — matters once the From
+      // address moves to the domain (no real inbox behind info@...).
+      replyTo: config.invoice.replyEmail,
+    });
   } catch (err) {
     recordError(err);
     recordLog(log, to, subject, false, String(err.message || err).slice(0, 300));
@@ -119,4 +145,4 @@ function emailStatus() {
   };
 }
 
-module.exports = { sendMail, sendInvoiceEmail, sendTestEmail, emailStatus, smtpConfigured: () => Boolean(transport) };
+module.exports = { sendMail, sendInvoiceEmail, sendTestEmail, emailStatus, htmlToText, smtpConfigured: () => Boolean(transport) };
