@@ -377,9 +377,10 @@ async function openCoachEditor(id) {
       <div id="ce-loc" style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 14px">
         ${CONFIG.locations.map((l) => chip(l, l, locSet.has(l))).join('')}</div>
 
-      <label style="display:flex;align-items:center;gap:8px;margin-bottom:14px;cursor:pointer">
-        <input type="checkbox" id="ce-featured" ${coach.featured ? 'checked' : ''} style="width:auto">
-        <span class="small">${t('admin.editor.featured')}</span></label>
+      <label class="small muted">${t('admin.editor.spotlight')}</label>
+      <input type="number" id="ce-spotlight" min="1" max="99" step="1" value="${coach.spotlightOrder || ''}"
+        placeholder="${esc(t('admin.editor.spotlight.ph'))}" style="margin:6px 0 4px;max-width:220px">
+      <p class="small muted" style="margin:0 0 14px">${t('admin.editor.spotlight.hint')}</p>
 
       ${!id ? `<div class="small muted" style="border-top:1px dashed var(--line);padding-top:12px;margin-bottom:6px">
           ${t('admin.editor.newlogin')}</div>
@@ -417,7 +418,7 @@ async function openCoachEditor(id) {
         bio_en: box.querySelector('#ce-bio-en').value.trim(),
         positions: pickOn('#ce-pos'),
         locations: pickOn('#ce-loc'),
-        featured: box.querySelector('#ce-featured').checked,
+        spotlightOrder: box.querySelector('#ce-spotlight').value.trim() || null,
         photos,
       };
       if (!id) {

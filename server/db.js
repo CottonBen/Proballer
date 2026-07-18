@@ -258,12 +258,28 @@ for (const stmt of [
   "ALTER TABLE users ADD COLUMN phone TEXT NOT NULL DEFAULT ''",
   // When the admin marked this lead as called (NULL = still open).
   'ALTER TABLE users ADD COLUMN lead_called_at TEXT',
+  // Explicit hero-spotlight position (1 = first slide). NULL = no explicit
+  // position: a featured coach then sorts after the numbered ones.
+  'ALTER TABLE coaches ADD COLUMN spotlight_order INTEGER',
   // One-shot flags for the scheduled follow-up emails (server/emails.js):
   // review request the day after the session, book-again nudge 3 days after.
   'ALTER TABLE bookings ADD COLUMN review_email_sent INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE bookings ADD COLUMN rebook_email_sent INTEGER NOT NULL DEFAULT 0',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
+}
+
+// Featured coaches that predate explicit spotlight numbering get their current
+// carousel position as a number, so the admin editor always shows where every
+// coach stands (and a bio edit can't silently drop someone from the hero).
+{
+  const unnumbered = db.prepare(`SELECT id FROM coaches
+    WHERE featured = 1 AND spotlight_order IS NULL ORDER BY display_order, id`).all();
+  if (unnumbered.length) {
+    let next = db.prepare('SELECT COALESCE(MAX(spotlight_order),0) AS m FROM coaches').get().m;
+    const set = db.prepare('UPDATE coaches SET spotlight_order = ? WHERE id = ?');
+    for (const c of unnumbered) set.run(++next, c.id);
+  }
 }
 
 // Backfill for invoices created in the brief pay-at-booking era BEFORE pay_by

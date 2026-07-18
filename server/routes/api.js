@@ -29,6 +29,7 @@ const coachPublic = (c) => ({
   locations: parseJSON(c.locations, []),
   positions: parseJSON(c.positions, []),
   featured: Boolean(c.featured),
+  spotlightOrder: c.spotlight_order, // 1 = first hero slide; null = unnumbered
 });
 
 function recordEvent(req, type, meta = {}) {
@@ -95,7 +96,20 @@ function readCoachFields(body) {
   if (name.length < 2 || name.length > 60) return { error: 'Coach name must be 2–60 characters.' };
   if (!positions.length) return { error: 'Pick at least one position group.' };
   if (!locations.length) return { error: 'Pick at least one city.' };
-  return { name, bio, bio_en, positions, locations, featured: body?.featured ? 1 : 0 };
+  // Spotlight position: a number 1..99 (1 = first hero slide), null/'' = not
+  // in the spotlight, undefined = field not sent (older cached admin UI, which
+  // still drives the plain featured checkbox) — the caller keeps stored values.
+  let spotlightOrder;
+  if (body?.spotlightOrder !== undefined) {
+    if (body.spotlightOrder === null || body.spotlightOrder === '') spotlightOrder = null;
+    else {
+      const n = Number(body.spotlightOrder);
+      if (!Number.isInteger(n) || n < 1 || n > 99) return { error: 'Spotlight position must be a number from 1 to 99.' };
+      spotlightOrder = n;
+    }
+  }
+  const featured = spotlightOrder !== undefined ? (spotlightOrder ? 1 : 0) : (body?.featured ? 1 : 0);
+  return { name, bio, bio_en, positions, locations, featured, spotlightOrder };
 }
 
 // Has a session's slot already ended (in Helsinki time)? Only ended sessions
@@ -1218,6 +1232,7 @@ router.get('/admin/coaches/:id', requireRole('admin'), (req, res) => {
     positions: parseJSON(c.positions, []),
     locations: parseJSON(c.locations, []),
     featured: Boolean(c.featured),
+    spotlightOrder: c.spotlight_order,
     account: { hasLogin: !!user, email: user ? user.email : null, isAdmin: user ? user.role === 'admin' : false },
   });
 });
@@ -1261,9 +1276,10 @@ router.post('/admin/coaches', requireRole('admin'), (req, res) => {
     }
     const order = db.prepare('SELECT COALESCE(MAX(display_order),0)+10 AS n FROM coaches').get().n;
     const info = db.prepare(`INSERT INTO coaches
-      (user_id, name, slug, bio, bio_en, photos, locations, positions, featured, display_order, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?)`).run(userId, v.name, slug, v.bio, v.bio_en || '', JSON.stringify(photos),
-        JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured, order, nowISO());
+      (user_id, name, slug, bio, bio_en, photos, locations, positions, featured, spotlight_order, display_order, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?)`).run(userId, v.name, slug, v.bio, v.bio_en || '', JSON.stringify(photos),
+        JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured,
+        v.spotlightOrder === undefined ? null : v.spotlightOrder, order, nowISO());
     db.exec('COMMIT');
     sheets.scheduleSync();
     return res.json({ ok: true, id: Number(info.lastInsertRowid), slug });
@@ -1296,10 +1312,13 @@ router.put('/admin/coaches/:id', requireRole('admin'), (req, res) => {
     if (!resolved.length) return res.status(400).json({ error: 'A coach needs at least one photo.' });
     photos = resolved;
   }
-  // COALESCE: a request without bio_en (older cached admin UI) keeps the stored value.
-  db.prepare('UPDATE coaches SET name=?, bio=?, bio_en=COALESCE(?, bio_en), locations=?, positions=?, featured=?, photos=? WHERE id=?')
-    .run(v.name, v.bio, v.bio_en, JSON.stringify(v.locations), JSON.stringify(v.positions), v.featured,
-      JSON.stringify(photos), c.id);
+  // Requests without bio_en / spotlightOrder (older cached admin UI) keep the
+  // stored values instead of silently wiping them.
+  const spotlight = v.spotlightOrder === undefined ? c.spotlight_order : v.spotlightOrder;
+  const featured = v.spotlightOrder === undefined ? v.featured : (spotlight ? 1 : 0);
+  db.prepare('UPDATE coaches SET name=?, bio=?, bio_en=COALESCE(?, bio_en), locations=?, positions=?, featured=?, spotlight_order=?, photos=? WHERE id=?')
+    .run(v.name, v.bio, v.bio_en, JSON.stringify(v.locations), JSON.stringify(v.positions), featured,
+      spotlight, JSON.stringify(photos), c.id);
   if (c.user_id) db.prepare('UPDATE users SET name = ? WHERE id = ?').run(v.name, c.user_id); // keep login name in sync
   sheets.scheduleSync();
   res.json({ ok: true });

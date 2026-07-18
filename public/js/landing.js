@@ -19,7 +19,11 @@ function buildSlides() {
   const dots = document.getElementById('dots');
   const slides = [];
 
-  for (const c of COACHES.filter((c) => c.featured)) {
+  // Spotlight order: the admin's explicit numbers (1, 2, 3, …) come first;
+  // featured coaches without a number follow in their normal site order.
+  const featured = COACHES.filter((c) => c.featured)
+    .sort((a, b) => (a.spotlightOrder || 999) - (b.spotlightOrder || 999));
+  for (const c of featured) {
     slides.push({
       photos: c.photos,
       html: `
