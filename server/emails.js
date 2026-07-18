@@ -124,6 +124,35 @@ function sendPitchConfirmedEmail(bookingId, pitch) {
   deliver({ type: 'pitch', userId: customer.id, bookingCode: b.code, to: customer.email, subject, html });
 }
 
+// The coach's copy of a confirmed booking: sent the moment the booking is
+// announced (payment confirmed), with marching orders — open the coach app,
+// pick the pitch, message the player. Skipped for coaches without a login.
+function sendCoachBookingEmail(bookingId) {
+  const x = bookingBundle(bookingId);
+  if (!x) return;
+  const { b, customer, focus } = x;
+  const coachUser = db.prepare(`SELECT u.name, u.email, u.lang FROM coaches c
+    JOIN users u ON u.id = c.user_id WHERE c.id = ?`).get(b.coach_id);
+  if (!coachUser) return;
+  const lang = pickLang(coachUser.lang);
+  const subject = tr(lang, 'email.coachbooking.subject',
+    { siteName: config.siteName, date: localDate(lang, b.date) });
+  const html = shell(lang, tr(lang, 'email.coachbooking.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: coachUser.name }))}</p>
+     <p>${esc(tr(lang, 'email.coachbooking.body', { customer: customer.name }))}</p>
+     ${detailBox([
+       tr(lang, 'email.booking.line', {
+         coach: customer.name, date: localDate(lang, b.date), hours: hourRange(lang, b.hour),
+         focus: focusLabel(lang, focus), location: trCfg(lang, b.location),
+       }),
+       tr(lang, 'email.coachbooking.ref', { code: b.code }),
+     ])}
+     ${b.notes ? `<p>${esc(tr(lang, 'email.coachbooking.notes', { notes: b.notes }))}</p>` : ''}
+     <p>${esc(tr(lang, b.is_online ? 'email.coachbooking.steps_online' : 'email.coachbooking.steps'))}</p>
+     ${button(`${config.siteUrl}/app`, tr(lang, 'email.coachbooking.cta'))}`);
+  deliver({ type: 'coach_booking', bookingCode: b.code, to: coachUser.email, subject, html });
+}
+
 // The unpaid-booking sweep cancelled this booking (payment never completed):
 // tell the customer plainly that nothing is booked and nothing was charged,
 // so an interrupted checkout can't be mistaken for a confirmed session.
@@ -249,6 +278,7 @@ function automationStatus() {
 module.exports = {
   sendWelcomeEmail,
   sendBookingConfirmedEmail,
+  sendCoachBookingEmail,
   sendPitchConfirmedEmail,
   sendBookingReleasedEmail,
   runEmailAutomation,

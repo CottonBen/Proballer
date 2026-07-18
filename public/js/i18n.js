@@ -684,6 +684,7 @@ const I18N_DICT = {
   "admin.emails.type.welcome": { fi: "Tervetuloa", en: "Welcome" },
   "admin.emails.type.booking": { fi: "Varausvahvistus", en: "Booking confirmation" },
   "admin.emails.type.pitch": { fi: "Kenttävahvistus", en: "Pitch confirmation" },
+  "admin.emails.type.coach_booking": { fi: "Varausilmoitus valmentajalle", en: "Booking notice to coach" },
   "admin.emails.type.review": { fi: "Arvostelupyyntö", en: "Review request" },
   "admin.emails.type.rebook": { fi: "Uusintapyyntö", en: "Book-again nudge" },
   "admin.emails.type.release": { fi: "Varaus peruuntui (maksamatta)", en: "Booking released (unpaid)" },
