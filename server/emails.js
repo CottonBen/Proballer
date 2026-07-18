@@ -149,6 +149,7 @@ function sendCoachBookingEmail(bookingId) {
      ])}
      ${b.notes ? `<p>${esc(tr(lang, 'email.coachbooking.notes', { notes: b.notes }))}</p>` : ''}
      <p>${esc(tr(lang, b.is_online ? 'email.coachbooking.steps_online' : 'email.coachbooking.steps'))}</p>
+     ${b.is_online ? '' : `<p style="color:#6b6b70">${esc(tr(lang, 'email.coachbooking.own_pitch'))}</p>`}
      ${button(`${config.siteUrl}/app`, tr(lang, 'email.coachbooking.cta'))}`);
   deliver({ type: 'coach_booking', bookingCode: b.code, to: coachUser.email, subject, html });
 }

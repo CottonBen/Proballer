@@ -355,7 +355,14 @@ const I18N_DICT = {
   "app.session.cancel_toast": { fi: "Treeni peruttu — asiakkaalle ilmoitettu.", en: "Session cancelled — the client has been notified." },
   // calendar
   "app.calendar.no_sessions": { fi: "Ei treenejä tänä päivänä", en: "No sessions on this day" },
-  "app.calendar.legend": { fi: "Vihreä piste = treeni", en: "Green dot = a session" },
+  "app.calendar.legend": { fi: "Piste = treeni. Avaa varattavat ajat + -painikkeesta.", en: "Dot = a session. Open bookable hours with the + button." },
+  "app.cal.edit_title": { fi: "Muokkaa saatavuutta", en: "Edit availability" },
+  "app.cal.edit_hint": { fi: "Valitse päivä ja napauta auki tunnit, jolloin voit valmentaa. Voit muokata useita päiviä ennen tallennusta.", en: "Pick a day and tap open the hours you can coach. You can edit several days before saving." },
+  "app.cal.edit_legend": { fi: "Vaalea = avoinna varattavaksi · Valkoinen = varattu treeni", en: "Light = open for booking · White = a booked session" },
+  "app.cal.save": { fi: "Tallenna muutokset", en: "Save changes" },
+  "app.cal.cancel": { fi: "Peruuta", en: "Cancel" },
+  "app.cal.saved": { fi: "Tallennettu: {added} tuntia avattu, {removed} suljettu.", en: "Saved: {added} hours opened, {removed} closed." },
+  "app.cal.conflicts": { fi: "{count} tuntia jäi sulkematta, koska niissä on varaus.", en: "{count} hours could not be closed because they hold a booking." },
   // alerts
   "app.alerts.title": { fi: "Ilmoitukset", en: "Notifications" },
   "app.alerts.unread": { fi: "{n} lukematta", en: "{n} unread" },

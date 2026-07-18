@@ -11,7 +11,7 @@ const S = {
   tier: null,        // /api/coach/tier
   notifs: [],        // /api/my-notifications
   unread: 0,
-  cal: { y: null, m: null, selDate: null }, // calendar view state
+  cal: { y: null, m: null, selDate: null, edit: false, avail: null, booked: null, pending: null, horizon: null },
   pitch: { sel: null, q: '' },              // pitches tab: selected session code + search
 };
 
@@ -127,6 +127,62 @@ function renderSessions() {
   wireSessionActions();
 }
 
+// --- availability editing (the + button on the calendar) ---------------------
+// Same mechanics as the desktop coach calendar: tap hours open or closed on
+// any days, then one Save sends the whole diff to PUT /coach/availability.
+const slotKey = (date, hour) => `${date}|${hour}`;
+
+async function enterAvailEdit() {
+  const now = new Date();
+  const from = iso(now.getFullYear(), now.getMonth(), now.getDate());
+  const toD = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 59);
+  const data = await API.get(`/coach/availability?from=${from}&to=${iso(toD.getFullYear(), toD.getMonth(), toD.getDate())}`);
+  S.cal.edit = true;
+  S.cal.avail = new Set(data.slots.map((s) => slotKey(s.date, s.hour)));
+  S.cal.booked = new Set(data.bookings.map((b) => slotKey(b.date, b.hour)));
+  S.cal.pending = { adds: new Set(), removes: new Set() };
+  S.cal.horizon = data.to; // last date the booking horizon allows
+  renderCalendar();
+}
+
+function exitAvailEdit() {
+  S.cal.edit = false;
+  S.cal.avail = S.cal.booked = S.cal.pending = null;
+  renderCalendar();
+}
+
+// In edit mode a day's dot means "has open (or about-to-open) hours".
+function dayHasOpen(ds) {
+  for (let h = 8; h < 20; h++) {
+    const k = slotKey(ds, h);
+    if ((S.cal.avail.has(k) && !S.cal.pending.removes.has(k)) || S.cal.pending.adds.has(k)) return true;
+  }
+  return false;
+}
+
+// Hour chips (8–20) for the selected day: tap toggles open/closed; booked and
+// past hours are locked. Hours mirror config.dayStartHour/dayEndHour.
+function availDayHTML(ds) {
+  const now = new Date();
+  const today = iso(now.getFullYear(), now.getMonth(), now.getDate());
+  const beyond = S.cal.horizon && ds > S.cal.horizon;
+  let chips = '';
+  for (let h = 8; h < 20; h++) {
+    const k = slotKey(ds, h);
+    const past = ds < today || (ds === today && h <= now.getHours());
+    const cls = ['av-hr'];
+    if (S.cal.booked.has(k)) cls.push('booked');
+    else if (past || beyond) cls.push('off');
+    else if (S.cal.pending.adds.has(k)) cls.push('pending-add');
+    else if (S.cal.pending.removes.has(k)) cls.push('pending-remove');
+    else if (S.cal.avail.has(k)) cls.push('open');
+    chips += `<button class="${cls.join(' ')}" data-avh="${h}"
+      ${S.cal.booked.has(k) || past || beyond ? 'disabled' : ''}>${h}–${h + 1}</button>`;
+  }
+  return `<div class="av-hours">${chips}</div>
+    <div class="av-legend">${t('app.cal.edit_legend')}</div>`;
+}
+
 function renderCalendar() {
   const now = new Date();
   if (S.cal.y == null) { S.cal.y = now.getFullYear(); S.cal.m = now.getMonth(); }
@@ -149,23 +205,37 @@ function renderCalendar() {
     const cls = ['cal-cell'];
     if (ds === todayISO) cls.push('today');
     if (ds === S.cal.selDate) cls.push('sel');
-    cells += `<div class="${cls.join(' ')}" data-date="${ds}">${d}${busy.has(ds) ? '<span class="cdot"></span>' : ''}</div>`;
+    const dot = S.cal.edit ? dayHasOpen(ds) : busy.has(ds);
+    cells += `<div class="${cls.join(' ')}" data-date="${ds}">${d}${dot ? '<span class="cdot"></span>' : ''}</div>`;
   }
 
   const sel = S.cal.selDate;
   const daySess = sel ? S.bookings.filter((b) => b.date === sel && b.status !== 'cancelled')
     .sort((a, b) => a.hour - b.hour) : [];
+  const pendingCount = S.cal.edit ? S.cal.pending.adds.size + S.cal.pending.removes.size : 0;
 
   view().innerHTML = `<div class="screen">
     <div class="cal-head">
       <div class="cal-title">${cap(monthName)}</div>
-      <div class="cal-nav"><button data-mv="-1" aria-label="prev">‹</button><button data-mv="1" aria-label="next">›</button></div>
+      <div class="cal-nav">
+        <button data-avedit title="${esc(t('app.cal.edit_title'))}" aria-label="${esc(t('app.cal.edit_title'))}"
+          ${S.cal.edit ? 'style="border-color:var(--text)"' : ''}>${S.cal.edit ? '✕' : '+'}</button>
+        <button data-mv="-1" aria-label="prev">‹</button><button data-mv="1" aria-label="next">›</button>
+      </div>
     </div>
     <div class="cal-grid">
       ${dow.map((i) => `<div class="cal-dow">${esc(wd[i])}</div>`).join('')}
       ${cells}
     </div>
-    ${sel ? `<div class="cal-daylabel">${esc(fmtDate(sel))} ${sel.slice(0, 4)}</div>
+    ${S.cal.edit ? `
+      ${sel ? `<div class="cal-daylabel">${esc(fmtDate(sel))} ${sel.slice(0, 4)}</div>${availDayHTML(sel)}`
+        : `<div class="empty" style="margin-top:22px"><div class="small">${t('app.cal.edit_hint')}</div></div>`}
+      <div class="av-bar">
+        <button class="btn btn-primary" id="av-save" ${pendingCount ? '' : 'disabled'}>
+          ${t('app.cal.save')}${pendingCount ? ` (${pendingCount})` : ''}</button>
+        <button class="btn btn-ghost" id="av-cancel">${t('app.cal.cancel')}</button>
+      </div>`
+    : sel ? `<div class="cal-daylabel">${esc(fmtDate(sel))} ${sel.slice(0, 4)}</div>
       ${daySess.length ? daySess.map((b) => sessionCard(b)).join('') : emptyState('cal', t('app.calendar.no_sessions'))}`
       : `<div class="empty" style="margin-top:22px"><div class="small">${t('app.calendar.legend')}</div></div>`}
   </div>`;
@@ -180,6 +250,39 @@ function renderCalendar() {
     S.cal.selDate = S.cal.selDate === c.dataset.date ? null : c.dataset.date;
     renderCalendar();
   }));
+  view().querySelector('[data-avedit]').addEventListener('click', () => {
+    if (S.cal.edit) exitAvailEdit();
+    else enterAvailEdit().catch((err) => toast(I18N.server(err.message), true));
+  });
+  view().querySelectorAll('[data-avh]').forEach((btn) => btn.addEventListener('click', () => {
+    const k = slotKey(S.cal.selDate, Number(btn.dataset.avh));
+    const p = S.cal.pending;
+    if (p.adds.has(k)) p.adds.delete(k);
+    else if (p.removes.has(k)) p.removes.delete(k);
+    else if (S.cal.avail.has(k)) p.removes.add(k);
+    else p.adds.add(k);
+    renderCalendar();
+  }));
+  const saveBtn = view().querySelector('#av-save');
+  if (saveBtn) saveBtn.addEventListener('click', async () => {
+    saveBtn.disabled = true;
+    const toSlot = (k) => { const [date, hour] = k.split('|'); return { date, hour: Number(hour) }; };
+    try {
+      const r = await API.put('/coach/availability', {
+        adds: [...S.cal.pending.adds].map(toSlot),
+        removes: [...S.cal.pending.removes].map(toSlot),
+      });
+      const warn = r.conflicts && r.conflicts.length;
+      toast(t('app.cal.saved', { added: r.added, removed: r.removed })
+        + (warn ? ' ' + t('app.cal.conflicts', { count: r.conflicts.length }) : ''), Boolean(warn));
+      exitAvailEdit();
+    } catch (err) {
+      saveBtn.disabled = false;
+      toast(I18N.server(err.message), true);
+    }
+  });
+  const cancelBtn = view().querySelector('#av-cancel');
+  if (cancelBtn) cancelBtn.addEventListener('click', exitAvailEdit);
   wireSessionActions();
 }
 

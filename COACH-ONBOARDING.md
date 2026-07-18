@@ -10,8 +10,12 @@ Tässä viestissä on kaikki, mitä tarvitset alkuun. Lue tämä kerran huolella
 
 ## 2. Avaa kalenterisi
 
-- Sovelluksen kalenterissa merkitset tunnit, jolloin **voit** valmentaa. Oletus on, että et ole käytettävissä — pelaajat näkevät vain avaamasi ajat.
-- Treenit ovat tunnin mittaisia, klo 8–20 välillä. Muista painaa **Tallenna**.
+Kaikki valmentajan tehtävät hoituvat suoraan sovelluksessa — myös kalenteri:
+
+- Avaa sovelluksen *Kalenteri*-välilehti ja paina oikean yläkulman **+**-painiketta.
+- Valitse päivä ja napauta auki tunnit, jolloin **voit** valmentaa (oletus on, että et ole käytettävissä). Voit avata ja sulkea tunteja useilta päiviltä samalla kertaa.
+- Paina lopuksi **Tallenna muutokset**. Pelaajat näkevät vain avaamasi ajat, 60 päivää eteenpäin.
+- Treenit ovat tunnin mittaisia, klo 8–20 välillä.
 - Pidä kalenteri ajan tasalla: mitä enemmän avoimia aikoja, sitä enemmän varauksia.
 
 ## 3. Kun pelaaja varaa treenin

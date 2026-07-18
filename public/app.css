@@ -156,6 +156,23 @@
 .cal-cell.today .cdot { background: var(--ink); }
 .cal-daylabel { font-family: var(--display); letter-spacing: 0.1em; font-size: 0.78rem; color: var(--muted); text-transform: uppercase; margin: 22px 0 12px; }
 
+/* ---------- availability editor (the + button on the calendar) ---------- */
+.av-hours { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-top: 12px; }
+.av-hr {
+  padding: 12px 4px; border-radius: 10px; border: 1px solid var(--line);
+  background: rgba(255, 255, 255, 0.04); color: var(--text); font-weight: 700;
+  font-size: 0.85rem; cursor: pointer; font-family: var(--body);
+  transition: background 0.15s, border-color 0.15s;
+}
+.av-hr.open { background: rgba(255, 255, 255, 0.22); border-color: rgba(255, 255, 255, 0.55); }
+.av-hr.pending-add { background: rgba(255, 255, 255, 0.5); border-color: var(--text); color: var(--ink); }
+.av-hr.pending-remove { background: rgba(255, 107, 107, 0.18); border-color: rgba(255, 107, 107, 0.5); }
+.av-hr.booked { background: var(--text); border-color: var(--text); color: var(--ink); cursor: default; }
+.av-hr.off { opacity: 0.25; cursor: default; }
+.av-bar { display: flex; gap: 8px; margin-top: 18px; }
+.av-bar .btn { flex: 1; }
+.av-legend { color: var(--muted); font-size: 0.75rem; margin-top: 10px; }
+
 /* ---------- alerts ---------- */
 .alert-card {
   background: var(--card); border: 1px solid var(--line); border-radius: 16px;
