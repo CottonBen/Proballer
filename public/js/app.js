@@ -41,6 +41,22 @@ function sessionWhat(b) {
 // Data loading
 // ---------------------------------------------------------------------------
 async function loadAll() {
+  if (S.isAdmin) {
+    // Admin overview: everyone's bookings + the coach-activity summary.
+    const [bookings, activity, notifData] = await Promise.all([
+      API.get('/admin/bookings'),
+      API.get('/admin/coach-activity'),
+      API.get('/my-notifications').catch(() => ({ notifications: [] })),
+    ]);
+    S.coach = null;
+    S.tier = null;
+    S.bookings = bookings || [];
+    S.activity = activity;
+    S.notifs = notifData.notifications || [];
+    S.unread = S.notifs.filter((n) => !n.read).length;
+    paintBadge();
+    return;
+  }
   const [coach, bookings, tier, notifData] = await Promise.all([
     API.get('/coach/me'),
     API.get('/coach/bookings'),
@@ -83,7 +99,39 @@ function render() {
 // ---------------------------------------------------------------------------
 // Views
 // ---------------------------------------------------------------------------
+// Admin home: what the coaches have been doing, at a glance.
+function renderAdminHome() {
+  const a = S.activity || { coaches: [], recent: [] };
+  view().innerHTML = `<div class="screen">
+    <header class="app-head">
+      <div class="app-kicker">${t('app.brand')}</div>
+      <h1 class="app-h1">${t('app.admin.title')}</h1>
+      <div class="small muted" style="margin-top:4px">${t('app.admin.window')}</div>
+    </header>
+    <div class="app-section-label">${t('app.admin.coaches')}</div>
+    ${a.coaches.map((c) => `
+      <div class="sess-card">
+        <div class="sess-name">${esc(c.name)}</div>
+        <div class="sess-meta">${t('app.admin.line', { slots: c.slotsAdded7d, bookings: c.newBookings7d })}<br>
+          ${t('app.admin.line2', { open: c.openSlots, upcoming: c.upcoming })}</div>
+      </div>`).join('')}
+    <div class="app-section-label">${t('app.admin.recent')}</div>
+    ${a.recent.length ? a.recent.map((r) => `
+      <div class="sess-card">
+        <div class="sess-top">
+          <div>
+            <div class="sess-name">${esc(r.customer)} → ${esc(r.coach)}</div>
+            <div class="sess-meta">${esc(cap(fmtDate(r.date)))} · ${fmtTime(r.hour)}<br>
+              ${t('app.admin.made', { time: esc(fmtDateTime(r.created_at)) })}</div>
+          </div>
+          <span class="pill ${esc(r.status)}">${esc(t('common.status.' + r.status))}</span>
+        </div>
+      </div>`).join('') : emptyState('list', t('app.admin.norecent'))}
+  </div>`;
+}
+
 function renderHome() {
+  if (S.isAdmin) return renderAdminHome();
   const upcoming = byStatus('confirmed').slice().sort(byWhen);
   const completed = byStatus('completed');
   const next = upcoming.slice(0, 5);
@@ -218,8 +266,8 @@ function renderCalendar() {
     <div class="cal-head">
       <div class="cal-title">${cap(monthName)}</div>
       <div class="cal-nav">
-        <button data-avedit title="${esc(t('app.cal.edit_title'))}" aria-label="${esc(t('app.cal.edit_title'))}"
-          ${S.cal.edit ? 'style="border-color:var(--text)"' : ''}>${S.cal.edit ? '✕' : '+'}</button>
+        ${S.isAdmin ? '' : `<button data-avedit title="${esc(t('app.cal.edit_title'))}" aria-label="${esc(t('app.cal.edit_title'))}"
+          ${S.cal.edit ? 'style="border-color:var(--text)"' : ''}>${S.cal.edit ? '✕' : '+'}</button>`}
         <button data-mv="-1" aria-label="prev">‹</button><button data-mv="1" aria-label="next">›</button>
       </div>
     </div>
@@ -250,7 +298,8 @@ function renderCalendar() {
     S.cal.selDate = S.cal.selDate === c.dataset.date ? null : c.dataset.date;
     renderCalendar();
   }));
-  view().querySelector('[data-avedit]').addEventListener('click', () => {
+  const editBtn = view().querySelector('[data-avedit]');
+  if (editBtn) editBtn.addEventListener('click', () => {
     if (S.cal.edit) exitAvailEdit();
     else enterAvailEdit().catch((err) => toast(I18N.server(err.message), true));
   });
@@ -322,7 +371,9 @@ async function renderPitches() {
     return;
   }
   let sess;
-  if (sessions.length) {
+  // The overview admin (no coach profile) always browses by city — assigning a
+  // pitch to a session is the owning coach's job, through their own login.
+  if (sessions.length && !S.isAdmin) {
     if (!S.pitch.sel || !sessions.some((b) => b.code === S.pitch.sel)) S.pitch.sel = sessions[0].code;
     sess = sessions.find((b) => b.code === S.pitch.sel);
   } else {
@@ -568,7 +619,8 @@ async function renderChats() {
         <span style="width:42px;height:42px;border-radius:50%;overflow:hidden;flex-shrink:0;display:grid;place-items:center;background:rgba(255,255,255,0.1)">
           ${c.coachPhoto ? `<img src="${esc(c.coachPhoto)}" alt="" style="width:100%;height:100%;object-fit:cover">` : '💬'}</span>
         <span style="flex:1;min-width:0">
-          <span style="display:block;font-weight:700">${S.me.user.id === c.customerId ? esc(c.coachName) : esc(c.customerName)}</span>
+          <span style="display:block;font-weight:700">${S.isAdmin ? `${esc(c.customerName)} ↔ ${esc(c.coachName)}`
+            : S.me.user.id === c.customerId ? esc(c.coachName) : esc(c.customerName)}</span>
           <span class="small muted" style="display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">${esc((c.lastMessage || '').slice(0, 44))}</span>
         </span>
         ${c.unread ? `<span class="tab-badge" style="position:static">${c.unread > 9 ? '9+' : c.unread}</span>` : ''}
@@ -613,6 +665,29 @@ async function renderAlerts() {
 }
 
 function renderProfile() {
+  if (S.isAdmin) {
+    view().innerHTML = `<div class="screen">
+      <div class="pf-card">
+        <div class="pf-avatar"><img src="/assets/logo.svg?v=2" alt="" style="object-fit:contain;padding:14px"></div>
+        <div class="pf-name">${esc(S.me.user.name)}</div>
+        <div class="pf-email">${esc(S.me.user.email)}</div>
+      </div>
+      <div class="pf-lang" id="pf-lang"></div>
+      <a class="pf-link" href="/admin">${t('app.admin.fulladmin')}
+        <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
+      <a class="pf-link" href="/">${t('app.profile.website')}
+        <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
+      <button class="pf-link pf-logout" id="pf-logout">
+        <svg viewBox="0 0 24 24" stroke="var(--danger)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
+        ${t('app.profile.logout')}</button>
+    </div>`;
+    document.getElementById('pf-lang').appendChild(langToggleEl());
+    document.getElementById('pf-logout').addEventListener('click', async () => {
+      await API.post('/auth/logout', {});
+      location.href = '/';
+    });
+    return;
+  }
   const c = S.coach;
   const counts = {
     up: byStatus('confirmed').length,
@@ -678,8 +753,9 @@ function statTile(icon, num, cap, variant = '') {
 }
 
 function sessionCard(b) {
-  const canCancel = b.status === 'confirmed';
-  const canComplete = b.status === 'confirmed' && hasEnded(b);
+  // Admin overview is read-only: no status/pitch actions, coach name shown.
+  const canCancel = !S.isAdmin && b.status === 'confirmed';
+  const canComplete = !S.isAdmin && b.status === 'confirmed' && hasEnded(b);
   const earn = b.earn_cents != null
     ? `<div class="sess-earn ${b.earn_estimated ? 'est' : ''}">${t(b.earn_estimated ? 'app.session.earn_est' : 'app.session.earn', { amount: eur(b.earn_cents) })}</div>`
     : '';
@@ -688,7 +764,7 @@ function sessionCard(b) {
       ${canCancel ? `<button class="btn btn-danger btn-sm" data-cancel="${esc(b.code)}">${t('app.session.cancel')}</button>` : ''}
     </div>` : '';
   // Pitch line: shown once picked; upcoming on-pitch sessions get a picker link.
-  const canPickPitch = b.status === 'confirmed' && !b.is_online;
+  const canPickPitch = !S.isAdmin && b.status === 'confirmed' && !b.is_online;
   const pitchLine = (b.pitch_name || canPickPitch)
     ? `<div class="sess-meta" style="margin-top:6px">📍 ${b.pitch_name ? esc(b.pitch_name) : `<span class="muted">${t('app.pitches.none')}</span>`}
         ${canPickPitch ? `<button class="link-btn" data-pickpitch="${esc(b.code)}" style="padding:0 0 0 6px">${t(b.pitch_name ? 'app.pitches.change' : 'app.pitches.choose')}</button>` : ''}
@@ -696,7 +772,7 @@ function sessionCard(b) {
   return `<div class="sess-card" data-code="${esc(b.code)}">
     <div class="sess-top">
       <div>
-        <div class="sess-name">${esc(b.customer)}</div>
+        <div class="sess-name">${esc(b.customer)}${S.isAdmin && b.coach ? ` → ${esc(b.coach)}` : ''}</div>
         <div class="sess-meta">${esc(cap(fmtDate(b.date)))} · ${fmtTime(b.hour)}<br>${sessionWhat(b)}</div>
         ${pitchLine}
         ${b.notes ? `<div class="sess-meta" style="margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--lime);border-radius:6px">📝 ${esc(b.notes)}</div>` : ''}
@@ -791,8 +867,12 @@ function showGate() {
   try {
     S.me = await API.get('/me');
   } catch { S.me = { user: null }; }
-  // Coaches (and admins with a coach profile) only.
-  if (!S.me.user || !S.me.coachProfile) { showGate(); return; }
+  // Coaches use the app as themselves; an admin WITHOUT a coach profile (the
+  // shared owner login) gets the read-only overview mode: coach activity
+  // summary, every booking in the calendar, and every chat.
+  if (!S.me.user) { showGate(); return; }
+  S.isAdmin = S.me.user.role === 'admin' && !S.me.coachProfile;
+  if (!S.me.coachProfile && !S.isAdmin) { showGate(); return; }
 
   try {
     await loadAll();

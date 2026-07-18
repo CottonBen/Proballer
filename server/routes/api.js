@@ -1175,6 +1175,35 @@ router.get('/admin/analytics', requireRole('admin'), (req, res) => {
   });
 });
 
+// What each coach has been up to — the admin's coach-app home screen: slots
+// opened and bookings received in the last 7 days, plus the newest bookings
+// across everyone. Only announced (paid) bookings count, matching what the
+// coaches themselves can see.
+router.get('/admin/coach-activity', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  const since = helsinkiDateOffset(-6); // 7-day window including today
+  const today = helsinkiNow().date;
+  const one = (sql, ...p) => Object.values(db.prepare(sql).get(...p))[0] || 0;
+  const coaches = db.prepare('SELECT id, name FROM coaches WHERE active = 1 ORDER BY display_order, id').all()
+    .map((c) => ({
+      id: c.id,
+      name: c.name,
+      slotsAdded7d: one('SELECT COUNT(*) FROM availability WHERE coach_id = ? AND substr(created_at,1,10) >= ?', c.id, since),
+      openSlots: one(`SELECT COUNT(*) FROM availability a WHERE a.coach_id = ? AND a.date >= ?
+        AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.coach_id = a.coach_id AND b.date = a.date
+          AND b.hour = a.hour AND b.status != 'cancelled')`, c.id, today),
+      newBookings7d: one(`SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND substr(created_at,1,10) >= ?
+        AND status != 'cancelled' AND coach_notified = 1`, c.id, since),
+      upcoming: one("SELECT COUNT(*) FROM bookings WHERE coach_id = ? AND status = 'confirmed' AND coach_notified = 1", c.id),
+    }));
+  const recent = db.prepare(`
+    SELECT b.code, b.date, b.hour, b.status, b.created_at, c.name AS coach, u.name AS customer
+    FROM bookings b JOIN coaches c ON c.id = b.coach_id JOIN users u ON u.id = b.customer_id
+    WHERE b.coach_notified = 1
+    ORDER BY b.id DESC LIMIT 6`).all();
+  res.json({ since, coaches, recent });
+});
+
 // Send a test email to the logged-in admin and report the exact SMTP outcome —
 // the only way for the owner to see WHY customer emails aren't arriving.
 router.post('/admin/test-email', requireRole('admin'), async (req, res) => {
