@@ -370,10 +370,11 @@ async function renderPitches() {
     </div>`;
     return;
   }
-  let sess;
   // The overview admin (no coach profile) always browses by city — assigning a
   // pitch to a session is the owning coach's job, through their own login.
-  if (sessions.length && !S.isAdmin) {
+  const bySession = sessions.length > 0 && !S.isAdmin;
+  let sess;
+  if (bySession) {
     if (!S.pitch.sel || !sessions.some((b) => b.code === S.pitch.sel)) S.pitch.sel = sessions[0].code;
     sess = sessions.find((b) => b.code === S.pitch.sel);
   } else {
@@ -384,7 +385,7 @@ async function renderPitches() {
 
   view().innerHTML = `<div class="screen">
     <header class="app-head"><h1 class="app-h1">${t('app.pitches.title')}</h1></header>
-    ${sessions.length ? `
+    ${bySession ? `
     <label class="small muted" style="display:block;margin-bottom:6px">${t('app.pitches.for_session')}</label>
     <select id="pitch-sess" class="input" style="width:100%;margin-bottom:10px">
       ${sessions.map((b) => `<option value="${esc(b.code)}" ${b.code === S.pitch.sel ? 'selected' : ''}>

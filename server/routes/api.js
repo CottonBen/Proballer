@@ -946,8 +946,9 @@ router.post('/coach/bookings/:code/status', requireRole('coach', 'admin'), (req,
 // invisible; the UI links each city's own reservation page instead.
 // ---------------------------------------------------------------------------
 router.get('/coach/pitches', requireRole('coach', 'admin'), async (req, res) => {
+  // Admins curate the directory without needing a coach profile of their own.
   const coach = myCoach(req);
-  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  if (!coach && req.user.role !== 'admin') return res.status(404).json({ error: 'No coach profile linked to this account.' });
   const city = String(req.query.city || '');
   if (!pitches.knownCity(city)) return res.status(400).json({ error: 'Unknown city.' });
   let data;
@@ -964,7 +965,7 @@ router.get('/coach/pitches', requireRole('coach', 'admin'), async (req, res) => 
       FROM bookings b JOIN coaches c ON c.id = b.coach_id
       WHERE b.date = ? AND b.hour = ? AND b.status != 'cancelled' AND b.pitch_id IS NOT NULL`)
       .all(date, hour)) {
-      taken.set(b.pitch_id, { coach: b.coach_name, code: b.code, mine: b.coach_id === coach.id });
+      taken.set(b.pitch_id, { coach: b.coach_name, code: b.code, mine: coach ? b.coach_id === coach.id : false });
     }
   }
   res.json({
