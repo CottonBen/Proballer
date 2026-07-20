@@ -31,6 +31,24 @@
       </div>
     </section>
 
+    <!-- Group training: coach-led small groups, one spot per player.
+         Hidden until there are upcoming sessions (landing.js). -->
+    <section class="section" id="groups" hidden style="padding-bottom:0">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div>
+            <div class="kicker" style="color:var(--lime);font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:.75rem"
+              data-i18n="landing.groups.kicker">Ryhmätreenit</div>
+            <h2 data-i18n="landing.groups.title">Treenaa porukalla</h2>
+            <p class="muted" style="max-width:60ch" id="groups-sub"></p>
+          </div>
+          <div id="group-price-tag" class="display" style="font-size:1.6rem"></div>
+        </div>
+        <div class="grid group-grid" id="group-grid"
+          style="grid-template-columns:repeat(auto-fill,minmax(260px,1fr))"></div>
+      </div>
+    </section>
+
     <!-- Coaches + booking -->
     <section class="section" id="coaches">
       <div class="wrap">

@@ -109,6 +109,32 @@
       <p class="muted small" id="crm-reviews-empty" hidden style="margin:12px 0 4px" data-i18n="admin.reviews.empty">Ei vielä arvosteluja.</p>
     </div>
 
+    <!-- group training: every session, roster, attendance, edit/cancel -->
+    <div class="dash-title">
+      <div>
+        <h2 style="font-size:1.8rem" data-i18n="admin.groups.heading">Ryhmätreenit</h2>
+        <p class="muted small" style="margin:0" data-i18n="admin.groups.sub">Kaikki ryhmätreenit, osallistujat ja
+          läsnäolo. Valmentajat luovat treenit sovelluksessaan.</p>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="groups-table"></table>
+      <p class="muted small" id="groups-empty" hidden style="margin:12px 0 4px" data-i18n="admin.groups.empty">Ei vielä ryhmätreenejä.</p>
+    </div>
+
+    <!-- prepaid session packages: balances + manual adjustments -->
+    <div class="dash-title">
+      <div>
+        <h2 style="font-size:1.8rem" data-i18n="admin.pkg.heading">Treenipaketit</h2>
+        <p class="muted small" style="margin:0" data-i18n="admin.pkg.sub">Asiakkaiden ennakkoon maksetut paketit ja
+          jäljellä olevat treenit. +1/−1 korjaa saldoa käsin.</p>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="packages-table"></table>
+      <p class="muted small" id="packages-empty" hidden style="margin:12px 0 4px" data-i18n="admin.pkg.empty">Ei vielä paketteja.</p>
+    </div>
+
     <!-- email communications: automated customer emails + log -->
     <div class="dash-title">
       <div>

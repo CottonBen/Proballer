@@ -162,6 +162,7 @@ function renderSessions() {
   if (sessTab === 'confirmed') list.sort(byWhen);
   view().innerHTML = `<div class="screen">
     <header class="app-head"><h1 class="app-h1">${t('app.sessions.title')}</h1></header>
+    ${S.isAdmin ? '' : '<div id="group-block"></div>'}
     <div class="seg" id="sess-seg">
       ${['confirmed', 'completed', 'cancelled'].map((k) =>
         `<button data-st="${k}" class="${k === sessTab ? 'on' : ''}">${t(map[k])}</button>`).join('')}
@@ -173,6 +174,87 @@ function renderSessions() {
   view().querySelectorAll('#sess-seg button').forEach((btn) =>
     btn.addEventListener('click', () => { sessTab = btn.dataset.st; renderSessions(); }));
   wireSessionActions();
+  if (!S.isAdmin) paintGroups();
+}
+
+// --- group training sessions (coach creates, players buy spots) --------------
+async function paintGroups() {
+  const box = document.getElementById('group-block');
+  if (!box) return;
+  try {
+    if (!S.site) S.site = await API.get('/config');
+    S.groups = await API.get('/coach/groups');
+  } catch { box.innerHTML = ''; return; }
+  const open = S.groups.filter((g) => g.status === 'open');
+  const gt = S.site.groupTraining || { pricePerPlayer: 25, capacity: 4 };
+
+  box.innerHTML = `
+    <div class="app-section-label" style="display:flex;justify-content:space-between;align-items:center;gap:8px">
+      <span>${t('app.groups.title')}</span>
+      <button class="link-btn" id="group-new" style="padding:2px 0">${t('app.groups.new')}</button>
+    </div>
+    <div id="group-form" hidden class="sess-card">
+      <div class="sess-meta" style="margin-bottom:8px">${t('app.groups.price_note',
+        { price: eur(gt.pricePerPlayer * 100), cap: gt.capacity })}</div>
+      <label class="small muted">${t('app.groups.date')}</label>
+      <input id="gf-date" type="date" class="input" style="width:100%;margin:4px 0 8px">
+      <label class="small muted">${t('app.groups.hour')}</label>
+      <select id="gf-hour" class="input" style="width:100%;margin:4px 0 8px">
+        ${Array.from({ length: 12 }, (_, i) => 8 + i).map((h) =>
+          `<option value="${h}">${fmtTime(h)}–${fmtTime(h + 1)}</option>`).join('')}
+      </select>
+      <label class="small muted">${t('app.groups.city')}</label>
+      <select id="gf-city" class="input" style="width:100%;margin:4px 0 10px">
+        ${(S.coach.locations || []).map((c) => `<option>${esc(c)}</option>`).join('')}
+      </select>
+      <button class="btn btn-primary btn-sm" id="gf-save">${t('app.groups.save')}</button>
+    </div>
+    ${open.length ? open.map((g) => `
+      <div class="sess-card">
+        <div class="sess-top">
+          <div style="min-width:0">
+            <div class="sess-name">${esc(cap(fmtDate(g.date)))} · ${fmtTime(g.hour)}</div>
+            <div class="sess-meta">${esc(I18N.server(g.location))} ·
+              ${t('app.groups.players', { taken: g.taken, cap: g.capacity })}</div>
+            <div class="sess-meta">${g.players.length
+              ? g.players.map((p) => esc(p.name)).join(', ')
+              : t('app.groups.noplayers')}</div>
+          </div>
+          <button class="btn btn-ghost btn-sm" data-gcancel="${esc(g.code)}"
+            data-gdate="${esc(g.date)}" data-ghour="${g.hour}">${t('app.groups.cancel')}</button>
+        </div>
+      </div>`).join('')
+      : `<div class="sess-meta" style="margin:0 0 12px">${t('app.groups.empty')}</div>`}`;
+
+  box.querySelector('#group-new').addEventListener('click', () => {
+    const f = box.querySelector('#group-form');
+    f.hidden = !f.hidden;
+  });
+  box.querySelector('#gf-save').addEventListener('click', async () => {
+    const btn = box.querySelector('#gf-save');
+    btn.disabled = true;
+    try {
+      await API.post('/coach/groups', {
+        date: box.querySelector('#gf-date').value,
+        hour: Number(box.querySelector('#gf-hour').value),
+        location: box.querySelector('#gf-city').value,
+      });
+      toast(t('app.groups.created'));
+      paintGroups();
+    } catch (e) {
+      btn.disabled = false;
+      toast(I18N.server(e.message), true);
+    }
+  });
+  box.querySelectorAll('[data-gcancel]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('app.groups.cancel_confirm',
+      { date: fmtDate(b.dataset.gdate), hour: String(b.dataset.ghour).padStart(2, '0') }))) return;
+    try {
+      await API.post(`/coach/groups/${encodeURIComponent(b.dataset.gcancel)}/cancel`, {});
+      toast(t('app.groups.cancelled_toast'));
+      paintGroups();
+    } catch (e) { toast(I18N.server(e.message), true); }
+  }));
 }
 
 // --- availability editing (the + button on the calendar) ---------------------

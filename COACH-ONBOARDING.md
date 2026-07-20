@@ -18,6 +18,15 @@ Kaikki valmentajan tehtävät hoituvat suoraan sovelluksessa — myös kalenteri
 - Treenit ovat tunnin mittaisia, klo 8–20 välillä.
 - Pidä kalenteri ajan tasalla: mitä enemmän avoimia aikoja, sitä enemmän varauksia.
 
+## 2b. Ryhmätreenit
+
+Henkilökohtaisten treenien lisäksi voit vetää **ryhmätreenejä**: enintään 4 pelaajaa, jokainen maksaa oman paikkansa (25 €) varatessaan.
+
+- Luo ryhmätreeni sovelluksen *Treenit*-välilehdellä: paina **+ Uusi ryhmätreeni**, valitse päivä, kellonaika ja kaupunki ja paina **Luo treeni**.
+- Treeni näkyy heti nettisivun etusivulla, ja pelaajat varaavat paikkansa sieltä. Näet sovelluksesta reaaliajassa, ketkä ovat ilmoittautuneet (esim. 2/4 pelaajaa).
+- Ryhmätreenin tunti ei voi mennä päällekkäin omien 1-on-1-varaustesi kanssa — sovellus estää sen automaattisesti.
+- Jos joudut perumaan ryhmätreenin, tee se sovelluksessa mahdollisimman ajoissa: kaikki pelaajat saavat viestin ja maksut palautetaan automaattisesti.
+
 ## 3. Kun pelaaja varaa treenin
 
 Pelaaja maksaa treenin heti varatessaan — sinä kuulet varauksesta vasta kun se on maksettu ja varma. Saat siitä **ilmoituksen sovellukseen ja sähköpostiisi**.

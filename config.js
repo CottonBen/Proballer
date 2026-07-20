@@ -99,6 +99,25 @@ module.exports = {
     payWindowMinutes: 45,
   },
 
+  // Group training: one coach, up to `capacity` players, each paying
+  // `pricePerPlayer` euros for their own spot in the session.
+  groupTraining: {
+    pricePerPlayer: 25,
+    capacity: 4,
+  },
+
+  // Prepaid 1-on-1 session packages, paid upfront in one card payment.
+  // `single` is the normal pay-per-session flow (its live price comes from
+  // pricing.* above — listed here only so the wizard renders all options from
+  // one place). Future products (group packages, memberships, camps) follow
+  // the same shape: a code, a session count and an upfront price.
+  packages: [
+    { id: 'single', sessions: 1, price: 40 },
+    { id: 'pack3',  sessions: 3, price: 114 },
+    { id: 'pack5',  sessions: 5, price: 185 },
+    { id: 'pack8',  sessions: 8, price: 280 },
+  ],
+
   // How many days ahead coaches can publish availability / customers can book.
   bookingHorizonDays: 60,
 

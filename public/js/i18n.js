@@ -714,6 +714,109 @@ const I18N_DICT = {
   "admin.crm.delete.confirm1": { fi: "Poistetaanko asiakastili {name}? Tili poistetaan pysyvästi.", en: "Delete the customer account {name}? The account is removed permanently." },
   "admin.crm.delete.confirm2": { fi: "VIIMEINEN VARMISTUS — {name}: poistetaan {bookings} varausta (joista {upcoming} tulevaa; niiden ajat vapautuvat), kaikki laskut, chatit, ilmaiskerrat ja arvostelut. Poisto vaikuttaa myös tilastoihin ja valmentajien palkkiolaskelmiin pidettyjen treenien osalta. Tätä EI voi perua. Jatketaanko?", en: "FINAL CONFIRMATION — {name}: this deletes {bookings} bookings ({upcoming} upcoming; their slots open up), all invoices, chats, credits and reviews. Past sessions also disappear from statistics and coach payout figures. This CANNOT be undone. Continue?" },
   "admin.crm.delete.done": { fi: "Asiakastili {name} poistettu.", en: "Customer account {name} deleted." },
+
+  // --- group training: landing section ---------------------------------------
+  "landing.groups.kicker": { fi: "Ryhmätreenit", en: "Group training" },
+  "landing.groups.title": { fi: "Treenaa porukalla", en: "Train as a group" },
+  "landing.groups.sub": { fi: "Valmentajan vetämä pienryhmä, enintään {cap} pelaajaa. Varaa oma paikkasi — maksu heti varatessa.", en: "A coach-led small group of up to {cap} players. Book your own spot — payment right at booking." },
+  "landing.groups.spots": { fi: "{left}/{cap} paikkaa jäljellä", en: "{left}/{cap} spots remaining" },
+  "landing.groups.full": { fi: "Täynnä", en: "Full" },
+  "landing.groups.join": { fi: "Varaa paikka", en: "Book a spot" },
+  "landing.groups.perplayer": { fi: "/ pelaaja", en: "/ player" },
+  "landing.groups.login_first": { fi: "Kirjaudu ensin sisään varataksesi paikan.", en: "Log in first to book a spot." },
+  "landing.groups.pay_failed": { fi: "Maksun aloitus epäonnistui — paikka odottaa maksua Omat varaukset -sivulla.", en: "Could not start the payment — your spot awaits payment on the My bookings page." },
+
+  // --- packages: booking wizard ----------------------------------------------
+  "booking.pkg.title": { fi: "Valitse paketti", en: "Choose a package" },
+  "booking.pkg.single": { fi: "Yksittäinen treeni", en: "Single session" },
+  "booking.pkg.multi": { fi: "{n} treenin paketti", en: "{n}-session package" },
+  "booking.pkg.per": { fi: "{per} / treeni", en: "{per} / session" },
+  "booking.pkg.hint": { fi: "Paketti maksetaan nyt; loput treenit jäävät talteen tulevia varauksia varten.", en: "The package is paid now; the remaining sessions are saved for your next bookings." },
+  "booking.pkg.funded_note": { fi: "Sinulla on treenipaketti: {n} treeniä jäljellä. Tämä varaus käyttää yhden — ei erillistä maksua.", en: "You have a session package: {n} sessions left. This booking uses one — no extra payment." },
+  "booking.pkg.success_remaining": { fi: "Paketista käytettiin 1 treeni — jäljellä {n}.", en: "One session was used from your package — {n} remaining." },
+
+  // --- packages: customer dashboard ------------------------------------------
+  "mybookings.pkg.title": { fi: "Treenipaketti", en: "Session package" },
+  "mybookings.pkg.remaining": { fi: "{n} treeniä jäljellä", en: "{n} sessions remaining" },
+  "mybookings.pkg.autouse": { fi: "Paketin treenit käytetään automaattisesti, kun varaat treenin.", en: "Package sessions are used automatically when you book." },
+  "mybookings.pkg.none": { fi: "Ei aktiivista pakettia. Paketilla treenaat edullisemmin:", en: "No active package. Packages make training cheaper:" },
+  "mybookings.pkg.more": { fi: "Osta uusi paketti milloin vain:", en: "Buy another package any time:" },
+  "mybookings.pkg.buy_pack": { fi: "{n} treeniä — {price}", en: "{n} sessions — {price}" },
+  "mybookings.pkg.history": { fi: "Ostohistoria", en: "Purchase history" },
+  "mybookings.pkg.row": { fi: "{n} treenin paketti", en: "{n}-session package" },
+  "mybookings.pkg.used": { fi: "käytetty {used}/{total}", en: "used {used}/{total}" },
+  "mybookings.pkg.status.active": { fi: "Aktiivinen", en: "Active" },
+  "mybookings.pkg.status.pending": { fi: "Odottaa maksua", en: "Awaiting payment" },
+
+  // --- group training: customer dashboard ------------------------------------
+  "mybookings.groups.title": { fi: "Ryhmätreenit", en: "Group sessions" },
+  "mybookings.groups.session": { fi: "Ryhmätreeni", en: "Group session" },
+  "mybookings.groups.spots": { fi: "{taken}/{cap} pelaajaa", en: "{taken}/{cap} players" },
+  "mybookings.groups.cancelled_note": { fi: "Treeni peruttu — maksu palautetaan.", en: "Session cancelled — payment refunded." },
+
+  // --- pay-return success variants -------------------------------------------
+  "pay.success.group_title": { fi: "Paikka varattu!", en: "Spot booked!" },
+  "pay.success.group_body": { fi: "Ryhmätreenipaikkasi on vahvistettu — nähdään kentällä! Vahvistus on lähetetty sähköpostiisi.", en: "Your group training spot is confirmed — see you on the pitch! A confirmation email is on its way." },
+  "pay.success.pkg_title": { fi: "Paketti maksettu!", en: "Package paid!" },
+  "pay.success.pkg_body": { fi: "Treenipakettisi on käytössä — treenit odottavat varaamista. Vahvistus on lähetetty sähköpostiisi.", en: "Your session package is active — your sessions are ready to book. A confirmation email is on its way." },
+
+  // --- coach app: group sessions ---------------------------------------------
+  "app.groups.title": { fi: "Ryhmätreenit", en: "Group sessions" },
+  "app.groups.new": { fi: "+ Uusi ryhmätreeni", en: "+ New group session" },
+  "app.groups.date": { fi: "Päivä", en: "Date" },
+  "app.groups.hour": { fi: "Klo", en: "Time" },
+  "app.groups.city": { fi: "Kaupunki", en: "City" },
+  "app.groups.save": { fi: "Luo treeni", en: "Create session" },
+  "app.groups.created": { fi: "Ryhmätreeni luotu", en: "Group session created" },
+  "app.groups.price_note": { fi: "{price} / pelaaja · enintään {cap} pelaajaa", en: "{price} per player · up to {cap} players" },
+  "app.groups.players": { fi: "{taken}/{cap} pelaajaa", en: "{taken}/{cap} players" },
+  "app.groups.noplayers": { fi: "Ei vielä ilmoittautuneita", en: "No signups yet" },
+  "app.groups.cancel": { fi: "Peru", en: "Cancel" },
+  "app.groups.cancel_confirm": { fi: "Perutaanko ryhmätreeni {date} klo {hour}.00? Kaikki pelaajat saavat viestin ja maksut palautetaan.", en: "Cancel the group session on {date} at {hour}:00? All players are notified and payments are refunded." },
+  "app.groups.cancelled_toast": { fi: "Ryhmätreeni peruttu", en: "Group session cancelled" },
+  "app.groups.empty": { fi: "Ei tulevia ryhmätreenejä.", en: "No upcoming group sessions." },
+
+  // --- admin: group sessions -------------------------------------------------
+  "admin.groups.heading": { fi: "Ryhmätreenit", en: "Group training" },
+  "admin.groups.sub": { fi: "Kaikki ryhmätreenit, osallistujat ja läsnäolo. Valmentajat luovat treenit sovelluksessaan.", en: "Every group session, its players and attendance. Coaches create sessions in their app." },
+  "admin.groups.th.when": { fi: "Aika", en: "When" },
+  "admin.groups.th.coach": { fi: "Valmentaja", en: "Coach" },
+  "admin.groups.th.where": { fi: "Paikka", en: "Where" },
+  "admin.groups.th.players": { fi: "Pelaajat", en: "Players" },
+  "admin.groups.th.status": { fi: "Tila", en: "Status" },
+  "admin.groups.status.open": { fi: "Avoin", en: "Open" },
+  "admin.groups.status.completed": { fi: "Pidetty", en: "Completed" },
+  "admin.groups.status.cancelled": { fi: "Peruttu", en: "Cancelled" },
+  "admin.groups.edit": { fi: "Muokkaa", en: "Edit" },
+  "admin.groups.save": { fi: "Tallenna", en: "Save" },
+  "admin.groups.cancel_btn": { fi: "Peru treeni", en: "Cancel session" },
+  "admin.groups.addplayer": { fi: "+ Pelaaja", en: "+ Player" },
+  "admin.groups.addplayer_prompt": { fi: "Pelaajan sähköposti (tilin pitää olla olemassa):", en: "Player email (an account must exist):" },
+  "admin.groups.removeplayer_confirm": { fi: "Poistetaanko {name} treenistä? Maksettu paikka palautetaan automaattisesti.", en: "Remove {name} from the session? A paid spot is refunded automatically." },
+  "admin.groups.cancel_confirm": { fi: "Perutaanko ryhmätreeni {code}? Pelaajat saavat viestin ja maksut palautetaan.", en: "Cancel group session {code}? Players are notified and payments are refunded." },
+  "admin.groups.empty": { fi: "Ei vielä ryhmätreenejä.", en: "No group sessions yet." },
+  "admin.groups.attendance": { fi: "{n} osallistujaa", en: "{n} attending" },
+
+  // --- admin: packages -------------------------------------------------------
+  "admin.pkg.heading": { fi: "Treenipaketit", en: "Session packages" },
+  "admin.pkg.sub": { fi: "Asiakkaiden ennakkoon maksetut paketit ja jäljellä olevat treenit. +1/−1 korjaa saldoa käsin.", en: "Customers' prepaid packages and remaining sessions. +1/−1 adjusts a balance by hand." },
+  "admin.pkg.th.customer": { fi: "Asiakas", en: "Customer" },
+  "admin.pkg.th.package": { fi: "Paketti", en: "Package" },
+  "admin.pkg.th.remaining": { fi: "Jäljellä", en: "Remaining" },
+  "admin.pkg.th.purchased": { fi: "Ostettu", en: "Purchased" },
+  "admin.pkg.th.status": { fi: "Tila", en: "Status" },
+  "admin.pkg.row": { fi: "{n} treeniä — {price}", en: "{n} sessions — {price}" },
+  "admin.pkg.empty": { fi: "Ei vielä paketteja.", en: "No packages yet." },
+  "admin.pkg.adjusted": { fi: "Saldo päivitetty: {n} jäljellä.", en: "Balance updated: {n} remaining." },
+
+  // --- admin: new email-log types --------------------------------------------
+  "admin.emails.type.group_booking": { fi: "Ryhmävahvistus", en: "Group confirmation" },
+  "admin.emails.type.group_release": { fi: "Ryhmäpaikka vapautui (maksamatta)", en: "Group spot released (unpaid)" },
+  "admin.emails.type.group_cancel": { fi: "Ryhmäperuutus", en: "Group cancellation" },
+  "admin.emails.type.package": { fi: "Pakettivahvistus", en: "Package confirmation" },
+  "admin.emails.type.package_low": { fi: "Paketissa 1 treeni jäljellä", en: "Package: 1 session left" },
+  "admin.emails.type.package_done": { fi: "Paketti käytetty", en: "Package fully used" },
+  "admin.emails.type.reminder": { fi: "Treenimuistutus", en: "Session reminder" },
 };
 
 // Server-sent strings (API error messages, notification texts, config labels).
@@ -811,6 +914,26 @@ const I18N_SERVER_EXACT = {
   "Another Proballers session is already on that pitch at that time.": "Toinen Proballers-treeni on jo tuolla kentällä samaan aikaan.",
   "The pitch registry (LIPAS) is not responding — try again in a moment.": "Kenttärekisteri (LIPAS) ei vastaa — yritä hetken kuluttua uudelleen.",
   "Customer not found.": "Asiakasta ei löytynyt.",
+  "This group session is not open for booking.": "Tämä ryhmätreeni ei ole varattavissa.",
+  "This group session is already full.": "Ryhmätreeni on jo täynnä.",
+  "You already have a spot in this group session.": "Sinulla on jo paikka tässä ryhmätreenissä.",
+  "Group session not found.": "Ryhmätreeniä ei löytynyt.",
+  "Signup not found.": "Ilmoittautumista ei löytynyt.",
+  "This spot is not awaiting payment.": "Tämä paikka ei odota maksua.",
+  "Only an open session can be cancelled.": "Vain avoimen treenin voi perua.",
+  "Only an open session can be edited.": "Vain avointa treeniä voi muokata.",
+  "Only an open session can take players.": "Vain avoimeen treeniin voi lisätä pelaajia.",
+  "The coach already has a booking at that time.": "Valmentajalla on jo varaus tuohon aikaan.",
+  "The coach already has a group session at that time.": "Valmentajalla on jo ryhmätreeni tuohon aikaan.",
+  "No account with that email.": "Tuolla sähköpostilla ei ole tiliä.",
+  "That player already has a spot in this session.": "Pelaajalla on jo paikka tässä treenissä.",
+  "Unknown package.": "Tuntematon paketti.",
+  "Package not found.": "Pakettia ei löytynyt.",
+  "Active package not found.": "Aktiivista pakettia ei löytynyt.",
+  "Adjustment must be a whole number of sessions.": "Korjauksen pitää olla kokonaisluku.",
+  "The balance cannot go below zero.": "Saldo ei voi mennä alle nollan.",
+  "The customer's session package has no sessions left — can't reactivate.": "Asiakkaan treenipaketissa ei ole treenejä jäljellä — varausta ei voi palauttaa.",
+  "Your group training spot was released because the payment was not completed. The spot is open again — you are welcome to book anew.": "Ryhmätreenipaikkasi vapautettiin, koska maksua ei suoritettu loppuun. Paikka on jälleen vapaana — voit varata sen uudelleen.",
   "Helsinki": "Helsinki",
   "Espoo": "Espoo",
   "Vantaa": "Vantaa",
@@ -873,6 +996,20 @@ const I18N_SERVER_PATTERNS = [
     (m) => `Maksu laskusta ${m[1]} saapui, mutta sen varaus ${m[2]} on peruttu — varaus pysyy peruttuna; palauta maksu Stripessä.`],
   [/^Payment received for invoice (\S+), but that invoice no longer exists \(was the customer account deleted\?\) — please refund the payment in Stripe\.$/,
     (m) => `Maksu laskusta ${m[1]} saapui, mutta laskua ei enää ole (poistettiinko asiakastili?) — palauta maksu Stripessä.`],
+  // Coach alert: a player bought a spot in their group session.
+  [/^New group signup: (.+) joined your group session (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 \((\d+)\/(\d+)\)\.$/,
+    (m) => `Uusi ryhmäilmoittautuminen: ${m[1]} liittyi ryhmätreeniisi ${m[2]} ${fiDate(m[3])} klo ${m[4]}.00 (${m[5]}/${m[6]}).`],
+  // Player alert: the admin moved the session.
+  [/^Your group session (\S+) has moved: it is now on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 \((.+)\)\.$/,
+    (m) => `Ryhmätreenisi ${m[1]} siirtyi: uusi aika ${fiDate(m[2])} klo ${m[3]}.00 (${m[4]}).`],
+  // Coach alert: the admin cancelled their group session.
+  [/^Your group session (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was cancelled by the admin\.$/,
+    (m) => `Ryhmätreenisi ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 peruttiin ylläpidon toimesta.`],
+  // Admin alerts: a group payment that needs a manual refund in Stripe.
+  [/^Payment received for group spot (\S+), but the session (\S*) is (no longer available|full) — please refund the payment in Stripe\.$/,
+    (m) => `Maksu ryhmäpaikasta ${m[1]} saapui, mutta treeni ${m[2]} ${m[3] === 'full' ? 'on täynnä' : 'ei ole enää saatavilla'} — palauta maksu Stripessä.`],
+  [/^Group spot (\S+) was cancelled but could not be refunded automatically — please refund the payment in Stripe\.$/,
+    (m) => `Ryhmäpaikka ${m[1]} peruttiin, mutta maksua ei voitu palauttaa automaattisesti — palauta maksu Stripessä.`],
 ];
 
 const I18N = (() => {

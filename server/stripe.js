@@ -49,16 +49,19 @@ async function stripeRequest(method, path, params) {
   return body;
 }
 
-// One-off Checkout Session for an invoice. `description` is shown on Stripe's
-// payment page; `origin` builds the return URLs.
-function createCheckoutSession({ invoiceNumber, amountCents, description, customerEmail, origin, lang }) {
+// One-off Checkout Session. `metadata` tells the payment paths (webhook +
+// success-URL refresh) what was bought: { invoice_number } for a 1-on-1
+// booking invoice, { group_signup } for a group-training spot, { package }
+// for a prepaid session package. `successParam` lands on /my-bookings so the
+// return page knows what to refresh. `description` is shown on Stripe's page.
+function createCheckoutSession({ metadata, successParam, amountCents, description, customerEmail, origin, lang }) {
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     locale: lang === 'fi' ? 'fi' : 'en',
-    // Each Checkout session dies after 30 min (Stripe's minimum). The booking
+    // Each Checkout session dies after 30 min (Stripe's minimum). The purchase
     // itself is held for config.stripe.payWindowMinutes — clicking "Pay" again
-    // simply mints a fresh session; an unpaid booking is released by
-    // expireUnpaidBookings() at its deadline.
+    // simply mints a fresh session; an unpaid purchase is released by the
+    // expiry sweeps at its deadline.
     expires_at: Math.floor(Date.now() / 1000) + 30 * 60,
     customer_email: customerEmail,
     line_items: [{
@@ -69,13 +72,27 @@ function createCheckoutSession({ invoiceNumber, amountCents, description, custom
         product_data: { name: description },
       },
     }],
-    metadata: { invoice_number: invoiceNumber },
-    success_url: `${origin}/my-bookings?paid=${encodeURIComponent(invoiceNumber)}`,
+    metadata,
+    success_url: `${origin}/my-bookings?${successParam}`,
     cancel_url: `${origin}/my-bookings?paycancel=1`,
   });
 }
 
 const retrieveSession = (id) => stripeRequest('GET', `/checkout/sessions/${encodeURIComponent(id)}`);
+
+// Full refund of a payment (group spot cancelled by the business). Returns
+// true when Stripe accepted the refund. Callers alert the admins on false —
+// the money then has to be refunded by hand in the Stripe dashboard.
+async function refundPayment(paymentIntent) {
+  if (!enabled() || !paymentIntent) return false;
+  try {
+    await stripeRequest('POST', '/refunds', { payment_intent: paymentIntent });
+    return true;
+  } catch (err) {
+    console.error('[stripe] refund:', err.message);
+    return false;
+  }
+}
 
 // Idempotent: only a 'sent' invoice flips to paid. A successful flip fires the
 // automatic receipt (regenerated document + email) — never blocks the caller.
@@ -193,11 +210,16 @@ function webhookHandler(req, res) {
   try { event = JSON.parse(raw); } catch { return res.status(400).json({ error: 'Bad payload.' }); }
   if (event.type === 'checkout.session.completed') {
     const s = event.data && event.data.object;
-    if (s && s.payment_status === 'paid' && s.metadata && s.metadata.invoice_number) {
-      markInvoicePaid(s.metadata.invoice_number);
+    if (s && s.payment_status === 'paid' && s.metadata) {
+      if (s.metadata.invoice_number) markInvoicePaid(s.metadata.invoice_number);
+      else if (s.metadata.group_signup) require('./groups').markSignupPaid(s.metadata.group_signup, s);
+      else if (s.metadata.package) require('./packages').markPackagePaid(s.metadata.package, s);
     }
   }
   res.json({ received: true });
 }
 
-module.exports = { enabled, createCheckoutSession, retrieveSession, markInvoicePaid, webhookHandler };
+module.exports = {
+  enabled, createCheckoutSession, retrieveSession, refundPayment,
+  markInvoicePaid, alertAdmins, webhookHandler,
+};

@@ -20,6 +20,8 @@ async function openWizard(coach, site) {
   W.coach = coach; W.site = site;
   W.slot = W.position = W.focus = W.location = null;
   W.notes = '';
+  W.package = 'single';
+  W.pkgInfo = undefined; // fetched once at the review step
   W.step = 0;
   backdrop().classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -237,14 +239,44 @@ async function renderReview() {
     : (discount ? `<span class="chip" style="font-size:.68rem">${t('booking.review.sale_chip',
         { saleLabel: esc(I18N.server(p.saleLabel)), salePercent: p.salePercent })}</span>` : '');
 
+  // Prepaid packages: an active balance funds this booking outright; with no
+  // balance the customer can buy a 3/5/8-session package in the same payment.
+  if (!needsAuth && W.pkgInfo === undefined) {
+    try { W.pkgInfo = await API.get('/my-package'); } catch { W.pkgInfo = null; }
+  }
+  const pkgRemaining = (!needsAuth && !hasCredit && W.pkgInfo) ? W.pkgInfo.remaining : 0;
+  const pkgOptions = (W.site.packages || []).filter((o) => o.sessions > 1);
+  const canChoosePkg = !hasCredit && !pkgRemaining && W.site.payment.stripeEnabled
+    && pkgOptions.length > 0 && !needsAuth;
+  if (!canChoosePkg) W.package = 'single';
+  const chosenPkg = canChoosePkg && W.package !== 'single'
+    ? pkgOptions.find((o) => o.id === W.package) : null;
+  const payNowCents = chosenPkg ? chosenPkg.price * 100 : (pkgRemaining ? 0 : price - discount);
+
   // Raw method stays English server-side; translate for display only.
   const payMethod = W.site.payment && W.site.payment.method
     ? I18N.server(W.site.payment.method).toLowerCase()
     : t('booking.review.payment_method_fallback');
 
-  // Card bookings are paid right now, so the main button says so.
-  const cardFlow = W.site.payment.stripeEnabled && !hasCredit && price - discount > 0;
+  // Card bookings (single OR package purchase) are paid right now.
+  const cardFlow = W.site.payment.stripeEnabled && !hasCredit && !pkgRemaining && payNowCents > 0;
   const confirmLabel = cardFlow ? t('booking.review.start_payment') : t('booking.review.confirm_button');
+
+  const pkgChooser = canChoosePkg ? `
+    <div style="margin-top:14px">
+      <div class="small muted" style="text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${t('booking.pkg.title')}</div>
+      <div class="opt-grid" id="pkg-grid" style="grid-template-columns:repeat(auto-fit,minmax(130px,1fr))">
+        <div class="opt-card ${!chosenPkg ? 'sel' : ''}" data-pkg="single">
+          <div class="t">${t('booking.pkg.single')}</div>
+          <div class="d">${eur(price - discount)}</div>
+        </div>
+        ${pkgOptions.map((o) => `
+        <div class="opt-card ${W.package === o.id ? 'sel' : ''}" data-pkg="${o.id}">
+          <div class="t">${t('booking.pkg.multi', { n: o.sessions })}</div>
+          <div class="d">${eur(o.price * 100)} · ${t('booking.pkg.per', { per: eur(Math.round(o.price * 100 / o.sessions)) })}</div>
+        </div>`).join('')}
+      </div>
+    </div>` : '';
 
   body().innerHTML = header(t(STEP_TITLE_KEYS[5])) + `
     <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
@@ -255,20 +287,30 @@ async function renderReview() {
     <div class="review-row"><span class="muted">${t('booking.review.location_label')}</span><strong>${esc(I18N.server(W.location))}</strong></div>
     ${W.notes ? `<div class="review-row"><span class="muted">${t('booking.review.notes_label')}</span><strong style="max-width:60%;text-align:right;font-weight:400">${esc(W.notes)}</strong></div>` : ''}
     <div class="review-row"><span class="muted">${t('booking.review.price_label')}</span>
-      <strong>${discount ? `<span class="price-old">${eur(price)}</span> ` : ''}
-        <span class="price-new">${eur(price - discount)}</span>
-        ${priceChip}</strong></div>
+      <strong>${chosenPkg
+        ? `<span class="price-new">${eur(payNowCents)}</span>
+           <span class="chip" style="font-size:.68rem">${t('booking.pkg.multi', { n: chosenPkg.sessions })}</span>`
+        : `${discount ? `<span class="price-old">${eur(price)}</span> ` : ''}
+           <span class="price-new">${eur(price - discount)}</span>
+           ${pkgRemaining ? `<span class="chip" style="font-size:.68rem">${t('mybookings.pkg.title')}</span>` : priceChip}`}</strong></div>
+    ${pkgChooser}
+    ${pkgRemaining ? `<p class="small" style="margin-top:12px;color:var(--lime)">
+      ${t('booking.pkg.funded_note', { n: pkgRemaining })}</p>` : ''}
     <p class="small muted" style="margin-top:12px">${hasCredit
       ? t('booking.review.free_note')
-      : (W.site.payment.stripeEnabled
-        ? t('booking.review.pay_note', { price: eur(price - discount) })
-        : t('booking.review.invoice_note', {
-            price: eur(price - discount),
-            delivery: W.site.emailDelivery
-              ? t('booking.review.invoice_note_delivery_email')
-              : t('booking.review.invoice_note_delivery_mybookings'),
-            method: esc(payMethod),
-          }))}</p>
+      : pkgRemaining
+        ? t('mybookings.pkg.autouse')
+        : chosenPkg
+          ? `${t('booking.pkg.hint')} ${t('booking.review.pay_note', { price: eur(payNowCents) })}`
+          : (W.site.payment.stripeEnabled
+            ? t('booking.review.pay_note', { price: eur(price - discount) })
+            : t('booking.review.invoice_note', {
+                price: eur(price - discount),
+                delivery: W.site.emailDelivery
+                  ? t('booking.review.invoice_note_delivery_email')
+                  : t('booking.review.invoice_note_delivery_mybookings'),
+                method: esc(payMethod),
+              }))}</p>
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -281,6 +323,12 @@ async function renderReview() {
     W.step = skipLocation() ? 3 : 4;
     render();
   });
+
+  // Package choice re-renders the review so the price + note follow along.
+  body().querySelectorAll('[data-pkg]').forEach((card) => card.addEventListener('click', () => {
+    W.package = card.dataset.pkg;
+    renderReview();
+  }));
 
   if (needsAuth) renderAuthPanel();
 
@@ -297,6 +345,7 @@ async function renderReview() {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
         position: W.position, focus: W.focus, location: W.location,
         notes: W.notes.trim(),
+        package: chosenPkg ? chosenPkg.id : undefined,
         lang: I18N.lang, // the invoice is generated in this language
       });
       W.step = 6;
@@ -402,11 +451,30 @@ function renderPayRedirect(payUrl) {
   if (payUrl) location.href = payUrl;
 }
 
-function renderSuccess({ booking, invoice, payUrl }) {
+function renderSuccess({ booking, invoice, payUrl, package: pkg }) {
   // Payment is due AT booking: go STRAIGHT to Stripe — no interim "success"
-  // screen that could read as "already confirmed".
+  // screen that could read as "already confirmed". (Covers single-session
+  // card payments AND a package bought together with this booking.)
   if (payUrl) {
     renderPayRedirect(payUrl);
+    return;
+  }
+  // Package flows have no invoice. Funded by an active package: confirmed,
+  // show the new balance. A package purchase whose checkout failed to open:
+  // be honest — nothing is confirmed until it is paid on the bookings page.
+  if (!invoice && pkg) {
+    body().innerHTML = `
+    <div style="text-align:center;padding:12px 0">
+      <div style="font-size:3.2rem">${pkg.funded ? '⚽' : '⏳'}</div>
+      <h2>${pkg.funded ? t('booking.success.title') : t('mybookings.pkg.status.pending')}</h2>
+      <p class="muted">${esc(booking.coach)} · ${esc(fmtDate(booking.date))}
+        ${fmtHourRange(booking.hour)} · ${esc(I18N.server(booking.location))}</p>
+      <p>${t('booking.success.reference', { code: `<strong>${esc(booking.code)}</strong>` })}</p>
+      ${pkg.funded
+        ? `<p style="color:var(--lime)">${t('booking.pkg.success_remaining', { n: pkg.remaining })}</p>`
+        : `<p class="form-error">${t('landing.groups.pay_failed')}</p>`}
+      <a class="btn btn-primary" href="/my-bookings">${t('common.nav.my_bookings')}</a>
+    </div>`;
     return;
   }
   body().innerHTML = `

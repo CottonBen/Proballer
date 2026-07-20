@@ -61,8 +61,127 @@ const WIN_LABEL = {
   await refresh();
   await loadBookings('');
   await loadCRM();
+  await loadGroups();
+  await loadPackages();
   await loadEmails();
 })().catch((e) => toast(I18N.server(e.message), true));
+
+// --- group training: sessions, rosters, attendance, edit/cancel ---------------
+let groupEditId = null;
+async function loadGroups() {
+  const rows = await API.get('/admin/groups');
+  const tbl = document.getElementById('groups-table');
+  document.getElementById('groups-empty').hidden = rows.length > 0;
+  if (!rows.length) { tbl.innerHTML = ''; return; }
+  const hourSep = I18N.lang === 'fi' ? '.' : ':';
+  tbl.innerHTML = `
+    <tr><th>${t('admin.groups.th.when')}</th><th>${t('admin.groups.th.coach')}</th><th>${t('admin.groups.th.where')}</th>
+      <th>${t('admin.groups.th.players')}</th><th>${t('admin.groups.th.status')}</th><th></th></tr>` +
+    rows.map((g) => {
+      const editing = groupEditId === g.id;
+      const whenCell = editing
+        ? `<input type="date" class="input" id="ge-date" value="${esc(g.date)}" style="width:140px">
+           <select class="input" id="ge-hour" style="width:90px">${Array.from({ length: 12 }, (_, i) => 8 + i).map((h) =>
+             `<option value="${h}" ${h === g.hour ? 'selected' : ''}>${String(h).padStart(2, '0')}${hourSep}00</option>`).join('')}</select>`
+        : `${esc(fmtDate(g.date))} ${String(g.hour).padStart(2, '0')}${hourSep}00`;
+      const whereCell = editing
+        ? `<select class="input" id="ge-city" style="width:110px">${(CONFIG.locations || []).map((c) =>
+            `<option ${c === g.location ? 'selected' : ''}>${esc(c)}</option>`).join('')}</select>`
+        : esc(g.location);
+      const players = g.players.map((p) =>
+        `<span class="chip ${p.paid ? '' : 'gray'}" title="${esc(p.email)}">${esc(p.name)}${
+          g.status === 'open'
+            ? `<button class="link-btn" data-rmplayer="${g.id}:${p.signupId}" data-name="${esc(p.name)}"
+                 style="padding:0 0 0 5px">×</button>` : ''}</span>`).join(' ');
+      const actions = g.status !== 'open' ? '' : (editing
+        ? `<button class="btn btn-primary btn-sm" data-gsave="${g.id}">${t('admin.groups.save')}</button>`
+        : `<button class="btn btn-ghost btn-sm" data-gedit="${g.id}">${t('admin.groups.edit')}</button>
+           <button class="btn btn-ghost btn-sm" data-gaddp="${g.id}">${t('admin.groups.addplayer')}</button>
+           <button class="btn btn-ghost btn-sm" data-gdel="${g.id}" data-code="${esc(g.code)}">${t('admin.groups.cancel_btn')}</button>`);
+      return `<tr>
+        <td style="white-space:nowrap">${whenCell}<br><span class="muted small">${esc(g.code)}</span></td>
+        <td>${esc(g.coach)}</td>
+        <td>${whereCell}</td>
+        <td>${g.taken}/${g.capacity} · ${t('admin.groups.attendance', { n: g.attendance })}<br>${players}</td>
+        <td><span class="status-tag status-${g.status === 'open' ? 'confirmed' : esc(g.status)}">${t('admin.groups.status.' + g.status)}</span></td>
+        <td style="white-space:nowrap">${actions}</td>
+      </tr>`;
+    }).join('');
+
+  tbl.querySelectorAll('[data-gedit]').forEach((b) => b.addEventListener('click', () => {
+    groupEditId = Number(b.dataset.gedit);
+    loadGroups();
+  }));
+  tbl.querySelectorAll('[data-gsave]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await API.put(`/admin/groups/${b.dataset.gsave}`, {
+        date: document.getElementById('ge-date').value,
+        hour: Number(document.getElementById('ge-hour').value),
+        location: document.getElementById('ge-city').value,
+      });
+      groupEditId = null;
+      await loadGroups();
+    } catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+  tbl.querySelectorAll('[data-gaddp]').forEach((b) => b.addEventListener('click', async () => {
+    const email = prompt(t('admin.groups.addplayer_prompt'));
+    if (!email) return;
+    try {
+      await API.post(`/admin/groups/${b.dataset.gaddp}/players`, { email });
+      await loadGroups();
+    } catch (e) { toast(I18N.server(e.message), true); }
+  }));
+  tbl.querySelectorAll('[data-rmplayer]').forEach((b) => b.addEventListener('click', async () => {
+    const [gid, sid] = b.dataset.rmplayer.split(':');
+    if (!confirm(t('admin.groups.removeplayer_confirm', { name: b.dataset.name }))) return;
+    try {
+      await API.del(`/admin/groups/${gid}/players/${sid}`);
+      await loadGroups();
+    } catch (e) { toast(I18N.server(e.message), true); }
+  }));
+  tbl.querySelectorAll('[data-gdel]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('admin.groups.cancel_confirm', { code: b.dataset.code }))) return;
+    b.disabled = true;
+    try {
+      await API.post(`/admin/groups/${b.dataset.gdel}/cancel`, {});
+      await loadGroups();
+    } catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+}
+
+// --- prepaid packages: balances + manual +1/−1 corrections --------------------
+async function loadPackages() {
+  const rows = await API.get('/admin/packages');
+  const tbl = document.getElementById('packages-table');
+  document.getElementById('packages-empty').hidden = rows.length > 0;
+  if (!rows.length) { tbl.innerHTML = ''; return; }
+  tbl.innerHTML = `
+    <tr><th>${t('admin.pkg.th.customer')}</th><th>${t('admin.pkg.th.package')}</th><th>${t('admin.pkg.th.remaining')}</th>
+      <th>${t('admin.pkg.th.purchased')}</th><th>${t('admin.pkg.th.status')}</th><th></th></tr>` +
+    rows.map((p) => `
+      <tr>
+        <td>${esc(p.customer)}<br><span class="muted small">${esc(p.email)}</span></td>
+        <td>${t('admin.pkg.row', { n: p.sessions, price: eur(p.priceCents) })}<br><span class="muted small">${esc(p.code)}</span></td>
+        <td><strong>${p.remaining}</strong> <span class="muted small">${t('mybookings.pkg.used',
+          { used: p.used, total: p.sessions + p.adjusted })}</span></td>
+        <td class="muted">${esc(p.purchasedAt)}</td>
+        <td><span class="status-tag status-${p.status === 'active' ? 'confirmed' : 'cancelled'}">${t(
+          'mybookings.pkg.status.' + (p.status === 'active' ? 'active' : 'pending'))}</span></td>
+        <td style="white-space:nowrap">${p.status === 'active'
+          ? `<button class="btn btn-ghost btn-sm" data-padj="${p.id}:1">+1</button>
+             <button class="btn btn-ghost btn-sm" data-padj="${p.id}:-1">−1</button>` : ''}</td>
+      </tr>`).join('');
+  tbl.querySelectorAll('[data-padj]').forEach((b) => b.addEventListener('click', async () => {
+    const [id, delta] = b.dataset.padj.split(':');
+    b.disabled = true;
+    try {
+      const r = await API.post(`/admin/packages/${id}/adjust`, { delta: Number(delta) });
+      toast(t('admin.pkg.adjusted', { n: r.remaining }));
+      await loadPackages();
+    } catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+}
 
 // --- email communications: automation status + send log ----------------------
 async function loadEmails() {

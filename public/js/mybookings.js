@@ -45,10 +45,29 @@
       else toast(r.status === 'void' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'void');
     } catch { toast(t('pay.pending')); }
     history.replaceState(null, '', '/my-bookings');
+  } else if (params.get('gpaid')) {
+    // Back from a group-spot payment.
+    try {
+      const r = await API.post(`/group-signups/${encodeURIComponent(params.get('gpaid'))}/refresh-payment`, {});
+      if (r.status === 'paid') showPaySuccess('pay.success.group_title', 'pay.success.group_body');
+      else toast(r.status === 'cancelled' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'cancelled');
+    } catch { toast(t('pay.pending')); }
+    history.replaceState(null, '', '/my-bookings');
+  } else if (params.get('pkgpaid')) {
+    // Back from a package payment.
+    try {
+      const r = await API.post(`/packages/${encodeURIComponent(params.get('pkgpaid'))}/refresh-payment`, {});
+      if (r.status === 'paid') showPaySuccess('pay.success.pkg_title', 'pay.success.pkg_body');
+      else toast(t('pay.pending'));
+    } catch { toast(t('pay.pending')); }
+    history.replaceState(null, '', '/my-bookings');
   } else if (params.get('paycancel')) {
     toast(t('pay.cancelled'), true);
     history.replaceState(null, '', '/my-bookings');
   }
+
+  await loadPackageSection();
+  await loadGroupsSection();
 
   let stripeOn = false;
   try { stripeOn = Boolean((await API.get('/config')).payment.stripeEnabled); } catch { /* off */ }
@@ -93,6 +112,101 @@
     } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
   }));
 })().catch((e) => toast(I18N.server(e.message), true));
+
+// --- prepaid session package: balance, history, buy buttons -------------------
+async function loadPackageSection() {
+  const box = document.getElementById('package-section');
+  if (!box) return;
+  let data, cfg;
+  try {
+    [data, cfg] = await Promise.all([API.get('/my-package'), API.get('/config')]);
+  } catch { box.innerHTML = ''; return; }
+  const options = (cfg.packages || []).filter((o) => o.sessions > 1);
+  const stripeOn = Boolean(cfg.payment && cfg.payment.stripeEnabled);
+
+  const buyButtons = stripeOn && options.length ? `
+    <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
+      ${options.map((o) => `<button class="btn btn-ghost btn-sm" data-buypkg="${o.id}">
+        ${t('mybookings.pkg.buy_pack', { n: o.sessions, price: eur(o.price * 100) })}</button>`).join('')}
+    </div>` : '';
+
+  const history = data.packages.length ? `
+    <div style="margin-top:14px">
+      <div class="small muted" style="text-transform:uppercase;letter-spacing:.08em;margin-bottom:4px">${t('mybookings.pkg.history')}</div>
+      ${data.packages.map((pk) => `
+        <div class="review-row">
+          <span class="small">${t('mybookings.pkg.row', { n: pk.sessions })} · ${eur(pk.priceCents)}
+            <span class="muted">· ${esc(pk.purchasedAt)}</span></span>
+          <span class="small" style="white-space:nowrap">${pk.pending
+            ? `<button class="btn btn-primary btn-sm" data-paypkg="${esc(pk.code)}">${t('pay.now')}</button>`
+            : `${t('mybookings.pkg.used', { used: pk.used, total: pk.sessions + pk.adjusted })}
+               · <strong>${pk.remaining}</strong> ⚽</span>`}
+        </div>`).join('')}
+    </div>` : '';
+
+  box.innerHTML = `<div class="card" ${data.remaining > 0 ? 'style="border-color:var(--lime)"' : ''}>
+    <h3 style="font-size:1.15rem">📦 ${t('mybookings.pkg.title')}</h3>
+    ${data.remaining > 0
+      ? `<p style="margin:6px 0 2px"><strong style="color:var(--lime);font-size:1.3rem">${t('mybookings.pkg.remaining', { n: data.remaining })}</strong></p>
+         <p class="small muted" style="margin:0">${t('mybookings.pkg.autouse')}</p>
+         ${buyButtons ? `<p class="small muted" style="margin:10px 0 0">${t('mybookings.pkg.more')}</p>` : ''}`
+      : `<p class="small muted" style="margin:6px 0 0">${t('mybookings.pkg.none')}</p>`}
+    ${buyButtons}
+    ${history}
+  </div>`;
+
+  box.querySelectorAll('[data-buypkg]').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const r = await API.post('/packages/buy', { package: btn.dataset.buypkg });
+      if (r.payUrl) { location.href = r.payUrl; return; }
+      toast(t('landing.groups.pay_failed'), true);
+    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+  box.querySelectorAll('[data-paypkg]').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const { url } = await API.post(`/packages/${encodeURIComponent(btn.dataset.paypkg)}/pay`, {});
+      location.href = url;
+    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+}
+
+// --- group training spots -----------------------------------------------------
+async function loadGroupsSection() {
+  const box = document.getElementById('groups-section');
+  if (!box) return;
+  let rows;
+  try { rows = await API.get('/my-groups'); } catch { box.innerHTML = ''; return; }
+  if (!rows.length) { box.innerHTML = ''; return; }
+  const hourSep = I18N.lang === 'fi' ? '.' : ':';
+  box.innerHTML = `<div class="card">
+    <h3 style="font-size:1.15rem">👥 ${t('mybookings.groups.title')}</h3>
+    ${rows.map((g) => `
+      <div class="review-row">
+        <span class="small">
+          <strong>${esc(fmtDate(g.date))} ${String(g.hour).padStart(2, '0')}${hourSep}00</strong>
+          · ${esc(g.coach)} · ${esc(I18N.server(g.location))}
+          ${g.pitchName ? `· 📍 ${esc(g.pitchName)}` : ''}
+          <span class="muted">· ${t('mybookings.groups.spots', { taken: g.taken, cap: g.capacity })}</span>
+          ${g.sessionStatus === 'cancelled' ? `<br><span class="muted">${t('mybookings.groups.cancelled_note')}</span>` : ''}
+        </span>
+        <span class="small" style="white-space:nowrap">${g.sessionStatus === 'cancelled'
+          ? `<span class="status-tag status-cancelled">${t('common.status.cancelled')}</span>`
+          : g.status === 'pending'
+            ? `<button class="btn btn-primary btn-sm" data-paygroup="${esc(g.code)}">${t('pay.now')}</button>`
+            : `<span class="status-tag status-${esc(g.sessionStatus === 'completed' ? 'completed' : 'confirmed')}">${t('common.status.' + (g.sessionStatus === 'completed' ? 'completed' : 'confirmed'))}</span>`}
+        </span>
+      </div>`).join('')}
+  </div>`;
+  box.querySelectorAll('[data-paygroup]').forEach((btn) => btn.addEventListener('click', async () => {
+    btn.disabled = true;
+    try {
+      const { url } = await API.post(`/group-signups/${encodeURIComponent(btn.dataset.paygroup)}/pay`, {});
+      location.href = url;
+    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+}
 
 // --- reviews: leave one per coach you've completed a session with -------------
 async function loadReviewsSection() {
@@ -161,7 +275,7 @@ async function loadReviewsSection() {
 // The "booking successful" screen shown when the customer lands back from a
 // completed Stripe payment. Full-screen (reuses the gate styling); the button
 // reveals the bookings list underneath.
-function showPaySuccess() {
+function showPaySuccess(titleKey = 'pay.success.title', bodyKey = 'pay.success.body') {
   const el = document.createElement('div');
   el.className = 'gate';
   el.innerHTML = `
@@ -169,8 +283,8 @@ function showPaySuccess() {
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
         stroke-linejoin="round" aria-hidden="true" style="width:64px;height:64px;margin:6px auto 12px;display:block">
         <circle cx="12" cy="12" r="10"/><path d="m8.5 12.5 2.5 2.5 5-6"/></svg>
-      <h2 style="margin:0 0 8px">${t('pay.success.title')}</h2>
-      <p class="muted" style="margin:0 0 22px">${t('pay.success.body')}</p>
+      <h2 style="margin:0 0 8px">${t(titleKey)}</h2>
+      <p class="muted" style="margin:0 0 22px">${t(bodyKey)}</p>
       <button class="btn btn-primary" style="font-size:1.05rem;padding:14px 32px">${t('pay.success.cta')}</button>
     </div>`;
   document.body.appendChild(el);

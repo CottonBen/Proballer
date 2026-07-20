@@ -172,6 +172,131 @@ function sendBookingReleasedEmail(bookingId) {
 }
 
 // ---------------------------------------------------------------------------
+// Group training emails
+// ---------------------------------------------------------------------------
+const eur = (cents) => (cents / 100).toFixed(2).replace('.', ',') + ' €';
+
+// Signup + session + customer + coach in one go, like bookingBundle.
+function groupBundle(signupId) {
+  const su = db.prepare('SELECT * FROM group_signups WHERE id = ?').get(signupId);
+  if (!su) return null;
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(su.group_session_id);
+  const customer = db.prepare('SELECT id, name, email, lang FROM users WHERE id = ?').get(su.customer_id);
+  const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(gs.coach_id);
+  if (!customer || !coach) return null;
+  return { su, gs, customer, coach, lang: pickLang(customer.lang) };
+}
+
+const groupLine = (lang, gs, coach) => tr(lang, 'email.group.line', {
+  coach: coach.name, date: localDate(lang, gs.date),
+  hours: hourRange(lang, gs.hour), location: trCfg(lang, gs.location),
+});
+
+function sendGroupConfirmedEmail(signupId) {
+  const x = groupBundle(signupId);
+  if (!x) return;
+  const { su, gs, customer, coach, lang } = x;
+  const taken = require('./groups').takenCount(gs.id);
+  const subject = tr(lang, 'email.group.subject', { siteName: config.siteName, date: localDate(lang, gs.date) });
+  const html = shell(lang, tr(lang, 'email.group.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.group.body'))}</p>
+     ${detailBox([groupLine(lang, gs, coach), tr(lang, 'email.group.ref', { code: su.code })])}
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.group.spots', { taken, capacity: gs.capacity }))}</p>
+     ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.group.cta'))}`);
+  deliver({ type: 'group_booking', userId: customer.id, bookingCode: su.code, to: customer.email, subject, html });
+}
+
+function sendGroupReleasedEmail(signupId) {
+  const x = groupBundle(signupId);
+  if (!x) return;
+  const { su, gs, customer, coach, lang } = x;
+  const subject = tr(lang, 'email.grouprelease.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.grouprelease.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.grouprelease.body', {
+       date: localDate(lang, gs.date), hours: hourRange(lang, gs.hour), coach: coach.name }))}</p>
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.grouprelease.note'))}</p>
+     ${button(`${config.siteUrl}/#groups`, tr(lang, 'email.grouprelease.cta'))}`);
+  deliver({ type: 'group_release', userId: customer.id, bookingCode: su.code, to: customer.email, subject, html });
+}
+
+// The business cancelled: the whole session ('session_cancelled') or just this
+// player's spot ('removed'). The refund line matches what actually happened.
+function sendGroupCancelledEmail(signupId, { reasonKey, refunded, paid }) {
+  const x = groupBundle(signupId);
+  if (!x) return;
+  const { su, gs, customer, coach, lang } = x;
+  const params = {
+    date: localDate(lang, gs.date), hours: hourRange(lang, gs.hour),
+    coach: coach.name, location: trCfg(lang, gs.location),
+  };
+  const refundLine = !paid ? ''
+    : tr(lang, refunded ? 'email.groupcancel.refund_done' : 'email.groupcancel.refund_pending',
+        { price: eur(su.price_cents) });
+  const subject = tr(lang, 'email.groupcancel.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.groupcancel.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, `email.groupcancel.body.${reasonKey}`, params))}</p>
+     ${refundLine ? `<p><strong>${esc(refundLine)}</strong></p>` : ''}
+     ${button(`${config.siteUrl}/#groups`, tr(lang, 'email.groupcancel.cta'))}`);
+  deliver({ type: 'group_cancel', userId: customer.id, bookingCode: su.code, to: customer.email, subject, html });
+}
+
+// ---------------------------------------------------------------------------
+// Package emails
+// ---------------------------------------------------------------------------
+function packageBundle(packageId) {
+  const pkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(packageId);
+  if (!pkg) return null;
+  const customer = db.prepare('SELECT id, name, email, lang FROM users WHERE id = ?').get(pkg.customer_id);
+  if (!customer) return null;
+  return { pkg, customer, lang: pickLang(customer.lang) };
+}
+
+function sendPackagePurchasedEmail(packageId) {
+  const x = packageBundle(packageId);
+  if (!x) return;
+  const { pkg, customer, lang } = x;
+  const remaining = require('./packages').remainingSessions(pkg);
+  const subject = tr(lang, 'email.package.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.package.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.package.body'))}</p>
+     ${detailBox([
+       tr(lang, 'email.package.line', { sessions: pkg.sessions_total, price: eur(pkg.price_cents) }),
+       tr(lang, 'email.package.remaining', { remaining }),
+     ])}
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.package.note'))}</p>
+     ${button(`${config.siteUrl}/#coaches`, tr(lang, 'email.package.cta'))}`);
+  deliver({ type: 'package', userId: customer.id, bookingCode: pkg.code, to: customer.email, subject, html });
+}
+
+function sendPackageLowEmail(packageId) {
+  const x = packageBundle(packageId);
+  if (!x) return;
+  const { pkg, customer, lang } = x;
+  const subject = tr(lang, 'email.packagelow.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.packagelow.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.packagelow.body'))}</p>
+     ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.packagelow.cta'))}`);
+  deliver({ type: 'package_low', userId: customer.id, bookingCode: pkg.code, to: customer.email, subject, html });
+}
+
+function sendPackageUsedEmail(packageId) {
+  const x = packageBundle(packageId);
+  if (!x) return;
+  const { pkg, customer, lang } = x;
+  const subject = tr(lang, 'email.packagedone.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.packagedone.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.packagedone.body'))}</p>
+     ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.packagedone.cta'))}`);
+  deliver({ type: 'package_done', userId: customer.id, bookingCode: pkg.code, to: customer.email, subject, html });
+}
+
+// ---------------------------------------------------------------------------
 // Scheduled follow-ups
 // ---------------------------------------------------------------------------
 
@@ -180,6 +305,25 @@ function addDays(iso, n) {
   const [y, m, d] = String(iso).split('-').map(Number);
   const t = new Date(Date.UTC(y, m - 1, d + n));
   return `${t.getUTCFullYear()}-${String(t.getUTCMonth() + 1).padStart(2, '0')}-${String(t.getUTCDate()).padStart(2, '0')}`;
+}
+
+// One template for both kinds of session — the detail line says which.
+function sendSessionReminderEmail(r, isGroup) {
+  const lang = pickLang(r.lang);
+  const line = isGroup
+    ? tr(lang, 'email.group.line', {
+        coach: r.coach, date: localDate(lang, r.date),
+        hours: hourRange(lang, r.hour), location: trCfg(lang, r.location) })
+    : tr(lang, 'email.booking.line', {
+        coach: r.coach, date: localDate(lang, r.date), hours: hourRange(lang, r.hour),
+        focus: '', location: trCfg(lang, r.location) }).replace(' ·  ·', ' ·');
+  const subject = tr(lang, 'email.reminder.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.reminder.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: r.name }))}</p>
+     <p>${esc(tr(lang, 'email.reminder.body'))}</p>
+     ${detailBox([line, tr(lang, 'email.booking.ref', { code: r.code })])}
+     ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.reminder.cta'))}`);
+  deliver({ type: 'reminder', userId: r.customer_id, bookingCode: r.code, to: r.email, subject, html });
 }
 
 function sendReviewRequestEmail(r) {
@@ -214,7 +358,40 @@ function runEmailAutomation() {
     const target = addDays(sessionDate, days);
     return hki.date > target || (hki.date === target && hki.hour >= 12);
   };
-  const sent = { review: 0, rebook: 0 };
+  const sent = { review: 0, rebook: 0, reminder: 0 };
+
+  // Day-before reminder — from 12:00 Helsinki on the day before the session,
+  // for confirmed (and, for card flows, paid/announced) sessions. One shot per
+  // booking/spot; sessions booked the same day never get one (the booking
+  // confirmation just arrived).
+  if (hki.hour >= 12) {
+    const tomorrow = addDays(hki.date, 1);
+    const oneOnOne = db.prepare(`
+      SELECT b.id, b.code, b.date, b.hour, b.location, b.customer_id,
+             u.name, u.email, u.lang, c.name AS coach
+      FROM bookings b JOIN users u ON u.id = b.customer_id JOIN coaches c ON c.id = b.coach_id
+      WHERE b.status = 'confirmed' AND b.coach_notified = 1 AND b.reminder_email_sent = 0
+        AND b.date = ? AND b.demo = 0 AND u.demo = 0`).all(tomorrow);
+    for (const r of oneOnOne) {
+      db.prepare('UPDATE bookings SET reminder_email_sent = 1 WHERE id = ?').run(r.id);
+      sendSessionReminderEmail(r, false);
+      sent.reminder += 1;
+    }
+    const group = db.prepare(`
+      SELECT s.id AS signup_id, s.code, g.date, g.hour, g.location, s.customer_id,
+             u.name, u.email, u.lang, c.name AS coach
+      FROM group_signups s
+      JOIN group_sessions g ON g.id = s.group_session_id
+      JOIN users u ON u.id = s.customer_id
+      JOIN coaches c ON c.id = g.coach_id
+      WHERE s.status = 'confirmed' AND s.reminder_email_sent = 0
+        AND g.status = 'open' AND g.date = ? AND s.demo = 0 AND u.demo = 0`).all(tomorrow);
+    for (const r of group) {
+      db.prepare('UPDATE group_signups SET reminder_email_sent = 1 WHERE id = ?').run(r.signup_id);
+      sendSessionReminderEmail(r, true);
+      sent.reminder += 1;
+    }
+  }
 
   // Review request — day after the session at noon. The date window keeps a
   // fresh deployment from blasting emails about months-old sessions.
@@ -282,6 +459,12 @@ module.exports = {
   sendCoachBookingEmail,
   sendPitchConfirmedEmail,
   sendBookingReleasedEmail,
+  sendGroupConfirmedEmail,
+  sendGroupReleasedEmail,
+  sendGroupCancelledEmail,
+  sendPackagePurchasedEmail,
+  sendPackageLowEmail,
+  sendPackageUsedEmail,
   runEmailAutomation,
   automationStatus,
 };

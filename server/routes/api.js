@@ -14,6 +14,8 @@ const stripe = require('../stripe');
 const i18n = require('../i18n');
 const pitches = require('../pitches');
 const emails = require('../emails');
+const groups = require('../groups');
+const packages = require('../packages');
 const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
@@ -196,6 +198,16 @@ function reactivateBooking(booking) {
     if (granted) db.prepare('DELETE FROM credits WHERE id = ?').run(granted.id);
   }
 
+  // A package-funded booking re-consumes a session from its package (the
+  // remaining balance is derived from non-cancelled bookings, so flipping the
+  // status back is the consumption — but only if a session is still free).
+  if (booking.package_id) {
+    const pkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(booking.package_id);
+    if (!pkg || pkg.status !== 'active' || packages.remainingSessions(pkg) < 1) {
+      return "The customer's session package has no sessions left — can't reactivate.";
+    }
+  }
+
   db.prepare("UPDATE bookings SET status = 'confirmed', completed_at = NULL WHERE id = ?").run(booking.id);
   // The pitch may have been claimed by another session while this one was cancelled.
   if (booking.pitch_id && db.prepare(`SELECT 1 FROM bookings WHERE pitch_id = ? AND date = ? AND hour = ?
@@ -230,6 +242,8 @@ router.get('/config', (req, res) => {
     positions: config.positions,
     focusTypes: config.focusTypes,
     pricing: config.pricing,
+    groupTraining: config.groupTraining,
+    packages: config.packages,
     hours: { start: config.dayStartHour, end: config.dayEndHour },
     bookingHorizonDays: config.bookingHorizonDays,
     emailDelivery: require('../mailer').smtpConfigured(),
@@ -562,6 +576,11 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   const slotOpen = db.prepare('SELECT 1 FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')
     .get(coachId, date, hour);
   if (!slotOpen) return fail('The coach is not available at that time.');
+  // A group session parks on the coach's hour just like a booking would.
+  if (db.prepare(`SELECT 1 FROM group_sessions
+      WHERE coach_id = ? AND date = ? AND hour = ? AND status = 'open'`).get(coachId, date, hour)) {
+    return fail('The coach is not available at that time.');
+  }
 
   const price = (focus.online ? config.pricing.onlineSessionPrice : config.pricing.sessionPrice) * 100;
   let discount = Math.round(price * config.pricing.salePercent / 100);
@@ -570,26 +589,50 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
     'SELECT id FROM credits WHERE customer_id = ? AND used_by_booking_id IS NULL ORDER BY id LIMIT 1')
     .get(req.user.id);
   if (credit) discount = price;
+
+  // Prepaid packages: an active package with sessions left funds this booking
+  // (the free credit still wins). Choosing a multi-session package in the
+  // wizard buys the package AND books this session as its first one — one
+  // card payment for the package price. The booking row carries the package's
+  // per-session value in total_cents so the coach-payout basis stays honest,
+  // but no invoice is created: the package purchase is the payment.
+  let fundingPkg = null;  // already-active package paying for this booking
+  let newPkg = null;      // pending package bought together with this booking
+  if (!credit) {
+    fundingPkg = packages.pickPackageForBooking(req.user.id);
+    if (!fundingPkg && packages.findOption(String(req.body?.package || ''))) {
+      if (!stripe.enabled()) return fail('Card payments are not enabled yet.', 503);
+      newPkg = packages.createPackagePurchase(req.user.id, String(req.body.package));
+    }
+  }
+  const pkg = fundingPkg || newPkg;
+  if (pkg) discount = Math.max(0, price - packages.perSessionCents(pkg));
+
   const code = 'PBF-' + require('node:crypto').randomBytes(3).toString('hex').toUpperCase();
   // Optional free-text wishes for the coach, asked in the wizard's notes step.
   const notes = String(req.body?.notes || '').trim().slice(0, 500);
 
   // Card bookings are NOT announced to the coach yet: no alert, no chat, and
   // the coach endpoints hide the row. The announcement (server/notify.js)
-  // fires when the payment confirms. Free-credit and legacy bank-transfer
-  // bookings have nothing pending, so the coach hears immediately.
-  const cardFlow = stripe.enabled() && price - discount > 0;
+  // fires when the payment confirms. Free-credit, active-package and legacy
+  // bank-transfer bookings have nothing pending, so the coach hears
+  // immediately; a booking waiting on a NEW package purchase is announced
+  // when that payment confirms (packages.markPackagePaid).
+  const cardFlow = !pkg && stripe.enabled() && price - discount > 0;
 
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
-       price_cents, discount_cents, total_cents, credit_applied, notes, coach_notified, status, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
+       price_cents, discount_cents, total_cents, credit_applied, notes, package_id,
+       coach_notified, status, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus.id,
-        focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes, nowISO());
+        focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes,
+        pkg ? pkg.id : null, nowISO());
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
+    if (newPkg) db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
     if (String(err.message).includes('UNIQUE')) {
       return fail('Someone just booked that slot — please pick another time.', 409);
     }
@@ -603,13 +646,17 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   const langPref = readLang(req.body);
   if (langPref) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(langPref, req.user.id);
 
-  const invoice = createInvoiceForBooking(bookingId);
+  // Package-funded bookings create no invoice — the package was the payment.
+  const invoice = pkg ? null : createInvoiceForBooking(bookingId);
   recordEvent(req, 'booking_completed', { coachId, code });
   sheets.scheduleSync();
 
   // No payment pending -> announce now. Card bookings announce from the
-  // payment paths instead (webhook / refresh-payment / admin mark-paid).
-  if (!cardFlow) announceBookingToCoach(bookingId);
+  // payment paths instead (webhook / refresh-payment / admin mark-paid);
+  // new-package bookings when the package payment confirms.
+  if (!cardFlow && !newPkg) announceBookingToCoach(bookingId);
+  // The balance moved — maybe the "1 left" / "all used" notice is due.
+  if (fundingPkg) packages.afterPackageChange(fundingPkg.id);
 
   // Payment is due AT booking: the client redirects straight to this Checkout
   // URL. The slot is held for config.stripe.payWindowMinutes — if the payment
@@ -620,7 +667,8 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
     try {
       const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
       const session = await stripe.createCheckoutSession({
-        invoiceNumber: invoice.number,
+        metadata: { invoice_number: invoice.number },
+        successParam: `paid=${encodeURIComponent(invoice.number)}`,
         amountCents: invoice.amount_cents,
         description: `${config.siteName} — ${coach.name} ${date} ${String(hour).padStart(2, '0')}:00 (${invoice.number})`,
         customerEmail: req.user.email,
@@ -630,6 +678,11 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
       db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, invoice.id);
       payUrl = session.url;
     } catch (err) { console.error('[stripe]', err.message); }
+  } else if (newPkg) {
+    // One payment for the whole package; this booking rides along as its
+    // first session and is announced when the payment confirms.
+    try { payUrl = await packageCheckout(req, newPkg); }
+    catch (err) { console.error('[stripe]', err.message); }
   }
 
   res.status(201).json({
@@ -640,8 +693,17 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
       priceCents: price, discountCents: discount, totalCents: price - discount,
       creditApplied: Boolean(credit),
     },
-    invoice: { number: invoice.number, dueDate: invoice.due_date, amountCents: invoice.amount_cents,
-      payBy: invoice.pay_by || null },
+    invoice: invoice ? { number: invoice.number, dueDate: invoice.due_date,
+      amountCents: invoice.amount_cents, payBy: invoice.pay_by || null } : null,
+    package: pkg ? {
+      code: pkg.code,
+      sessions: pkg.sessions_total,
+      priceCents: pkg.price_cents,
+      funded: Boolean(fundingPkg),
+      remaining: fundingPkg
+        ? packages.remainingSessions(db.prepare('SELECT * FROM packages WHERE id = ?').get(fundingPkg.id))
+        : null,
+    } : null,
   });
 });
 
@@ -650,9 +712,11 @@ router.get('/my-bookings', requireRole('customer', 'admin'), (req, res) => {
   const rows = db.prepare(`
     SELECT b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online, b.status,
            b.total_cents, b.pitch_name, c.name AS coach,
-           i.number AS invoice_number, i.status AS invoice_status, i.pay_by
+           i.number AS invoice_number, i.status AS invoice_status, i.pay_by,
+           p.code AS package_code, p.status AS package_status
     FROM bookings b JOIN coaches c ON c.id = b.coach_id
     LEFT JOIN invoices i ON i.booking_id = b.id
+    LEFT JOIN packages p ON p.id = b.package_id
     WHERE b.customer_id = ? ORDER BY b.date DESC, b.hour DESC`).all(req.user.id);
   res.json(rows);
 });
@@ -696,7 +760,8 @@ router.post('/invoices/:number/pay', requireRole('customer', 'admin'), async (re
   const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
   try {
     const session = await stripe.createCheckoutSession({
-      invoiceNumber: inv.number,
+      metadata: { invoice_number: inv.number },
+      successParam: `paid=${encodeURIComponent(inv.number)}`,
       amountCents: inv.amount_cents,
       description: `${config.siteName} — ${booking.coach} ${booking.date} ${String(booking.hour).padStart(2, '0')}:00 (${inv.number})`,
       customerEmail: inv.customer_email,
@@ -728,6 +793,182 @@ router.post('/invoices/:number/refresh-payment', requireRole('customer', 'admin'
     // invoice is still void and the customer must not be told "paid".
     const after = db.prepare('SELECT status FROM invoices WHERE number = ?').get(inv.number);
     res.json({ status: after ? after.status : inv.status });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Group training — public list, spot purchase, payment confirmation.
+// ---------------------------------------------------------------------------
+router.get('/groups', (req, res) => {
+  autoCompleteBookings();
+  res.json(groups.upcomingOpen());
+});
+
+// One Checkout session for a group signup (used at join + retry from the
+// bookings page). Group spots are card-only: they exist because of the
+// pay-at-booking flow.
+async function groupCheckout(req, su, gs) {
+  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+  const me = db.prepare('SELECT email, lang FROM users WHERE id = ?').get(su.customer_id);
+  const session = await stripe.createCheckoutSession({
+    metadata: { group_signup: su.code },
+    successParam: `gpaid=${encodeURIComponent(su.code)}`,
+    amountCents: su.price_cents,
+    description: `${config.siteName} — Group training ${gs.date} ${String(gs.hour).padStart(2, '0')}:00 (${su.code})`,
+    customerEmail: me.email,
+    origin,
+    lang: me.lang,
+  });
+  db.prepare('UPDATE group_signups SET stripe_session_id = ? WHERE id = ?').run(session.id, su.id);
+  return session.url;
+}
+
+router.post('/groups/:code/join', requireRole('customer', 'admin'), async (req, res) => {
+  autoCompleteBookings();
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE code = ?').get(String(req.params.code));
+  if (!gs) return res.status(404).json({ error: 'Group session not found.' });
+  if (gs.price_cents > 0 && !stripe.enabled()) {
+    return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  }
+  const made = groups.createSignup(gs, req.user.id);
+  if (made.error) return res.status(409).json({ error: made.error });
+  const su = made.signup;
+  recordEvent(req, 'group_join', { code: gs.code });
+  if (su.price_cents === 0) {
+    groups.markSignupPaid(su.code, null);
+    return res.status(201).json({ payUrl: null, signup: { code: su.code, status: 'confirmed' } });
+  }
+  let payUrl = null;
+  try { payUrl = await groupCheckout(req, su, gs); }
+  catch (err) { console.error('[stripe]', err.message); }
+  // payUrl null = Stripe hiccup: the spot stays pending and the bookings page
+  // offers a pay button until the sweep releases it.
+  res.status(201).json({ payUrl, signup: { code: su.code, status: su.status, payBy: su.pay_by } });
+});
+
+// Retry payment for a still-pending spot (mirrors /invoices/:number/pay).
+router.post('/group-signups/:code/pay', requireRole('customer', 'admin'), async (req, res) => {
+  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  autoCompleteBookings();
+  const su = db.prepare('SELECT * FROM group_signups WHERE code = ?').get(String(req.params.code));
+  if (!su) return res.status(404).json({ error: 'Signup not found.' });
+  if (req.user.role !== 'admin' && su.customer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  if (su.status !== 'pending') return res.status(409).json({ error: 'This spot is not awaiting payment.' });
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(su.group_session_id);
+  try { res.json({ url: await groupCheckout(req, su, gs) }); }
+  catch (err) { res.status(err.status || 502).json({ error: err.message }); }
+});
+
+// Success-URL return for a group spot (mirrors the invoice refresh).
+router.post('/group-signups/:code/refresh-payment', requireRole('customer', 'admin'), async (req, res) => {
+  const su = db.prepare('SELECT * FROM group_signups WHERE code = ?').get(String(req.params.code));
+  if (!su) return res.status(404).json({ error: 'Signup not found.' });
+  if (req.user.role !== 'admin' && su.customer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  if (su.status === 'confirmed') return res.json({ status: 'paid' });
+  if (!stripe.enabled() || !su.stripe_session_id) return res.json({ status: su.status });
+  try {
+    const session = await stripe.retrieveSession(su.stripe_session_id);
+    if (session.payment_status === 'paid') groups.markSignupPaid(su.code, session);
+    const after = db.prepare('SELECT status FROM group_signups WHERE id = ?').get(su.id);
+    res.json({ status: after.status === 'confirmed' ? 'paid' : after.status });
+  } catch (err) {
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+// The customer's own group spots, for the bookings page.
+router.get('/my-groups', requireRole('customer', 'admin'), (req, res) => {
+  autoCompleteBookings();
+  const rows = db.prepare(`
+    SELECT s.code, s.status, s.price_cents, s.pay_by, s.paid_at,
+           g.date, g.hour, g.location, g.pitch_name, g.status AS session_status,
+           g.capacity, g.id AS gs_id, c.name AS coach
+    FROM group_signups s
+    JOIN group_sessions g ON g.id = s.group_session_id
+    JOIN coaches c ON c.id = g.coach_id
+    WHERE s.customer_id = ? AND s.status != 'cancelled'
+    ORDER BY g.date DESC, g.hour DESC LIMIT 50`).all(req.user.id);
+  res.json(rows.map((r) => ({
+    code: r.code, status: r.status, priceCents: r.price_cents, payBy: r.pay_by,
+    date: r.date, hour: r.hour, location: r.location, pitchName: r.pitch_name || '',
+    sessionStatus: r.session_status, coach: r.coach, taken: groups.takenCount(r.gs_id),
+    capacity: r.capacity,
+  })));
+});
+
+// ---------------------------------------------------------------------------
+// Prepaid session packages — balance, upfront purchase, payment confirmation.
+// ---------------------------------------------------------------------------
+router.get('/my-package', requireRole('customer', 'admin'), (req, res) => {
+  autoCompleteBookings();
+  res.json(packages.customerPackageSummary(req.user.id));
+});
+
+async function packageCheckout(req, pkg) {
+  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
+  const me = db.prepare('SELECT email, lang FROM users WHERE id = ?').get(pkg.customer_id);
+  const session = await stripe.createCheckoutSession({
+    metadata: { package: pkg.code },
+    successParam: `pkgpaid=${encodeURIComponent(pkg.code)}`,
+    amountCents: pkg.price_cents,
+    description: `${config.siteName} — ${pkg.sessions_total} session package (${pkg.code})`,
+    customerEmail: me.email,
+    origin,
+    lang: me.lang,
+  });
+  db.prepare('UPDATE packages SET stripe_session_id = ? WHERE id = ?').run(session.id, pkg.id);
+  return session.url;
+}
+
+// Buy a package outright (from the bookings page). The wizard's combined
+// "package + first booking" purchase goes through POST /bookings instead.
+router.post('/packages/buy', requireRole('customer', 'admin'), async (req, res) => {
+  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  const pkg = packages.createPackagePurchase(req.user.id, String(req.body?.package || ''));
+  if (!pkg) return res.status(400).json({ error: 'Unknown package.' });
+  recordEvent(req, 'package_buy', { code: pkg.code, sessions: pkg.sessions_total });
+  try {
+    res.status(201).json({ payUrl: await packageCheckout(req, pkg), code: pkg.code });
+  } catch (err) {
+    // No orphan pending rows for a checkout that never opened.
+    db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(pkg.id, 'pending');
+    res.status(err.status || 502).json({ error: err.message });
+  }
+});
+
+// Retry payment for a still-pending package (checkout interrupted).
+router.post('/packages/:code/pay', requireRole('customer', 'admin'), async (req, res) => {
+  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  autoCompleteBookings();
+  const pkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(String(req.params.code));
+  if (!pkg) return res.status(404).json({ error: 'Package not found.' });
+  if (req.user.role !== 'admin' && pkg.customer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  if (pkg.status !== 'pending') return res.status(409).json({ error: 'This spot is not awaiting payment.' });
+  try { res.json({ url: await packageCheckout(req, pkg) }); }
+  catch (err) { res.status(err.status || 502).json({ error: err.message }); }
+});
+
+router.post('/packages/:code/refresh-payment', requireRole('customer', 'admin'), async (req, res) => {
+  const pkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(String(req.params.code));
+  if (!pkg) return res.status(404).json({ error: 'Package not found.' });
+  if (req.user.role !== 'admin' && pkg.customer_id !== req.user.id) {
+    return res.status(403).json({ error: 'Not allowed.' });
+  }
+  if (pkg.status === 'active') return res.json({ status: 'paid' });
+  if (!stripe.enabled() || !pkg.stripe_session_id) return res.json({ status: pkg.status });
+  try {
+    const session = await stripe.retrieveSession(pkg.stripe_session_id);
+    if (session.payment_status === 'paid') packages.markPackagePaid(pkg.code, session);
+    const after = db.prepare('SELECT status FROM packages WHERE id = ?').get(pkg.id);
+    res.json({ status: after.status === 'active' ? 'paid' : after.status });
   } catch (err) {
     res.status(err.status || 502).json({ error: err.message });
   }
@@ -1060,6 +1301,187 @@ router.post('/coach/bookings/:code/pitch', requireRole('coach', 'admin'), async 
     emails.sendPitchConfirmedEmail(booking.id, pitch);
   }
   res.json({ ok: true, pitch: { id: pitch.id, name: pitch.name } });
+});
+
+// ---------------------------------------------------------------------------
+// Group training — coach creation/roster + admin management.
+// ---------------------------------------------------------------------------
+const groupSessionShape = (gs) => ({ ...groups.publicShape(gs), id: gs.id, players: groups.roster(gs.id) });
+
+// Shared validation for creating/moving a group session. Returns an error
+// string or null. Mirrors the 1-on-1 booking rules: future slot inside the
+// horizon, a real city, and no clash with the coach's other commitments.
+function groupSlotError({ coachId, date, hour, location, excludeId = 0 }) {
+  if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return 'Invalid date.';
+  if (!Number.isInteger(hour) || hour < config.dayStartHour || hour >= config.dayEndHour) {
+    return `Sessions run between ${config.dayStartHour}:00 and ${config.dayEndHour}:00.`;
+  }
+  const now = helsinkiNow();
+  if (date < now.date || (date === now.date && hour <= now.hour)) return 'That time is already in the past.';
+  if (date > helsinkiDateOffset(config.bookingHorizonDays)) return 'That date is too far ahead.';
+  if (!config.locations.includes(location)) return 'Unknown city.';
+  if (db.prepare(`SELECT 1 FROM bookings WHERE coach_id = ? AND date = ? AND hour = ?
+      AND status != 'cancelled'`).get(coachId, date, hour)) {
+    return 'The coach already has a booking at that time.';
+  }
+  if (db.prepare(`SELECT 1 FROM group_sessions WHERE coach_id = ? AND date = ? AND hour = ?
+      AND status = 'open' AND id != ?`).get(coachId, date, hour, excludeId)) {
+    return 'The coach already has a group session at that time.';
+  }
+  return null;
+}
+
+router.get('/coach/groups', requireRole('coach', 'admin'), (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  autoCompleteBookings();
+  const rows = db.prepare(`SELECT * FROM group_sessions
+    WHERE coach_id = ? AND status != 'cancelled'
+    ORDER BY date DESC, hour DESC LIMIT 50`).all(coach.id);
+  res.json(rows.map(groupSessionShape));
+});
+
+router.post('/coach/groups', requireRole('coach', 'admin'), (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  autoCompleteBookings();
+  const date = String(req.body?.date || '');
+  const hour = Number(req.body?.hour);
+  const location = String(req.body?.location || '');
+  const err = groupSlotError({ coachId: coach.id, date, hour, location });
+  if (err) return res.status(400).json({ error: err });
+  const info = db.prepare(`INSERT INTO group_sessions
+    (code, coach_id, date, hour, location, capacity, price_cents, status, created_at)
+    VALUES (?,?,?,?,?,?,?, 'open', ?)`)
+    .run('GRP-' + crypto.randomBytes(3).toString('hex').toUpperCase(), coach.id, date, hour,
+      location, config.groupTraining.capacity, config.groupTraining.pricePerPlayer * 100, nowISO());
+  // The hour now belongs to the group — a 1-on-1 must not be bookable on it.
+  db.prepare('DELETE FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')
+    .run(coach.id, date, hour);
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(Number(info.lastInsertRowid));
+  res.status(201).json(groupSessionShape(gs));
+});
+
+router.post('/coach/groups/:code/cancel', requireRole('coach', 'admin'), async (req, res) => {
+  const coach = myCoach(req);
+  if (!coach) return res.status(404).json({ error: 'No coach profile linked to this account.' });
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE code = ? AND coach_id = ?')
+    .get(String(req.params.code), coach.id);
+  if (!gs) return res.status(404).json({ error: 'Group session not found.' });
+  if (gs.status !== 'open') return res.status(409).json({ error: 'Only an open session can be cancelled.' });
+  await groups.cancelGroupSession(gs, 'coach');
+  res.json({ ok: true });
+});
+
+router.get('/admin/groups', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  const rows = db.prepare(`SELECT g.*, c.name AS coach_name FROM group_sessions g
+    JOIN coaches c ON c.id = g.coach_id
+    ORDER BY g.date DESC, g.hour DESC LIMIT 100`).all();
+  res.json(rows.map((gs) => ({
+    ...groupSessionShape(gs),
+    attendance: groups.roster(gs.id).filter((p) => p.status === 'confirmed').length,
+  })));
+});
+
+// Move / relocate a session. Confirmed players get an in-app note; the
+// reminder email follows the new date automatically.
+router.put('/admin/groups/:id', requireRole('admin'), (req, res) => {
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(Number(req.params.id));
+  if (!gs) return res.status(404).json({ error: 'Group session not found.' });
+  if (gs.status !== 'open') return res.status(409).json({ error: 'Only an open session can be edited.' });
+  const date = String(req.body?.date || gs.date);
+  const hour = req.body?.hour == null ? gs.hour : Number(req.body.hour);
+  const location = String(req.body?.location || gs.location);
+  const err = groupSlotError({ coachId: gs.coach_id, date, hour, location, excludeId: gs.id });
+  if (err) return res.status(400).json({ error: err });
+  const changed = date !== gs.date || hour !== gs.hour || location !== gs.location;
+  db.prepare('UPDATE group_sessions SET date = ?, hour = ?, location = ? WHERE id = ?')
+    .run(date, hour, location, gs.id);
+  db.prepare('DELETE FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')
+    .run(gs.coach_id, date, hour);
+  if (changed) {
+    for (const p of db.prepare(`SELECT customer_id FROM group_signups
+        WHERE group_session_id = ? AND status = 'confirmed'`).all(gs.id)) {
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(p.customer_id, `Your group session ${gs.code} has moved: it is now on ${date} at `
+          + `${String(hour).padStart(2, '0')}:00 (${location}).`, nowISO());
+    }
+  }
+  res.json(groupSessionShape(db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(gs.id)));
+});
+
+// Admin adds a player by email without a payment (walk-ins, make-goods).
+router.post('/admin/groups/:id/players', requireRole('admin'), (req, res) => {
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(Number(req.params.id));
+  if (!gs) return res.status(404).json({ error: 'Group session not found.' });
+  if (gs.status !== 'open') return res.status(409).json({ error: 'Only an open session can take players.' });
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const user = db.prepare('SELECT id FROM users WHERE lower(email) = ?').get(email);
+  if (!user) return res.status(404).json({ error: 'No account with that email.' });
+  if (groups.takenCount(gs.id) >= gs.capacity) return res.status(409).json({ error: 'This group session is already full.' });
+  try {
+    const info = db.prepare(`INSERT INTO group_signups
+      (code, group_session_id, customer_id, price_cents, status, paid_at, created_at)
+      VALUES (?,?,?, 0, 'confirmed', ?, ?)`)
+      .run('GSU-' + crypto.randomBytes(3).toString('hex').toUpperCase(), gs.id, user.id, nowISO(), nowISO());
+    emails.sendGroupConfirmedEmail(Number(info.lastInsertRowid));
+  } catch (err) {
+    if (String(err.message).includes('UNIQUE')) {
+      return res.status(409).json({ error: 'That player already has a spot in this session.' });
+    }
+    throw err;
+  }
+  res.status(201).json(groupSessionShape(db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(gs.id)));
+});
+
+router.delete('/admin/groups/:id/players/:signupId', requireRole('admin'), async (req, res) => {
+  const su = db.prepare('SELECT * FROM group_signups WHERE id = ? AND group_session_id = ?')
+    .get(Number(req.params.signupId), Number(req.params.id));
+  if (!su) return res.status(404).json({ error: 'Signup not found.' });
+  await groups.cancelSignup(su.id, 'removed');
+  res.json({ ok: true });
+});
+
+router.post('/admin/groups/:id/cancel', requireRole('admin'), async (req, res) => {
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(Number(req.params.id));
+  if (!gs) return res.status(404).json({ error: 'Group session not found.' });
+  if (gs.status === 'cancelled') return res.json({ ok: true });
+  await groups.cancelGroupSession(gs, 'admin');
+  res.json({ ok: true });
+});
+
+// ---------------------------------------------------------------------------
+// Packages — admin visibility + manual balance corrections.
+// ---------------------------------------------------------------------------
+router.get('/admin/packages', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  const rows = db.prepare(`SELECT p.*, u.name AS customer_name, u.email AS customer_email
+    FROM packages p JOIN users u ON u.id = p.customer_id
+    WHERE p.status != 'void'
+    ORDER BY p.id DESC LIMIT 200`).all();
+  res.json(rows.map((p) => ({
+    id: p.id, code: p.code, customer: p.customer_name, email: p.customer_email,
+    sessions: p.sessions_total, priceCents: p.price_cents, status: p.status,
+    used: packages.usedSessions(p.id), adjusted: p.adjust_sessions,
+    remaining: packages.remainingSessions(p),
+    purchasedAt: (p.paid_at || p.created_at).slice(0, 10),
+  })));
+});
+
+// Manual correction (goodwill session, mistake fix). The balance can never go
+// below what is already used.
+router.post('/admin/packages/:id/adjust', requireRole('admin'), (req, res) => {
+  const pkg = db.prepare('SELECT * FROM packages WHERE id = ?').get(Number(req.params.id));
+  if (!pkg || pkg.status !== 'active') return res.status(404).json({ error: 'Active package not found.' });
+  const delta = Number(req.body?.delta);
+  if (!Number.isInteger(delta) || delta === 0 || Math.abs(delta) > 20) {
+    return res.status(400).json({ error: 'Adjustment must be a whole number of sessions.' });
+  }
+  const after = pkg.sessions_total + pkg.adjust_sessions + delta - packages.usedSessions(pkg.id);
+  if (after < 0) return res.status(409).json({ error: 'The balance cannot go below zero.' });
+  db.prepare('UPDATE packages SET adjust_sessions = adjust_sessions + ? WHERE id = ?').run(delta, pkg.id);
+  res.json({ ok: true, remaining: after });
 });
 
 // ---------------------------------------------------------------------------

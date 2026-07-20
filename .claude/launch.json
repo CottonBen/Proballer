@@ -13,6 +13,13 @@
       "runtimeArgs": ["server/app.js"],
       "port": 3199,
       "env": { "PORT": "3199", "DEMO_DATA": "1" }
+    },
+    {
+      "name": "proballers-striped",
+      "runtimeExecutable": "/Users/user/.local/bin/node",
+      "runtimeArgs": ["server/app.js"],
+      "port": 3000,
+      "env": { "PORT": "3000", "STRIPE_SECRET_KEY": "sk_test_dummy" }
     }
   ]
 }

@@ -202,6 +202,70 @@ CREATE TABLE IF NOT EXISTS hidden_pitches (
   hidden_at TEXT NOT NULL
 );
 
+-- Group training: one coach, up to group_sessions.capacity players, each
+-- paying group_signups.price_cents for their own spot. Separate from the
+-- 1-on-1 bookings/invoices machinery on purpose: a spot is a per-player
+-- purchase, not a slot reservation.
+CREATE TABLE IF NOT EXISTS group_sessions (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,           -- short public reference, e.g. GRP-4F7K2A
+  coach_id INTEGER NOT NULL REFERENCES coaches(id),
+  date TEXT NOT NULL,                  -- YYYY-MM-DD (Europe/Helsinki)
+  hour INTEGER NOT NULL,               -- start hour, like bookings
+  location TEXT NOT NULL,              -- city from config.locations
+  pitch_id INTEGER,
+  pitch_name TEXT NOT NULL DEFAULT '',
+  capacity INTEGER NOT NULL DEFAULT 4,
+  price_cents INTEGER NOT NULL,        -- per player
+  status TEXT NOT NULL DEFAULT 'open' CHECK (status IN ('open','completed','cancelled')),
+  demo INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_group_sessions_date ON group_sessions (date, hour);
+
+-- One player's spot in a group session. pending = card payment in flight
+-- (holds the spot until pay_by); confirmed = paid (or added by the admin).
+CREATE TABLE IF NOT EXISTS group_signups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,           -- e.g. GSU-4F7K2A
+  group_session_id INTEGER NOT NULL REFERENCES group_sessions(id),
+  customer_id INTEGER NOT NULL REFERENCES users(id),
+  price_cents INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','cancelled')),
+  stripe_session_id TEXT,
+  stripe_payment_intent TEXT,          -- kept for refunds on cancellation
+  pay_by TEXT,                         -- unpaid signups are released after this
+  paid_at TEXT,
+  reminder_email_sent INTEGER NOT NULL DEFAULT 0,
+  demo INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+-- One active spot per customer per session (a cancelled spot can be re-bought).
+CREATE UNIQUE INDEX IF NOT EXISTS idx_group_signups_active
+  ON group_signups (group_session_id, customer_id) WHERE status != 'cancelled';
+
+-- Prepaid 1-on-1 session packages. Remaining sessions are DERIVED, never
+-- stored: sessions_total + adjust_sessions − COUNT(non-cancelled bookings
+-- with this package_id). A cancelled booking therefore returns its session
+-- automatically, and the count can never drift out of sync.
+CREATE TABLE IF NOT EXISTS packages (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,           -- e.g. PKG-4F7K2A
+  customer_id INTEGER NOT NULL REFERENCES users(id),
+  sessions_total INTEGER NOT NULL,
+  price_cents INTEGER NOT NULL,
+  adjust_sessions INTEGER NOT NULL DEFAULT 0,  -- admin manual correction (+/-)
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','void')),
+  stripe_session_id TEXT,
+  pay_by TEXT,                         -- unpaid purchases are voided after this
+  paid_at TEXT,
+  low_email_sent INTEGER NOT NULL DEFAULT 0,   -- "1 session left" notice sent
+  used_email_sent INTEGER NOT NULL DEFAULT 0,  -- "package fully used" notice sent
+  demo INTEGER NOT NULL DEFAULT 0,
+  created_at TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_packages_customer ON packages (customer_id);
+
 -- Coach <-> customer chat. One thread per pair, auto-created on first booking.
 -- Admins are implicit members of every chat (business oversight).
 CREATE TABLE IF NOT EXISTS chats (
@@ -265,6 +329,10 @@ for (const stmt of [
   // review request the day after the session, book-again nudge 3 days after.
   'ALTER TABLE bookings ADD COLUMN review_email_sent INTEGER NOT NULL DEFAULT 0',
   'ALTER TABLE bookings ADD COLUMN rebook_email_sent INTEGER NOT NULL DEFAULT 0',
+  // Prepaid package that funds this booking (NULL = paid per session).
+  'ALTER TABLE bookings ADD COLUMN package_id INTEGER REFERENCES packages(id)',
+  // One-shot flag: the day-before reminder email went out.
+  'ALTER TABLE bookings ADD COLUMN reminder_email_sent INTEGER NOT NULL DEFAULT 0',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }
@@ -324,8 +392,12 @@ function nowISO() { return new Date().toISOString(); }
 // ---------------------------------------------------------------------------
 function autoCompleteBookings() {
   // Expire FIRST: an unpaid card-payment booking must be released (cancelled)
-  // at its deadline, never silently "completed" into a free session.
+  // at its deadline, never silently "completed" into a free session. The same
+  // goes for unpaid group spots and package purchases (lazy requires — those
+  // modules require this file).
   expireUnpaidBookings();
+  try { require('./packages').expirePendingPackages(); } catch (e) { console.error('[packages] sweep:', e.message); }
+  try { require('./groups').expirePendingSignups(); } catch (e) { console.error('[groups] sweep:', e.message); }
   const { date, hour } = helsinkiNow();
   // completed_at is the session end in Helsinki local time (naive, no numeric
   // offset — the old hard-coded +02:00 was wrong during summer time / EEST).
@@ -334,6 +406,11 @@ function autoCompleteBookings() {
     SET status = 'completed',
         completed_at = date || 'T' || printf('%02d', hour + 1) || ':00:00'
     WHERE status = 'confirmed' AND (date < ? OR (date = ? AND hour + 1 <= ?))
+  `).run(date, date, hour);
+  // Group sessions tick over the same way once their hour has ended.
+  db.prepare(`
+    UPDATE group_sessions SET status = 'completed'
+    WHERE status = 'open' AND (date < ? OR (date = ? AND hour + 1 <= ?))
   `).run(date, date, hour);
 }
 

@@ -124,6 +124,72 @@ function buildSlides() {
   restart();
 }
 
+// --- group training ---------------------------------------------------------
+let GROUPS = [];
+let LANDING_USER = null;
+
+// Upcoming group sessions under the spotlight: date, coach, city, price and
+// live spot count. Joining follows the pay-at-booking flow — straight to
+// Stripe for the €/spot price.
+async function buildGroups() {
+  const section = document.getElementById('groups');
+  if (!section) return;
+  try { GROUPS = await API.get('/groups'); } catch { GROUPS = []; }
+  if (!GROUPS.length) { section.hidden = true; return; }
+  section.hidden = false;
+  const cap = SITE.groupTraining ? SITE.groupTraining.capacity : 4;
+  document.getElementById('groups-sub').textContent = t('landing.groups.sub', { cap });
+  document.getElementById('group-price-tag').innerHTML =
+    `<span class="price-new">${eur((SITE.groupTraining ? SITE.groupTraining.pricePerPlayer : 25) * 100)}</span>
+     <span class="muted" style="font-size:1rem">${t('landing.groups.perplayer')}</span>`;
+
+  const hourSep = I18N.lang === 'fi' ? '.' : ':';
+  document.getElementById('group-grid').innerHTML = GROUPS.map((g) => {
+    const full = g.spotsLeft < 1;
+    return `
+    <article class="card reveal" style="display:flex;flex-direction:column;gap:10px">
+      <div style="display:flex;align-items:center;gap:12px">
+        ${g.coachPhoto ? `<img src="${esc(g.coachPhoto)}" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover">` : ''}
+        <div>
+          <strong style="display:block">${esc(fmtDate(g.date))} ${String(g.hour).padStart(2, '0')}${hourSep}00</strong>
+          <span class="muted small">${esc(g.coach)} · ${esc(I18N.server(g.location))}</span>
+        </div>
+      </div>
+      <div style="display:flex;align-items:center;justify-content:space-between;gap:10px;margin-top:auto">
+        <span class="chip ${full ? 'gray' : ''}">${full
+          ? t('landing.groups.full')
+          : t('landing.groups.spots', { left: g.spotsLeft, cap: g.capacity })}</span>
+        <button class="btn btn-primary btn-sm" data-join="${esc(g.code)}" ${full ? 'disabled' : ''}>
+          ${t('landing.groups.join')}</button>
+      </div>
+    </article>`;
+  }).join('');
+
+  document.getElementById('group-grid').querySelectorAll('[data-join]').forEach((btn) =>
+    btn.addEventListener('click', () => joinGroup(btn)));
+}
+
+async function joinGroup(btn) {
+  if (!LANDING_USER) {
+    // The gate handles login; after signing in the visitor clicks join again.
+    toast(t('landing.groups.login_first'), true);
+    sessionStorage.removeItem('pbf_gate_skipped');
+    initGate(null);
+    return;
+  }
+  btn.disabled = true;
+  try {
+    const r = await API.post(`/groups/${encodeURIComponent(btn.dataset.join)}/join`, { lang: I18N.lang });
+    if (r.payUrl) { location.href = r.payUrl; return; }
+    if (r.signup && r.signup.status === 'confirmed') { toast(t('pay.success.group_title')); buildGroups(); return; }
+    toast(t('landing.groups.pay_failed'), true);
+  } catch (err) {
+    btn.disabled = false;
+    toast(I18N.server(err.message), true);
+    buildGroups(); // spot counts may have moved under us
+  }
+}
+
 // --- coaches grid -----------------------------------------------------------
 function buildCoachGrid() {
   const grid = document.getElementById('coach-grid');
@@ -257,6 +323,7 @@ function initGate(user) {
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       // Coaches have their own app; customers and admins stay to browse/book.
       if (res.user.role === 'coach') { location.href = DASH_FOR_ROLE.coach; return; }
+      LANDING_USER = res.user;
       gate.hidden = true;
       document.body.classList.remove('gated');
       initHeaderAuth();
@@ -272,7 +339,8 @@ function initGate(user) {
 (async function init() {
   const userPromise = initHeaderAuth();
   [SITE, COACHES] = await Promise.all([API.get('/config'), API.get('/coaches')]);
-  initGate(await userPromise);
+  LANDING_USER = await userPromise;
+  initGate(LANDING_USER);
 
   const banner = document.getElementById('sale-banner');
   if (SITE.pricing.salePercent > 0) {
@@ -283,6 +351,7 @@ function initGate(user) {
   document.getElementById('price-tag').innerHTML = slidePriceHTML();
 
   buildSlides();
+  await buildGroups();
   buildCoachGrid();
   initReveal();
 
