@@ -63,8 +63,9 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focus, lang, paid 
      <strong>${esc(L('invoice.bookingRef'))}:</strong> ${esc(booking.code)}</p>
   <table>
     <tr><th>${esc(L('invoice.item'))}</th><th>${esc(L('invoice.amount'))}</th></tr>
-    <tr><td>${esc(L('invoice.lineItem', {
-      focus: focusLabel(lang, focus), position: positionLabel(lang, booking.position) }))}<br>
+    <tr><td>${esc(booking.focus && booking.position
+      ? L('invoice.lineItem', { focus: focusLabel(lang, focus), position: positionLabel(lang, booking.position) })
+      : L('invoice.lineItemPlain'))}<br>
       <span class="muted">${esc(coachName)} · ${esc(localDate(lang, booking.date))} ${esc(hourRange(lang, booking.hour))} · ${esc(trCfg(lang, booking.location))}</span></td>
       <td>${eur(booking.price_cents)}</td></tr>
     ${sale ? `<tr><td><span class="badge">${booking.credit_applied

@@ -44,7 +44,7 @@ function announceBookingToCoach(bookingId) {
   if (coach.user_id && coach.user_id !== b.customer_id) {
     db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
       .run(coach.user_id, `New booking: ${customer.name} on ${b.date} at `
-        + `${String(b.hour).padStart(2, '0')}:00 — ${b.focus} (${b.location}).`, nowISO());
+        + `${String(b.hour).padStart(2, '0')}:00 — ${b.focus ? b.focus + ' ' : ''}(${b.location}).`, nowISO());
   }
   const chat = ensureChat(b.coach_id, b.customer_id);
   const sysId = postChatMessage(chat.id, null, `📅 ${b.code} · ${b.date} · ${String(b.hour).padStart(2, '0')}:00`);

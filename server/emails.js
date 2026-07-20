@@ -73,9 +73,36 @@ function bookingBundle(bookingId) {
   return { b, customer, coach, focus, lang: pickLang(customer.lang) };
 }
 
+// A booking's detail line; focus is optional since July 2026 (the coach asks
+// in the chat) — an empty middle slot collapses instead of showing '· ·'.
+function bookingLine(lang, b, coachName) {
+  const f = b.focus ? (config.focusTypes.find((x) => x.id === b.focus) || b.focus) : '';
+  return tr(lang, 'email.booking.line', {
+    coach: coachName, date: localDate(lang, b.date), hours: hourRange(lang, b.hour),
+    focus: f ? focusLabel(lang, f) : '', location: trCfg(lang, b.location),
+  }).replace('·  ·', '·');
+}
+
 // ---------------------------------------------------------------------------
 // Transactional emails
 // ---------------------------------------------------------------------------
+// The 6-digit code new accounts confirm their address with (sent at signup
+// and from the "resend" button). The welcome email follows verification.
+function sendVerifyCodeEmail(userId) {
+  const u = db.prepare('SELECT id, name, email, lang, verify_code FROM users WHERE id = ?').get(userId);
+  if (!u || !u.verify_code) return;
+  const lang = pickLang(u.lang);
+  const subject = tr(lang, 'email.verify.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.verify.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: u.name }))}</p>
+     <p>${esc(tr(lang, 'email.verify.body'))}</p>
+     <div style="background:#f4f4f5;border-radius:10px;padding:18px;margin:14px 0;text-align:center">
+       <span style="font-size:2rem;font-weight:800;letter-spacing:.35em">${esc(u.verify_code)}</span>
+     </div>
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.verify.note'))}</p>`);
+  deliver({ type: 'verify', userId: u.id, to: u.email, subject, html });
+}
+
 function sendWelcomeEmail(userId) {
   const u = db.prepare('SELECT id, name, email, lang FROM users WHERE id = ?').get(userId);
   if (!u) return;
@@ -98,14 +125,12 @@ function sendBookingConfirmedEmail(bookingId) {
     `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
      <p>${esc(tr(lang, 'email.booking.body'))}</p>
      ${detailBox([
-       tr(lang, 'email.booking.line', {
-         coach: coach.name, date: localDate(lang, b.date), hours: hourRange(lang, b.hour),
-         focus: focusLabel(lang, focus), location: trCfg(lang, b.location),
-       }),
+       bookingLine(lang, b, coach.name),
        tr(lang, 'email.booking.ref', { code: b.code }),
      ])}
      ${b.is_online ? '' : `<p style="color:#6b6b70">${esc(tr(lang, 'email.booking.pitchNote'))}</p>`}
-     ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.booking.cta'))}`);
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.booking.app_note', { siteUrl: config.siteUrl.replace(/^https?:\/\//, '') }))}</p>
+     ${button(`${config.siteUrl}/app`, tr(lang, 'email.booking.app_cta'))}`);
   deliver({ type: 'booking', userId: customer.id, bookingCode: b.code, to: customer.email, subject, html });
 }
 
@@ -141,13 +166,11 @@ function sendCoachBookingEmail(bookingId) {
     `<p>${esc(tr(lang, 'email.greeting', { name: coachUser.name }))}</p>
      <p>${esc(tr(lang, 'email.coachbooking.body', { customer: customer.name }))}</p>
      ${detailBox([
-       tr(lang, 'email.booking.line', {
-         coach: customer.name, date: localDate(lang, b.date), hours: hourRange(lang, b.hour),
-         focus: focusLabel(lang, focus), location: trCfg(lang, b.location),
-       }),
+       bookingLine(lang, b, customer.name),
        tr(lang, 'email.coachbooking.ref', { code: b.code }),
      ])}
      ${b.notes ? `<p>${esc(tr(lang, 'email.coachbooking.notes', { notes: b.notes }))}</p>` : ''}
+     ${b.focus ? '' : `<p>${esc(tr(lang, 'email.coachbooking.ask_note'))}</p>`}
      <p>${esc(tr(lang, b.is_online ? 'email.coachbooking.steps_online' : 'email.coachbooking.steps'))}</p>
      ${b.is_online ? '' : `<p style="color:#6b6b70">${esc(tr(lang, 'email.coachbooking.own_pitch'))}</p>`}
      ${button(`${config.siteUrl}/app`, tr(lang, 'email.coachbooking.cta'))}`);
@@ -201,7 +224,11 @@ function sendGroupConfirmedEmail(signupId) {
   const html = shell(lang, tr(lang, 'email.group.title'),
     `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
      <p>${esc(tr(lang, 'email.group.body'))}</p>
-     ${detailBox([groupLine(lang, gs, coach), tr(lang, 'email.group.ref', { code: su.code })])}
+     ${detailBox([
+       groupLine(lang, gs, coach),
+       ...(gs.age_group ? [tr(lang, 'email.group.age', { age: gs.age_group })] : []),
+       tr(lang, 'email.group.ref', { code: su.code }),
+     ])}
      <p style="color:#6b6b70">${esc(tr(lang, 'email.group.spots', { taken, capacity: gs.capacity }))}</p>
      ${button(`${config.siteUrl}/my-bookings`, tr(lang, 'email.group.cta'))}`);
   deliver({ type: 'group_booking', userId: customer.id, bookingCode: su.code, to: customer.email, subject, html });
@@ -314,9 +341,7 @@ function sendSessionReminderEmail(r, isGroup) {
     ? tr(lang, 'email.group.line', {
         coach: r.coach, date: localDate(lang, r.date),
         hours: hourRange(lang, r.hour), location: trCfg(lang, r.location) })
-    : tr(lang, 'email.booking.line', {
-        coach: r.coach, date: localDate(lang, r.date), hours: hourRange(lang, r.hour),
-        focus: '', location: trCfg(lang, r.location) }).replace(' ·  ·', ' ·');
+    : bookingLine(lang, { date: r.date, hour: r.hour, focus: '', location: r.location }, r.coach);
   const subject = tr(lang, 'email.reminder.subject', { siteName: config.siteName });
   const html = shell(lang, tr(lang, 'email.reminder.title'),
     `<p>${esc(tr(lang, 'email.greeting', { name: r.name }))}</p>
@@ -454,6 +479,7 @@ function automationStatus() {
 }
 
 module.exports = {
+  sendVerifyCodeEmail,
   sendWelcomeEmail,
   sendBookingConfirmedEmail,
   sendCoachBookingEmail,

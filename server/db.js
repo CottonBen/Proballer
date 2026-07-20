@@ -266,6 +266,16 @@ CREATE TABLE IF NOT EXISTS packages (
 );
 CREATE INDEX IF NOT EXISTS idx_packages_customer ON packages (customer_id);
 
+-- "Get in touch" requests from the landing menu: a minimal lead (email or
+-- phone number), shown in the admin CRM next to the phone-number leads.
+CREATE TABLE IF NOT EXISTS contact_requests (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  contact TEXT NOT NULL,       -- the email address or phone number left
+  kind TEXT NOT NULL CHECK (kind IN ('email','phone')),
+  handled_at TEXT,             -- admin marked it handled (NULL = open)
+  created_at TEXT NOT NULL
+);
+
 -- Coach <-> customer chat. One thread per pair, auto-created on first booking.
 -- Admins are implicit members of every chat (business oversight).
 CREATE TABLE IF NOT EXISTS chats (
@@ -333,6 +343,19 @@ for (const stmt of [
   'ALTER TABLE bookings ADD COLUMN package_id INTEGER REFERENCES packages(id)',
   // One-shot flag: the day-before reminder email went out.
   'ALTER TABLE bookings ADD COLUMN reminder_email_sent INTEGER NOT NULL DEFAULT 0',
+  // Customer's home area (Helsinki/Espoo/Vantaa), asked at signup.
+  "ALTER TABLE users ADD COLUMN area TEXT NOT NULL DEFAULT ''",
+  // Email verification: accounts confirm their address with a 6-digit code
+  // before they can book/pay. Pre-existing accounts count as verified.
+  'ALTER TABLE users ADD COLUMN email_verified INTEGER NOT NULL DEFAULT 1',
+  'ALTER TABLE users ADD COLUMN verify_code TEXT',
+  'ALTER TABLE users ADD COLUMN verify_sent_at TEXT',
+  // Group sessions carry an age group (7-10 | 10-13 | 13-16); player-created
+  // sessions set it from the first booker, coach-created ones may leave it
+  // open ('' = all ages) until the first player picks.
+  "ALTER TABLE group_sessions ADD COLUMN age_group TEXT NOT NULL DEFAULT ''",
+  // Who started the session: 'coach' (app) or 'player' (booked a free slot).
+  "ALTER TABLE group_sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT 'coach'",
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

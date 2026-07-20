@@ -89,7 +89,10 @@
         <td class="muted">${esc(b.code)}</td>
         <td>${esc(fmtDate(b.date))} ${String(b.hour).padStart(2, '0')}${hourSep}00</td>
         <td>${esc(b.coach)}</td>
-        <td>${esc(posLabel(b.position))} · ${esc(I18N.server(b.focus))}</td>
+        <td>${b.position || b.focus
+          ? [b.position ? esc(posLabel(b.position)) : '', b.focus ? esc(I18N.server(b.focus)) : '']
+              .filter(Boolean).join(' · ')
+          : t('mybookings.table.plain')}</td>
         <td>${b.is_online ? t('mybookings.table.online') : esc(b.location)}${
           b.pitch_name ? `<br><span class="small muted">📍 ${esc(b.pitch_name)}</span>` : ''}</td>
         <td>${eur(b.total_cents)}</td>

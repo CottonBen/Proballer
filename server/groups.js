@@ -7,7 +7,7 @@
 
 const crypto = require('node:crypto');
 const config = require('../config');
-const { db, nowISO, helsinkiNow } = require('./db');
+const { db, nowISO, helsinkiNow, helsinkiDateOffset } = require('./db');
 
 const genCode = (prefix) => prefix + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
@@ -38,7 +38,36 @@ function publicShape(gs) {
     taken,
     spotsLeft: Math.max(0, gs.capacity - taken),
     status: gs.status,
+    ageGroup: gs.age_group || '',
   };
+}
+
+// Free coach hours a player can START a group session on: availability at
+// least `minLeadDays` days out, with no booking or group session on the hour.
+// Grouped per coach so the landing page can offer a compact picker.
+function startableSlots() {
+  const from = helsinkiDateOffset(config.groupTraining.minLeadDays);
+  const to = helsinkiDateOffset(config.bookingHorizonDays);
+  const rows = db.prepare(`
+    SELECT a.coach_id, a.date, a.hour, c.name, c.locations, c.photos
+    FROM availability a JOIN coaches c ON c.id = a.coach_id
+    WHERE c.active = 1 AND a.date >= ? AND a.date <= ?
+      AND NOT EXISTS (SELECT 1 FROM bookings b
+        WHERE b.coach_id = a.coach_id AND b.date = a.date AND b.hour = a.hour AND b.status != 'cancelled')
+      AND NOT EXISTS (SELECT 1 FROM group_sessions g
+        WHERE g.coach_id = a.coach_id AND g.date = a.date AND g.hour = a.hour AND g.status = 'open')
+    ORDER BY a.date, a.hour LIMIT 400`).all(from, to);
+  const byCoach = new Map();
+  for (const r of rows) {
+    if (!byCoach.has(r.coach_id)) {
+      let photo = null, locations = [];
+      try { photo = (JSON.parse(r.photos || '[]'))[0] || null; } catch { /* keep null */ }
+      try { locations = JSON.parse(r.locations || '[]'); } catch { /* keep [] */ }
+      byCoach.set(r.coach_id, { coachId: r.coach_id, coach: r.name, coachPhoto: photo, locations, slots: [] });
+    }
+    byCoach.get(r.coach_id).slots.push({ date: r.date, hour: r.hour });
+  }
+  return [...byCoach.values()];
 }
 
 // Upcoming open sessions for the landing page (soonest first).
@@ -144,6 +173,19 @@ function expirePendingSignups() {
     try { require('./emails').sendGroupReleasedEmail(s.id); }
     catch (e) { console.error('[emails] group release:', e.message); }
   }
+  if (stale.length) {
+    // A player-started session whose every spot fell through must not keep
+    // squatting on the coach's hour: cancel it and hand the hour back.
+    const empty = db.prepare(`SELECT * FROM group_sessions g
+      WHERE g.status = 'open' AND g.created_by = 'player'
+        AND NOT EXISTS (SELECT 1 FROM group_signups s
+          WHERE s.group_session_id = g.id AND s.status != 'cancelled')`).all();
+    for (const gs of empty) {
+      db.prepare("UPDATE group_sessions SET status = 'cancelled' WHERE id = ?").run(gs.id);
+      db.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)')
+        .run(gs.coach_id, gs.date, gs.hour, nowISO());
+    }
+  }
 }
 
 // Cancel one player's paid spot (admin removal or session cancellation):
@@ -185,7 +227,7 @@ async function cancelGroupSession(gs, actor /* 'coach' | 'admin' */) {
 }
 
 module.exports = {
-  takenCount, publicShape, upcomingOpen, roster,
+  takenCount, publicShape, upcomingOpen, roster, startableSlots,
   createSignup, markSignupPaid, expirePendingSignups,
   cancelSignup, cancelGroupSession,
 };

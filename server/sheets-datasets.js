@@ -27,9 +27,67 @@ module.exports = function datasets() {
         SUM(CASE WHEN type='booking_started' THEN 1 ELSE 0 END) AS booking_started,
         SUM(CASE WHEN type='booking_completed' THEN 1 ELSE 0 END) AS booking_completed
       FROM events WHERE type LIKE 'booking_%' GROUP BY day ORDER BY day DESC`),
-    Customers: q(`SELECT name, email, phone, created_at,
-        (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id) AS bookings
+    // Full CRM view: contact details, home area, activity and lifetime value.
+    Customers: q(`SELECT name, email, phone, area,
+        CASE email_verified WHEN 1 THEN 'yes' ELSE 'no' END AS verified, created_at,
+        (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id AND b.status != 'cancelled') AS bookings,
+        (SELECT MAX(b.date) FROM bookings b WHERE b.customer_id = u.id AND b.status = 'completed') AS last_session,
+        (SELECT COALESCE(SUM(i.amount_cents),0)/100.0 FROM invoices i
+           JOIN bookings b ON b.id = i.booking_id
+           WHERE b.customer_id = u.id AND i.status = 'paid') AS paid_1on1_eur,
+        (SELECT COALESCE(SUM(g.price_cents),0)/100.0 FROM group_signups g
+           WHERE g.customer_id = u.id AND g.status = 'confirmed' AND g.paid_at IS NOT NULL) AS paid_groups_eur,
+        (SELECT COALESCE(SUM(p.price_cents),0)/100.0 FROM packages p
+           WHERE p.customer_id = u.id AND p.status = 'active') AS paid_packages_eur
       FROM users u WHERE role='customer' ORDER BY created_at DESC`),
+    ContactLeads: q(`SELECT contact, kind, created_at,
+        CASE WHEN handled_at IS NULL THEN 'open' ELSE 'handled' END AS status
+      FROM contact_requests ORDER BY id DESC`),
+    GroupSessions: q(`SELECT g.code, g.date, g.hour || ':00' AS time, c.name AS coach,
+        g.location, g.age_group, g.created_by, g.capacity,
+        (SELECT COUNT(*) FROM group_signups s
+           WHERE s.group_session_id = g.id AND s.status = 'confirmed') AS players,
+        g.price_cents/100.0 AS price_per_player_eur, g.status
+      FROM group_sessions g JOIN coaches c ON c.id = g.coach_id
+      ORDER BY g.date DESC, g.hour DESC`),
+    GroupSignups: q(`SELECT s.code, g.code AS session_code, u.name AS player, u.email,
+        s.price_cents/100.0 AS paid_eur, s.status, s.paid_at, s.created_at
+      FROM group_signups s JOIN group_sessions g ON g.id = s.group_session_id
+      JOIN users u ON u.id = s.customer_id ORDER BY s.id DESC`),
+    Packages: (() => {
+      const packages = require('./packages');
+      return db.prepare(`SELECT p.*, u.name AS customer, u.email FROM packages p
+        JOIN users u ON u.id = p.customer_id WHERE p.status != 'void' ORDER BY p.id DESC`).all()
+        .map((p) => ({
+          code: p.code, customer: p.customer, email: p.email,
+          sessions: p.sessions_total, price_eur: p.price_cents / 100,
+          used: packages.usedSessions(p.id), remaining: packages.remainingSessions(p),
+          adjusted: p.adjust_sessions, status: p.status,
+          purchased_at: p.paid_at || p.created_at,
+        }));
+    })(),
+    FinanceMonthly: (() => {
+      const months = [...new Set([
+        ...q("SELECT DISTINCT substr(issued_at,1,7) m FROM invoices WHERE status='paid'").map((r) => r.m),
+        ...q("SELECT DISTINCT substr(paid_at,1,7) m FROM group_signups WHERE paid_at IS NOT NULL").map((r) => r.m),
+        ...q("SELECT DISTINCT substr(paid_at,1,7) m FROM packages WHERE paid_at IS NOT NULL").map((r) => r.m),
+      ])].filter(Boolean).sort().reverse();
+      const one = db.prepare(`SELECT COALESCE(SUM(amount_cents),0) s FROM invoices
+        WHERE status='paid' AND substr(issued_at,1,7)=?`);
+      const grp = db.prepare(`SELECT COALESCE(SUM(price_cents),0) s FROM group_signups
+        WHERE status='confirmed' AND paid_at IS NOT NULL AND substr(paid_at,1,7)=?`);
+      const pkg = db.prepare(`SELECT COALESCE(SUM(price_cents),0) s FROM packages
+        WHERE status='active' AND paid_at IS NOT NULL AND substr(paid_at,1,7)=?`);
+      const pay = db.prepare(`SELECT COALESCE(SUM(earn_cents),0) s FROM bookings
+        WHERE status='completed' AND earn_cents IS NOT NULL AND substr(date,1,7)=?`);
+      return months.map((m) => {
+        const a = one.get(m).s, b = grp.get(m).s, c = pkg.get(m).s, d = pay.get(m).s;
+        return {
+          month: m, one_on_one_eur: a / 100, groups_eur: b / 100, packages_eur: c / 100,
+          revenue_eur: (a + b + c) / 100, coach_payouts_eur: d / 100, net_eur: (a + b + c - d) / 100,
+        };
+      });
+    })(),
     Reviews: q(`SELECT c.name AS coach, r.author_name AS reviewer, r.rating, r.body,
         r.created_at FROM reviews r JOIN coaches c ON c.id=r.coach_id
       ORDER BY r.created_at DESC`),

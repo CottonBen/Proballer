@@ -23,6 +23,7 @@ Kaikki valmentajan tehtävät hoituvat suoraan sovelluksessa — myös kalenteri
 Henkilökohtaisten treenien lisäksi voit vetää **ryhmätreenejä**: enintään 4 pelaajaa, jokainen maksaa oman paikkansa (25 €) varatessaan.
 
 - Luo ryhmätreeni sovelluksen *Treenit*-välilehdellä: paina **+ Uusi ryhmätreeni**, valitse päivä, kellonaika ja kaupunki ja paina **Luo treeni**.
+- **Pelaajat voivat myös itse aloittaa ryhmätreenin** mihin tahansa avoimeen kalenteriaikaasi, joka on vähintään 5 päivän päässä. Ensimmäinen varaaja valitsee ryhmän ikäryhmän (7–10 v / 10–13 v / 13–16 v) — muut liittyjät ovat samaa ikäryhmää, ja ikäryhmä näkyy sinulle sovelluksessa. Suunnittele treeni vapaasti ikäryhmälle sopivaksi.
 - Treeni näkyy heti nettisivun etusivulla, ja pelaajat varaavat paikkansa sieltä. Näet sovelluksesta reaaliajassa, ketkä ovat ilmoittautuneet (esim. 2/4 pelaajaa).
 - Ryhmätreenin tunti ei voi mennä päällekkäin omien 1-on-1-varaustesi kanssa — sovellus estää sen automaattisesti.
 - Jos joudut perumaan ryhmätreenin, tee se sovelluksessa mahdollisimman ajoissa: kaikki pelaajat saavat viestin ja maksut palautetaan automaattisesti.
@@ -33,12 +34,10 @@ Pelaaja maksaa treenin heti varatessaan — sinä kuulet varauksesta vasta kun s
 
 **Lue varauksen tiedot aina huolella.** Näet niistä:
 - päivän ja kellonajan
-- pelaajan **pelipaikan** (maalivahti / puolustaja / keskikenttä / hyökkääjä)
-- treenin **painopisteen** — eli mitä pelaaja haluaa harjoitella (esim. viimeistely, tekniikka, syöttäminen)
 - **kaupungin**, jossa treeni pidetään
 - pelaajan **omat toiveet ja lisätiedot** — nämä näkyvät myös keskustelun ensimmäisenä viestinä
 
-Suunnittele treeni näiden tietojen pohjalta. Pelaaja on kertonut mitä haluaa — treeni rakennetaan sen ympärille.
+**TÄRKEÄÄ:** varauksessa ei enää kysytä pelipaikkaa eikä treenin painopistettä. Ne ovat SINUN tehtäväsi selvittää: **kysy pelaajalta Viestit-välilehdellä**, missä hän pelaa ja mitä hän haluaa harjoitella, ja rakenna treeni vastausten ympärille. Tämä on samalla luonteva tapa esittäytyä.
 
 ## 4. Kaksi tehtävää heti varauksen jälkeen
 

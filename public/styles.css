@@ -627,3 +627,27 @@ body.theme-green::before {
   }
   .reveal { opacity: 1; transform: none; }
 }
+
+/* --- header site menu (six quick choices) ---------------------------------- */
+.site-header { position: relative; }
+.site-menu {
+  position: absolute; right: 18px; top: calc(100% + 6px);
+  background: #141416; border: 1px solid var(--line);
+  border-radius: 14px; padding: 8px; display: flex; flex-direction: column;
+  min-width: 235px; z-index: 300; box-shadow: 0 18px 40px rgba(0, 0, 0, .45);
+}
+.site-menu button {
+  background: none; border: 0; color: var(--text); text-align: left;
+  font: inherit; font-weight: 600; padding: 11px 14px; border-radius: 9px; cursor: pointer;
+}
+.site-menu button:hover, .site-menu button:focus-visible { background: rgba(255, 255, 255, .07); }
+
+/* --- landing package cards -------------------------------------------------- */
+.pkg-card { display: flex; flex-direction: column; gap: 10px; position: relative; }
+.pkg-card .pkg-tag {
+  align-self: flex-start; font-size: .66rem; font-weight: 800; letter-spacing: .14em;
+  padding: 4px 10px; border-radius: 999px; border: 1px solid var(--line); color: var(--muted);
+}
+.pkg-card.popular { border-color: var(--lime); }
+.pkg-card.popular .pkg-tag, .pkg-card.elite .pkg-tag { color: var(--ink); background: var(--lime); border-color: var(--lime); }
+.pkg-card .pkg-price { font-size: 1.7rem; font-weight: 800; }

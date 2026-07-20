@@ -100,10 +100,14 @@ module.exports = {
   },
 
   // Group training: one coach, up to `capacity` players, each paying
-  // `pricePerPlayer` euros for their own spot in the session.
+  // `pricePerPlayer` euros for their own spot. Players can START a group
+  // session on any coach's free hour at least `minLeadDays` days ahead; the
+  // first booker sets the session's age group.
   groupTraining: {
     pricePerPlayer: 25,
     capacity: 4,
+    minLeadDays: 5,
+    ageGroups: ['7-10', '10-13', '13-16'],
   },
 
   // Prepaid 1-on-1 session packages, paid upfront in one card payment.

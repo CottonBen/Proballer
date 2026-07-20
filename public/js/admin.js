@@ -61,6 +61,7 @@ const WIN_LABEL = {
   await refresh();
   await loadBookings('');
   await loadCRM();
+  await loadFinance();
   await loadGroups();
   await loadPackages();
   await loadEmails();
@@ -317,27 +318,77 @@ function lineChart(series, labels, colors) {
   </svg>`;
 }
 
+// The funnel/sessions/visitors charts were replaced with plain numbers
+// (owner's call): the same series, summed over the visible window.
 function renderCharts() {
   const s = A.series;
   const range = { from: fmtDate(s.days[0]), to: fmtDate(s.days[s.days.length - 1]) };
-  const legend = (items) => `<div class="small muted">${items.map(([color, label]) =>
-    `<span style="color:${color}">●</span> ${label}`).join(' &nbsp; ')}</div>`;
-  document.getElementById('charts').innerHTML = `
-    <div class="card chart-card">
-      <div class="chart-title"><h3 style="margin:0">${t('admin.chart.visitors.title')}</h3></div>
-      ${legend([['#3ee586', t('admin.chart.visitors.legend')]])}
-      ${lineChart([s.pageviews], range, ['#3ee586'])}
-    </div>
-    <div class="card chart-card">
-      <div class="chart-title"><h3 style="margin:0">${t('admin.chart.sessions.title')}</h3></div>
-      ${legend([['#4ade80', t('admin.chart.sessions.legend')]])}
-      ${lineChart([s.completedSessions], range, ['#4ade80'])}
-    </div>
-    <div class="card chart-card">
-      <div class="chart-title"><h3 style="margin:0">${t('admin.chart.funnel.title')}</h3></div>
-      ${legend([['#7fb5fb', t('admin.chart.funnel.started')], ['#3ee586', t('admin.chart.funnel.finished')]])}
-      ${lineChart([s.funnelStarted, s.funnelCompleted], range, ['#7fb5fb', '#3ee586'])}
+  const sum = (arr) => (arr || []).reduce((a, b) => a + b, 0);
+  const num = (label, value) => `
+    <div class="card stat-card">
+      <div class="label">${label}</div>
+      <div class="value">${value}</div>
+      <div class="sub">${esc(range.from)} – ${esc(range.to)}</div>
     </div>`;
+  document.getElementById('charts').innerHTML =
+    num(t('admin.numbers.pageviews'), sum(s.pageviews))
+    + num(t('admin.numbers.sessions'), sum(s.completedSessions))
+    + num(t('admin.numbers.started'), sum(s.funnelStarted))
+    + num(t('admin.numbers.completed'), sum(s.funnelCompleted));
+}
+
+// --- financial model: revenue by product, payouts, net — per month -----------
+async function loadFinance() {
+  let f;
+  try { f = await API.get('/admin/finance'); } catch { return; }
+  const tbl = document.getElementById('finance-table');
+  if (!tbl) return;
+  const money = (c) => eur(c);
+  tbl.innerHTML = `
+    <tr><th>${t('admin.finance.th.month')}</th><th>${t('admin.finance.th.oneonone')}</th>
+      <th>${t('admin.finance.th.groups')}</th><th>${t('admin.finance.th.packages')}</th>
+      <th>${t('admin.finance.th.revenue')}</th><th>${t('admin.finance.th.payouts')}</th>
+      <th>${t('admin.finance.th.net')}</th></tr>` +
+    f.months.map((m) => `
+      <tr>
+        <td class="muted">${esc(m.month)}</td>
+        <td>${money(m.oneOnOneCents)}</td>
+        <td>${money(m.groupCents)}</td>
+        <td>${money(m.packageCents)}</td>
+        <td><strong>${money(m.revenueCents)}</strong></td>
+        <td>${money(m.payoutCents)}</td>
+        <td><strong style="color:${m.netCents >= 0 ? 'var(--lime)' : '#ff6b6b'}">${money(m.netCents)}</strong></td>
+      </tr>`).join('') + `
+      <tr style="border-top:2px solid var(--line)">
+        <td class="muted">Σ</td><td></td><td></td><td></td>
+        <td><strong>${money(f.totals.revenueCents)}</strong></td>
+        <td>${money(f.totals.payoutCents)}</td>
+        <td><strong style="color:${f.totals.netCents >= 0 ? 'var(--lime)' : '#ff6b6b'}">${money(f.totals.netCents)}</strong></td>
+      </tr>`;
+  document.getElementById('finance-outlook').innerHTML =
+    `${t('admin.finance.upcoming', { n: f.outlook.upcomingSessions, sum: eur(f.outlook.upcomingPayoutCents) })}
+     · ${t('admin.finance.owed', { n: f.outlook.prepaidSessionsOwed })}`;
+}
+
+// --- get-in-touch requests from the landing menu ------------------------------
+function renderContactRequests() {
+  const tbl = document.getElementById('crm-contact');
+  if (!tbl) return;
+  const rows = (CRM.contactRequests || []).filter((r) => !r.handled_at);
+  document.getElementById('crm-contact-empty').hidden = rows.length > 0;
+  tbl.innerHTML = rows.length ? rows.map((r) => `
+    <tr>
+      <td><strong>${esc(r.contact)}</strong> <span class="muted small">${r.kind === 'email' ? '✉️' : '📞'}</span></td>
+      <td class="muted">${esc(r.date)}</td>
+      <td><button class="btn btn-ghost btn-sm" data-handled="${r.id}">${t('admin.crm.contact.mark')}</button></td>
+    </tr>`).join('') : '';
+  tbl.querySelectorAll('[data-handled]').forEach((b) => b.addEventListener('click', async () => {
+    b.disabled = true;
+    try {
+      await API.post(`/admin/contact-requests/${b.dataset.handled}/handled`, {});
+      await loadCRM();
+    } catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
+  }));
 }
 
 // --- coach performance table -------------------------------------------------
@@ -747,6 +798,7 @@ let CRM = null;
 async function loadCRM() {
   CRM = await API.get('/admin/crm');
   renderCRM();
+  renderContactRequests();
 }
 
 function renderCRM() {
@@ -872,7 +924,8 @@ function renderCRM() {
 function renderExports() {
   // Dataset names are the raw export identifiers (they name the CSV files),
   // so they stay in English in both languages.
-  const names = ['Bookings', 'Invoices', 'Coaches', 'CoachPayouts', 'Availability', 'VisitsDaily', 'Funnel', 'Customers', 'Reviews'];
+  const names = ['Bookings', 'Invoices', 'Coaches', 'CoachPayouts', 'Availability', 'VisitsDaily', 'Funnel',
+    'Customers', 'ContactLeads', 'GroupSessions', 'GroupSignups', 'Packages', 'FinanceMonthly', 'Reviews'];
   document.getElementById('csv-links').innerHTML = names.map((n) =>
     `<a class="btn btn-ghost btn-sm" href="/api/admin/export/${n}.csv">${n}.csv</a>`).join('');
   const st = A.sheets;

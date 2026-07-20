@@ -358,22 +358,70 @@ router.post('/auth/signup', loginThrottle, (req, res) => {
   const password = String(req.body?.password || '');
   // Optional contact number (shown on the admin CRM's leads list).
   const phone = String(req.body?.phone || '').trim();
+  // Home area — where the player lives (owner's ask: always filled in).
+  const area = String(req.body?.area || '').trim();
   if (name.length < 2 || name.length > 80) return res.status(400).json({ error: 'Please give your name.' });
   if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(email)) return res.status(400).json({ error: 'That email address does not look right.' });
   if (password.length < 8) return res.status(400).json({ error: 'Password must be at least 8 characters.' });
   if (phone && !/^[0-9+\-() ]{5,25}$/.test(phone)) {
     return res.status(400).json({ error: 'That phone number does not look right.' });
   }
+  if (!config.locations.includes(area)) return res.status(400).json({ error: 'Please pick your home area.' });
   if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
-  const info = db.prepare('INSERT INTO users (email, password_hash, name, role, lang, phone, created_at) VALUES (?,?,?,?,?,?,?)')
-    .run(email, bcrypt.hashSync(password, 10), name, 'customer', readLang(req.body) || 'fi', phone, nowISO());
+  // New accounts verify their email with a 6-digit code before they can book
+  // or pay — so we never contact an address that isn't really theirs. The
+  // welcome email follows the successful verification.
+  const code = String(crypto.randomInt(100000, 1000000));
+  const info = db.prepare(`INSERT INTO users
+    (email, password_hash, name, role, lang, phone, area, email_verified, verify_code, verify_sent_at, created_at)
+    VALUES (?,?,?,?,?,?,?,0,?,?,?)`)
+    .run(email, bcrypt.hashSync(password, 10), name, 'customer', readLang(req.body) || 'fi',
+      phone, area, code, nowISO(), nowISO());
   createSession(res, Number(info.lastInsertRowid));
   recordEvent(req, 'signup', {});
-  emails.sendWelcomeEmail(Number(info.lastInsertRowid));
-  res.json({ user: { id: Number(info.lastInsertRowid), name, email, role: 'customer' } });
+  emails.sendVerifyCodeEmail(Number(info.lastInsertRowid));
+  res.json({ user: { id: Number(info.lastInsertRowid), name, email, role: 'customer' }, verifyRequired: true });
 });
+
+// Confirm the 6-digit code from the verification email.
+router.post('/auth/verify', loginThrottle, (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Please log in.' });
+  const code = String(req.body?.code || '').trim();
+  const u = db.prepare('SELECT id, email_verified, verify_code FROM users WHERE id = ?').get(req.user.id);
+  if (!u) return res.status(401).json({ error: 'Please log in.' });
+  if (u.email_verified) return res.json({ ok: true, verified: true });
+  if (!code || !u.verify_code || code !== u.verify_code) {
+    return res.status(400).json({ error: 'That code is not right — check the email and try again.' });
+  }
+  db.prepare('UPDATE users SET email_verified = 1, verify_code = NULL WHERE id = ?').run(u.id);
+  emails.sendWelcomeEmail(u.id);
+  res.json({ ok: true, verified: true });
+});
+
+// A fresh code, at most once a minute.
+router.post('/auth/resend-code', (req, res) => {
+  if (!req.user) return res.status(401).json({ error: 'Please log in.' });
+  const u = db.prepare('SELECT id, email_verified, verify_sent_at FROM users WHERE id = ?').get(req.user.id);
+  if (!u || u.email_verified) return res.json({ ok: true });
+  if (u.verify_sent_at && Date.now() - Date.parse(u.verify_sent_at) < 60000) {
+    return res.status(429).json({ error: 'A code was just sent — check your inbox (and spam), or wait a minute.' });
+  }
+  db.prepare('UPDATE users SET verify_code = ?, verify_sent_at = ? WHERE id = ?')
+    .run(String(crypto.randomInt(100000, 1000000)), nowISO(), u.id);
+  emails.sendVerifyCodeEmail(u.id);
+  res.json({ ok: true });
+});
+
+// Booking/paying requires a verified address; browsing never does.
+function requireVerified(req, res) {
+  if (req.user.role === 'admin') return true;
+  const u = db.prepare('SELECT email_verified FROM users WHERE id = ?').get(req.user.id);
+  if (u && u.email_verified) return true;
+  res.status(403).json({ error: 'Please verify your email address first.', verifyRequired: true });
+  return false;
+}
 
 router.post('/auth/login', loginThrottle, (req, res) => {
   const email = String(req.body?.email || '').trim().toLowerCase();
@@ -418,10 +466,41 @@ router.get('/me', (req, res) => {
     'SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read = 0').get(req.user.id).n;
   // Dual roles: an admin can also have a coach profile (e.g. Kalle, Ben).
   const coachProfile = Boolean(db.prepare('SELECT 1 FROM coaches WHERE user_id = ?').get(req.user.id));
+  const me = db.prepare('SELECT email_verified, area FROM users WHERE id = ?').get(req.user.id);
   res.json({
     user: req.user, freeCredits, unreadNotifications, coachProfile,
+    verified: Boolean(me && me.email_verified),
+    area: me ? me.area : '',
     unreadChats: unreadChatCount(req.user),
   });
+});
+
+// "Get in touch" from the landing menu: leave an email or a phone number,
+// no account needed. Lands on the admin CRM as an open lead.
+router.post('/contact', (req, res) => {
+  const contact = String(req.body?.contact || '').trim();
+  const isEmail = /^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(contact);
+  const isPhone = /^[0-9+\-() ]{5,25}$/.test(contact);
+  if (!isEmail && !isPhone) {
+    return res.status(400).json({ error: 'Leave a valid email address or phone number.' });
+  }
+  // The same contact twice is still one lead.
+  if (!db.prepare('SELECT 1 FROM contact_requests WHERE contact = ? AND handled_at IS NULL').get(contact)) {
+    db.prepare('INSERT INTO contact_requests (contact, kind, created_at) VALUES (?,?,?)')
+      .run(contact, isEmail ? 'email' : 'phone', nowISO());
+    for (const a of db.prepare("SELECT id FROM users WHERE role = 'admin'").all()) {
+      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
+        .run(a.id, `New contact request from the website: ${contact}`, nowISO());
+    }
+  }
+  recordEvent(req, 'contact_request', { kind: isEmail ? 'email' : 'phone' });
+  res.status(201).json({ ok: true });
+});
+
+router.post('/admin/contact-requests/:id/handled', requireRole('admin'), (req, res) => {
+  db.prepare('UPDATE contact_requests SET handled_at = COALESCE(handled_at, ?) WHERE id = ?')
+    .run(nowISO(), Number(req.params.id));
+  res.json({ ok: true });
 });
 
 router.get('/my-notifications', requireRole('customer', 'admin', 'coach'), (req, res) => {
@@ -552,6 +631,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
     return res.status(status).json({ error: msg });
   };
 
+  if (!requireVerified(req, res)) return;
   const coach = db.prepare('SELECT * FROM coaches WHERE id = ? AND active = 1').get(coachId);
   if (!coach) return fail('Coach not found.', 404);
   if (!/^\d{4}-\d{2}-\d{2}$/.test(date)) return fail('Invalid date.');
@@ -562,12 +642,15 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   if (date < now.date || (date === now.date && hour <= now.hour)) return fail('That time is already in the past.');
   if (date > helsinkiDateOffset(config.bookingHorizonDays)) return fail('That date is too far ahead.');
 
-  const focus = config.focusTypes.find(f => f.id === focusId);
-  if (!focus) return fail('Please choose a session focus.');
+  // Position and focus are OPTIONAL since July 2026: the wizard only asks for
+  // free-text notes, and the coach asks about position/goals in the chat.
+  // Values are still validated when an (older) client sends them.
+  const focus = config.focusTypes.find(f => f.id === focusId) || null;
+  if (focusId && !focus) return fail('Please choose a session focus.');
   const coachPositions = parseJSON(coach.positions, []);
-  if (!coachPositions.includes(position)) return fail('This coach does not train that position.');
+  if (position && !coachPositions.includes(position)) return fail('This coach does not train that position.');
   const coachLocations = parseJSON(coach.locations, []);
-  if (focus.online) {
+  if (focus && focus.online) {
     location = 'Online';
   } else if (!coachLocations.includes(location)) {
     return fail('This coach does not train in that city.');
@@ -582,7 +665,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
     return fail('The coach is not available at that time.');
   }
 
-  const price = (focus.online ? config.pricing.onlineSessionPrice : config.pricing.sessionPrice) * 100;
+  const price = ((focus && focus.online) ? config.pricing.onlineSessionPrice : config.pricing.sessionPrice) * 100;
   let discount = Math.round(price * config.pricing.salePercent / 100);
   // A free-session credit (from a cancelled booking) beats the sale: 100% off.
   const credit = db.prepare(
@@ -627,8 +710,8 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
        price_cents, discount_cents, total_cents, credit_applied, notes, package_id,
        coach_notified, status, created_at)
       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
-      .run(code, req.user.id, coachId, date, hour, location, position, focus.id,
-        focus.online ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes,
+      .run(code, req.user.id, coachId, date, hour, location, position, focus ? focus.id : '',
+        (focus && focus.online) ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes,
         pkg ? pkg.id : null, nowISO());
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
@@ -688,8 +771,9 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   res.status(201).json({
     payUrl,
     booking: {
-      code, date, hour, location, position, focus: focus.id, focusLabel: focus.label,
-      online: focus.online, coach: coach.name,
+      code, date, hour, location, position, focus: focus ? focus.id : '',
+      focusLabel: focus ? focus.label : '',
+      online: Boolean(focus && focus.online), coach: coach.name,
       priceCents: price, discountCents: discount, totalCents: price - discount,
       creditApplied: Boolean(credit),
     },
@@ -803,7 +887,63 @@ router.post('/invoices/:number/refresh-payment', requireRole('customer', 'admin'
 // ---------------------------------------------------------------------------
 router.get('/groups', (req, res) => {
   autoCompleteBookings();
-  res.json(groups.upcomingOpen());
+  res.json({
+    sessions: groups.upcomingOpen(),
+    startable: groups.startableSlots(),
+  });
+});
+
+// A player STARTS a group session on a coach's free hour (>= minLeadDays
+// ahead): the session is created with the player's age group and their spot
+// goes straight to checkout like any other group join.
+router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) => {
+  autoCompleteBookings();
+  if (!requireVerified(req, res)) return;
+  if (!stripe.enabled() && config.groupTraining.pricePerPlayer > 0) {
+    return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  }
+  const coachId = Number(req.body?.coachId);
+  const date = String(req.body?.date || '');
+  const hour = Number(req.body?.hour);
+  const location = String(req.body?.location || '');
+  const ageGroup = String(req.body?.ageGroup || '');
+  if (!config.groupTraining.ageGroups.includes(ageGroup)) {
+    return res.status(400).json({ error: 'Please pick an age group.' });
+  }
+  const coach = db.prepare('SELECT * FROM coaches WHERE id = ? AND active = 1').get(coachId);
+  if (!coach) return res.status(404).json({ error: 'Coach not found.' });
+  if (!parseJSON(coach.locations, []).includes(location)) {
+    return res.status(400).json({ error: 'This coach does not train in that city.' });
+  }
+  if (date < helsinkiDateOffset(config.groupTraining.minLeadDays)) {
+    return res.status(400).json({ error: 'Group sessions can be started at least 5 days ahead.' });
+  }
+  const slotErr = groupSlotError({ coachId, date, hour, location });
+  if (slotErr) return res.status(400).json({ error: slotErr });
+  if (!db.prepare('SELECT 1 FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')
+    .get(coachId, date, hour)) {
+    return res.status(409).json({ error: 'The coach is not available at that time.' });
+  }
+  const info = db.prepare(`INSERT INTO group_sessions
+    (code, coach_id, date, hour, location, capacity, price_cents, status, age_group, created_by, created_at)
+    VALUES (?,?,?,?,?,?,?, 'open', ?, 'player', ?)`)
+    .run('GRP-' + crypto.randomBytes(3).toString('hex').toUpperCase(), coachId, date, hour, location,
+      config.groupTraining.capacity, config.groupTraining.pricePerPlayer * 100, ageGroup, nowISO());
+  db.prepare('DELETE FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')
+    .run(coachId, date, hour);
+  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(Number(info.lastInsertRowid));
+  const made = groups.createSignup(gs, req.user.id);
+  if (made.error) return res.status(409).json({ error: made.error });
+  const su = made.signup;
+  recordEvent(req, 'group_start', { code: gs.code, ageGroup });
+  if (su.price_cents === 0) {
+    groups.markSignupPaid(su.code, null);
+    return res.status(201).json({ payUrl: null, session: gs.code, signup: { code: su.code, status: 'confirmed' } });
+  }
+  let payUrl = null;
+  try { payUrl = await groupCheckout(req, su, gs); }
+  catch (err) { console.error('[stripe]', err.message); }
+  res.status(201).json({ payUrl, session: gs.code, signup: { code: su.code, status: su.status, payBy: su.pay_by } });
 });
 
 // One Checkout session for a group signup (used at join + retry from the
@@ -832,8 +972,19 @@ router.post('/groups/:code/join', requireRole('customer', 'admin'), async (req, 
   if (gs.price_cents > 0 && !stripe.enabled()) {
     return res.status(503).json({ error: 'Card payments are not enabled yet.' });
   }
+  if (!requireVerified(req, res)) return;
+  // Every spot carries the player's age group; the session's group is set by
+  // its first booker and later joiners must match it.
+  const ageGroup = String(req.body?.ageGroup || '');
+  if (!config.groupTraining.ageGroups.includes(ageGroup)) {
+    return res.status(400).json({ error: 'Please pick an age group.' });
+  }
+  if (gs.age_group && gs.age_group !== ageGroup) {
+    return res.status(409).json({ error: 'This group session is for a different age group.' });
+  }
   const made = groups.createSignup(gs, req.user.id);
   if (made.error) return res.status(409).json({ error: made.error });
+  if (!gs.age_group) db.prepare('UPDATE group_sessions SET age_group = ? WHERE id = ?').run(ageGroup, gs.id);
   const su = made.signup;
   recordEvent(req, 'group_join', { code: gs.code });
   if (su.price_cents === 0) {
@@ -930,6 +1081,7 @@ async function packageCheckout(req, pkg) {
 // "package + first booking" purchase goes through POST /bookings instead.
 router.post('/packages/buy', requireRole('customer', 'admin'), async (req, res) => {
   if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+  if (!requireVerified(req, res)) return;
   const pkg = packages.createPackagePurchase(req.user.id, String(req.body?.package || ''));
   if (!pkg) return res.status(400).json({ error: 'Unknown package.' });
   recordEvent(req, 'package_buy', { code: pkg.code, sessions: pkg.sessions_total });
@@ -1944,7 +2096,65 @@ router.get('/admin/crm', requireRole('admin'), (req, res) => {
       substr(r.created_at,1,10) AS date, r.demo
     FROM reviews r JOIN coaches c ON c.id = r.coach_id
     ORDER BY r.created_at DESC, r.id DESC LIMIT 300`).all();
-  res.json({ customers, invoices, totals, reviews });
+  const contactRequests = db.prepare(`SELECT id, contact, kind, handled_at,
+      substr(created_at, 1, 10) AS date
+    FROM contact_requests ORDER BY id DESC LIMIT 100`).all();
+  res.json({ customers, invoices, totals, reviews, contactRequests });
+});
+
+// ---------------------------------------------------------------------------
+// Financial model: money in (per product), coach payouts out, net — monthly.
+// Revenue is counted when the money moved (invoice issued&paid / paid_at);
+// payouts are the LOCKED per-session amounts (earn_cents) plus a live
+// estimate for upcoming confirmed sessions.
+// ---------------------------------------------------------------------------
+router.get('/admin/finance', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  tiers.snapshotPendingPayouts();
+  const monthsBack = 6;
+  const months = [];
+  const [y0, m0] = helsinkiNow().date.split('-').map(Number);
+  for (let i = monthsBack - 1; i >= 0; i--) {
+    const d = new Date(Date.UTC(y0, m0 - 1 - i, 1));
+    months.push(`${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`);
+  }
+  const sum = (sql, ...params) => db.prepare(sql).get(...params).s || 0;
+  const rows = months.map((month) => {
+    const oneOnOne = sum(`SELECT SUM(i.amount_cents) s FROM invoices i
+      WHERE i.status = 'paid' AND substr(i.issued_at, 1, 7) = ?`, month);
+    const groups_ = sum(`SELECT SUM(price_cents) s FROM group_signups
+      WHERE status = 'confirmed' AND paid_at IS NOT NULL AND substr(paid_at, 1, 7) = ?`, month);
+    const pkgs = sum(`SELECT SUM(price_cents) s FROM packages
+      WHERE status = 'active' AND paid_at IS NOT NULL AND substr(paid_at, 1, 7) = ?`, month);
+    const payout = sum(`SELECT SUM(earn_cents) s FROM bookings
+      WHERE status = 'completed' AND earn_cents IS NOT NULL AND substr(date, 1, 7) = ?`, month);
+    const revenue = oneOnOne + groups_ + pkgs;
+    return {
+      month,
+      oneOnOneCents: oneOnOne, groupCents: groups_, packageCents: pkgs,
+      revenueCents: revenue, payoutCents: payout, netCents: revenue - payout,
+    };
+  });
+  // Forward-looking: what upcoming confirmed sessions will roughly cost in
+  // payouts, and prepaid package sessions still owed to customers.
+  const upcoming = db.prepare(`SELECT id, coach_id, date, hour, price_cents, total_cents, credit_applied
+    FROM bookings WHERE status = 'confirmed' AND coach_notified = 1`).all();
+  const upcomingPayout = upcoming.reduce((s, b) => s + tiers.estimateUpcomingCents(b), 0);
+  const owedSessions = db.prepare("SELECT * FROM packages WHERE status = 'active'").all()
+    .reduce((s, p) => s + packages.remainingSessions(p), 0);
+  res.json({
+    months: rows,
+    totals: {
+      revenueCents: rows.reduce((s, r) => s + r.revenueCents, 0),
+      payoutCents: rows.reduce((s, r) => s + r.payoutCents, 0),
+      netCents: rows.reduce((s, r) => s + r.netCents, 0),
+    },
+    outlook: {
+      upcomingSessions: upcoming.length,
+      upcomingPayoutCents: upcomingPayout,
+      prepaidSessionsOwed: owedSessions,
+    },
+  });
 });
 
 // Admin moderation: remove a review outright.

@@ -16,10 +16,13 @@ const fmtHourRange = (h) => `${fmtHour(h)}–${fmtHour(h + 1)}`;
 
 function track(type, meta) { API.post('/track', { type, meta }).catch(() => {}); }
 
-async function openWizard(coach, site) {
+// `preset` (optional) comes from the menu's quick-book flow: the city and
+// notes were already asked, so the wizard only picks the time and confirms.
+async function openWizard(coach, site, preset = null) {
   W.coach = coach; W.site = site;
+  W.preset = preset;
   W.slot = W.position = W.focus = W.location = null;
-  W.notes = '';
+  W.notes = preset ? preset.notes : '';
   W.package = 'single';
   W.pkgInfo = undefined; // fetched once at the review step
   W.step = 0;
@@ -40,7 +43,7 @@ async function openWizard(coach, site) {
 function closeWizard() {
   backdrop().classList.remove('open');
   document.body.style.overflow = '';
-  if (W.step < 6 && W.step > 0) track('booking_abandoned', { step: W.step, coachId: W.coach?.id });
+  if (W.step < 4 && W.step > 0) track('booking_abandoned', { step: W.step, coachId: W.coach?.id });
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -52,9 +55,10 @@ document.addEventListener('DOMContentLoaded', () => {
   });
 });
 
-const STEP_TITLE_KEYS = ['booking.step.time.title', 'booking.step.position.title',
-  'booking.step.focus.title', 'booking.step.notes.title', 'booking.step.location.title',
-  'booking.step.confirm.title'];
+// Position and focus questions were retired July 2026 — the coach asks about
+// them in the chat. The wizard is now: time → notes → (location) → confirm.
+const STEP_TITLE_KEYS = ['booking.step.time.title', 'booking.step.notes.title',
+  'booking.step.location.title', 'booking.step.confirm.title'];
 
 function header(title, subtitle) {
   return `
@@ -74,7 +78,7 @@ function nav({ backOk = true, nextOk = false, nextLabel = t('booking.nav.continu
 }
 
 function render() {
-  const steps = [renderSlot, renderPosition, renderFocus, renderNotes, renderLocation, renderReview];
+  const steps = [renderSlot, renderNotes, renderLocation, renderReview];
   steps[W.step]();
   body().querySelectorAll('[data-nav]').forEach((b) => b.addEventListener('click', onNav));
 }
@@ -83,15 +87,14 @@ function onNav(e) {
   const dir = e.currentTarget.dataset.nav;
   if (dir === 'back') { W.step = Math.max(0, W.step - 1); return render(); }
   W.step += 1;
-  if (W.step === 4 && skipLocation()) W.step = 5; // online / single-city: no location step
+  if (W.step === 2 && skipLocation()) W.step = 3; // preset / single-city: no location step
   track('booking_step', { step: W.step, coachId: W.coach.id });
   render();
 }
 
-// Online sessions and single-city coaches don't need the location step.
+// Preset city (menu quick-book) and single-city coaches skip the location step.
 function skipLocation() {
-  const focus = W.site.focusTypes.find((f) => f.id === W.focus);
-  if (focus?.online) { W.location = 'Online'; return true; }
+  if (W.preset && W.preset.location) { W.location = W.preset.location; return true; }
   if (W.coach.locations.length === 1) { W.location = W.coach.locations[0]; return true; }
   return false;
 }
@@ -142,42 +145,9 @@ function renderSlot() {
   paintHours(selDate);
 }
 
-// --- step 1: position (limited to what the coach trains) --------------------
-function renderPosition() {
-  body().innerHTML = header(t(STEP_TITLE_KEYS[1]),
-    t('booking.step.position.subtitle', {
-      coach: esc(W.coach.name.split(' ')[0]),
-      positions: W.coach.positions.map((p) => esc(posLabel(p))).join(', '),
-    })) +
-    `<div class="opt-grid">${W.coach.positions.map((p) => `
-      <div class="opt-card ${W.position === p ? 'sel' : ''}" data-val="${p}">
-        <div class="t">${esc(posLabel(p))}</div>
-        <div class="d">${t('booking.step.position.card_desc', { position: esc(posLabel(p).toLowerCase()) })}</div>
-      </div>`).join('')}</div>` + nav({ nextOk: Boolean(W.position) });
-  bindOptCards('position');
-}
-
-// --- step 2: focus ----------------------------------------------------------
-function renderFocus() {
-  body().innerHTML = header(t(STEP_TITLE_KEYS[2]), t('booking.step.focus.subtitle')) +
-    `<div class="opt-grid">${W.site.focusTypes.map((f) => {
-      // Hint keys use underscores ('game-iq' -> booking.focus.hint.game_iq);
-      // unknown focus ids just render without a hint.
-      const hintKey = 'booking.focus.hint.' + f.id.replace(/-/g, '_');
-      return `
-      <div class="opt-card ${W.focus === f.id ? 'sel' : ''}" data-val="${f.id}">
-        <div class="t">${esc(I18N.server(f.label))} ${f.online ? `<span class="chip" style="font-size:.68rem">${t('booking.focus.online_chip')}</span>` : ''}</div>
-        <div class="d">${I18N_DICT[hintKey] ? t(hintKey) : ''}</div>
-      </div>`;
-    }).join('')}</div>` + nav({ nextOk: Boolean(W.focus) });
-  // Changing the focus can change whether a location is valid (online forces
-  // 'Online'; on-pitch needs a real city), so drop any previously picked city.
-  bindOptCards('focus', () => { W.location = null; });
-}
-
-// --- step 3: additional notes (optional, free text) --------------------------
+// --- step 1: notes for the coach (the coach asks details in the chat) --------
 function renderNotes() {
-  body().innerHTML = header(t(STEP_TITLE_KEYS[3]), t('booking.step.notes.subtitle')) +
+  body().innerHTML = header(t(STEP_TITLE_KEYS[1]), t('booking.step.notes.subtitle')) +
     `<label class="f"><textarea id="notes-input" rows="5" maxlength="500"
       placeholder="${esc(t('booking.step.notes.placeholder'))}"
       style="width:100%;resize:vertical;background:rgba(255,255,255,0.05);border:1px solid var(--line);
@@ -190,9 +160,9 @@ function renderNotes() {
   });
 }
 
-// --- step 4: location -------------------------------------------------------
+// --- step 2: location -------------------------------------------------------
 function renderLocation() {
-  body().innerHTML = header(t(STEP_TITLE_KEYS[4]),
+  body().innerHTML = header(t(STEP_TITLE_KEYS[2]),
     t('booking.step.location.subtitle', { coach: esc(W.coach.name.split(' ')[0]) })) +
     `<div class="opt-grid">${W.coach.locations.map((l) => `
       <div class="opt-card ${W.location === l ? 'sel' : ''}" data-val="${l}">
@@ -221,14 +191,16 @@ function bindOptCards(field, onChange) {
 
 // --- step 4: review + login + confirm ---------------------------------------
 async function renderReview() {
-  const focus = W.site.focusTypes.find((f) => f.id === W.focus);
   const p = W.site.pricing;
-  const price = (focus.online ? p.onlineSessionPrice : p.sessionPrice) * 100;
+  const price = p.sessionPrice * 100;
 
   let me = { user: null };
   try { me = await API.get('/me'); } catch { /* anonymous */ }
   W.user = me.user;
   const needsAuth = !W.user || (W.user.role !== 'customer' && W.user.role !== 'admin');
+  // Logged in but the email was never confirmed: the code form replaces the
+  // login panel (the server refuses unverified bookings anyway).
+  const needsVerify = !needsAuth && W.user.role !== 'admin' && me.verified === false;
 
   // A free-session credit (from a cancelled booking) makes this booking free;
   // otherwise the launch sale applies. The server enforces the same rule.
@@ -278,12 +250,10 @@ async function renderReview() {
       </div>
     </div>` : '';
 
-  body().innerHTML = header(t(STEP_TITLE_KEYS[5])) + `
+  body().innerHTML = header(t(STEP_TITLE_KEYS[3])) + `
     <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.time_label')}</span>
       <strong>${esc(fmtDate(W.slot.date))} ${fmtHourRange(W.slot.hour)}</strong></div>
-    <div class="review-row"><span class="muted">${t('booking.review.position_label')}</span><strong>${esc(posLabel(W.position))}</strong></div>
-    <div class="review-row"><span class="muted">${t('booking.review.focus_label')}</span><strong>${esc(I18N.server(focus.label))}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.location_label')}</span><strong>${esc(I18N.server(W.location))}</strong></div>
     ${W.notes ? `<div class="review-row"><span class="muted">${t('booking.review.notes_label')}</span><strong style="max-width:60%;text-align:right;font-weight:400">${esc(W.notes)}</strong></div>` : ''}
     <div class="review-row"><span class="muted">${t('booking.review.price_label')}</span>
@@ -315,12 +285,12 @@ async function renderReview() {
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
       <button class="btn btn-ghost" data-nav="back">${t('booking.nav.back')}</button>
-      <button class="btn btn-primary" id="confirm-btn" ${needsAuth ? 'disabled' : ''}>
+      <button class="btn btn-primary" id="confirm-btn" ${needsAuth || needsVerify ? 'disabled' : ''}>
         ${confirmLabel}</button>
     </div>`;
 
   body().querySelector('[data-nav="back"]').addEventListener('click', () => {
-    W.step = skipLocation() ? 3 : 4;
+    W.step = skipLocation() ? 1 : 2;
     render();
   });
 
@@ -331,6 +301,7 @@ async function renderReview() {
   }));
 
   if (needsAuth) renderAuthPanel();
+  else if (needsVerify) wizardVerifyPanel(body().querySelector('#auth-panel'), W.user.email || '');
 
   body().querySelector('#confirm-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
@@ -343,12 +314,12 @@ async function renderReview() {
     try {
       const result = await API.post('/bookings', {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
-        position: W.position, focus: W.focus, location: W.location,
+        location: W.location,
         notes: W.notes.trim(),
         package: chosenPkg ? chosenPkg.id : undefined,
         lang: I18N.lang, // the invoice is generated in this language
       });
-      W.step = 6;
+      W.step = 4;
       renderSuccess(result);
     } catch (err) {
       // The interstitial may have replaced the form — rebuild the review step
@@ -385,6 +356,10 @@ function renderAuthPanel() {
           <input type="text" name="name" autocomplete="name"></label>
         <label class="f"><span>${t('common.form.email')}</span>
           <input type="email" name="email" required autocomplete="email"></label>
+        <label class="f" id="f-area" hidden><span>${t('login.form.area')}</span>
+          <select name="area" class="input" style="width:100%">
+            ${(W.site.locations || []).map((c) => `<option>${esc(c)}</option>`).join('')}
+          </select></label>
         <label class="f" id="f-phone" hidden><span>${t('login.form.phone')}</span>
           <input type="tel" name="phone" autocomplete="tel" placeholder="+358 40 123 4567"></label>
         <label class="f"><span>${t('common.form.password')}</span>
@@ -404,6 +379,7 @@ function renderAuthPanel() {
       x.classList.toggle('btn-ghost', x !== b);
     });
     panel.querySelector('#f-name').hidden = mode === 'login';
+    panel.querySelector('#f-area').hidden = mode === 'login';
     panel.querySelector('#f-phone').hidden = mode === 'login';
     panel.querySelector('button[type="submit"]').textContent =
       mode === 'login' ? t('booking.auth.submit_login') : t('booking.auth.submit_signup');
@@ -420,6 +396,7 @@ function renderAuthPanel() {
       if (mode === 'signup') {
         payload.name = fd.get('name');
         payload.phone = String(fd.get('phone') || '').trim();
+        payload.area = String(fd.get('area') || '');
       }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       if (res.user.role !== 'customer' && res.user.role !== 'admin') {
@@ -427,10 +404,51 @@ function renderAuthPanel() {
         return;
       }
       initHeaderAuth();
+      // New (or still-unverified) accounts confirm their email code first —
+      // the booking can't be paid without it.
+      const meNow = await API.get('/me').catch(() => null);
+      if (meNow && meNow.user && !meNow.verified && meNow.user.role !== 'admin') {
+        wizardVerifyPanel(panel, res.user.email);
+        return;
+      }
       renderReview(); // re-render with the confirm button enabled
     } catch (ex) {
       err.textContent = ex.message;
     }
+  });
+}
+
+// The 6-digit email code, inline in the wizard (self-contained — this file
+// also runs on pages without landing.js).
+function wizardVerifyPanel(panel, email) {
+  panel.innerHTML = `
+    <div class="card" style="margin-top:16px">
+      <h3 style="margin:0 0 8px">${t('verify.title')}</h3>
+      <p class="muted small">${t('verify.body', { email: esc(email) })}</p>
+      <form id="wv-form" style="margin-top:10px">
+        <input class="input" id="wv-code" inputmode="numeric" autocomplete="one-time-code" maxlength="6"
+          placeholder="${esc(t('verify.placeholder'))}" required
+          style="width:100%;text-align:center;font-size:1.4rem;letter-spacing:.4em;margin-bottom:10px">
+        <div class="form-error" id="wv-error"></div>
+        <button class="btn btn-primary" type="submit" style="width:100%">${t('verify.submit')}</button>
+      </form>
+      <div style="text-align:center;margin-top:10px">
+        <button class="link-btn" id="wv-resend" type="button">${t('verify.resend')}</button>
+      </div>
+    </div>`;
+  panel.querySelector('#wv-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const err = panel.querySelector('#wv-error');
+    err.textContent = '';
+    try {
+      await API.post('/auth/verify', { code: panel.querySelector('#wv-code').value.trim() });
+      toast(t('verify.done'));
+      renderReview();
+    } catch (ex) { err.textContent = I18N.server(ex.message); }
+  });
+  panel.querySelector('#wv-resend').addEventListener('click', async () => {
+    try { await API.post('/auth/resend-code', {}); toast(t('verify.sent')); }
+    catch (ex) { toast(I18N.server(ex.message), true); }
   });
 }
 

@@ -6,6 +6,8 @@
   <title data-i18n="landing.title">Proballers Coaching — henkilökohtaista jalkapallovalmennusta nuorille pelaajille</title>
   <meta name="description" data-i18n-content="landing.meta.description" content="Henkilökohtaista jalkapallovalmennusta nuorille pelaajille Helsingissä, Espoossa ja Vantaalla. Varaa 1-on-1-treeni valmentajalta, joka on itse pelannut.">
   <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml">
+  <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <body>
@@ -17,8 +19,21 @@
         <img src="/assets/logo.svg?v=2" alt="">
         <span>Proballers <em>Coaching</em></span>
       </a>
-      <div id="auth-box"></div>
+      <div style="display:flex;align-items:center;gap:10px">
+        <div id="auth-box"></div>
+        <button class="btn btn-ghost btn-sm" id="menu-btn" aria-haspopup="true" aria-expanded="false"
+          data-i18n="landing.menu.button">Valikko</button>
+      </div>
     </div>
+    <!-- The six-choice site menu, opened from the header button -->
+    <nav class="site-menu" id="site-menu" hidden>
+      <button data-menu="login" data-i18n="common.login">Kirjaudu sisään</button>
+      <button data-menu="book" data-i18n="landing.menu.book">Varaa treeni</button>
+      <button data-menu="coaches" data-i18n="landing.menu.coaches">Tutustu valmentajiin</button>
+      <button data-menu="groups" data-i18n="landing.menu.groups">Ryhmätreenit</button>
+      <button data-menu="packages" data-i18n="landing.menu.packages">Treenipaketit</button>
+      <button data-menu="contact" data-i18n="landing.menu.contact">Ota yhteyttä</button>
+    </nav>
   </header>
 
   <main>
@@ -61,6 +76,23 @@
           <div id="price-tag" class="display" style="font-size:1.6rem"></div>
         </div>
         <div class="grid coach-grid" id="coach-grid"></div>
+      </div>
+    </section>
+
+    <!-- Training packages: prepaid 1-on-1 bundles with tiered pitches -->
+    <section class="section" id="packages" style="padding-top:0">
+      <div class="wrap">
+        <div class="section-head reveal">
+          <div>
+            <div class="kicker" style="color:var(--lime);font-weight:700;letter-spacing:.18em;text-transform:uppercase;font-size:.75rem"
+              data-i18n="landing.pkg.kicker">Treenipaketit</div>
+            <h2 data-i18n="landing.pkg.title">Säästä paketilla</h2>
+            <p class="muted" style="max-width:60ch" data-i18n="landing.pkg.sub">Osta treenit etukäteen — paketti
+              käytetään automaattisesti, kun varaat, eivätkä treenit vanhene. Voit ostaa uuden paketin milloin tahansa.</p>
+          </div>
+        </div>
+        <div class="grid" id="package-grid"
+          style="grid-template-columns:repeat(auto-fit,minmax(240px,1fr))"></div>
       </div>
     </section>
 
@@ -120,8 +152,25 @@
     </div>
   </footer>
 
-  <!-- Entry gate: logged-out visitors sign in / create an account first.
-       Content is rendered by landing.js (initGate). -->
+  <!-- Get in touch: leave an email or phone number, no account needed -->
+  <div class="modal-backdrop" id="contact-backdrop">
+    <div class="modal" style="max-width:420px">
+      <button class="close" id="contact-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
+      <h2 style="font-size:1.5rem" data-i18n="landing.contactmodal.title">Jätä yhteystietosi</h2>
+      <p class="muted small" data-i18n="landing.contactmodal.body">Jätä sähköpostisi tai puhelinnumerosi,
+        niin olemme sinuun yhteydessä.</p>
+      <form id="contact-form" style="margin-top:12px">
+        <input class="input" id="contact-input" type="text" maxlength="120" required
+          data-i18n-placeholder="landing.contactmodal.placeholder" placeholder="Sähköposti tai puhelinnumero"
+          style="width:100%;margin-bottom:10px">
+        <div class="form-error" id="contact-error"></div>
+        <button class="btn btn-primary" type="submit" style="width:100%" data-i18n="landing.contactmodal.send">Lähetä</button>
+      </form>
+    </div>
+  </div>
+
+  <!-- Entry gate: shown when an ACTION needs an account (booking, joining,
+       buying) — browsing is always open. Content rendered by landing.js. -->
   <div class="gate" id="gate" hidden>
     <div class="gate-card">
       <img src="/assets/logo-full.svg?v=2" alt="Proballers Coaching" style="width:200px;display:block;margin:0 auto 10px">

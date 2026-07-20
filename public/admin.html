@@ -5,6 +5,8 @@
   <meta name="viewport" content="width=device-width, initial-scale=1">
   <title data-i18n="admin.title">Ylläpito — Proballers Coaching</title>
   <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml">
+  <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="apple-touch-icon" href="/assets/apple-touch-icon.png">
   <link rel="stylesheet" href="/styles.css">
 </head>
 <!-- The admin dashboard keeps the classic emerald+lime look (owner's choice);
@@ -47,8 +49,21 @@
     <!-- headline stats -->
     <div class="grid stat-grid" id="stat-cards"></div>
 
-    <!-- charts -->
-    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));margin-top:18px" id="charts"></div>
+    <!-- headline numbers (replaced the funnel/sessions/visitors charts) -->
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(220px,1fr));margin-top:18px" id="charts"></div>
+
+    <!-- financial model: revenue by product, coach payouts, net -->
+    <div class="dash-title">
+      <div>
+        <h2 style="font-size:1.8rem" data-i18n="admin.finance.heading">Talous</h2>
+        <p class="muted small" style="margin:0" data-i18n="admin.finance.sub">Tulot tuotteittain, valmentajapalkkiot
+          ja kate kuukausittain. Tulot kirjataan maksuhetkelle, palkkiot treenin pitokuukaudelle.</p>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="finance-table"></table>
+      <p class="small muted" id="finance-outlook" style="margin:12px 0 4px"></p>
+    </div>
 
     <!-- coaches -->
     <div class="dash-title">
@@ -99,6 +114,17 @@
       <table class="data" id="crm-leads"></table>
       <p class="muted small" id="crm-leads-empty" hidden style="margin:12px 0 4px" data-i18n="admin.crm.leads.empty">Ei vielä
         puhelinnumeroita — numero kysytään (vapaaehtoisena) tilin luonnin yhteydessä.</p>
+    </div>
+    <div class="dash-title">
+      <div>
+        <h3 style="margin:0" data-i18n="admin.crm.contact.heading">Yhteydenottopyynnöt</h3>
+        <p class="muted small" style="margin:0" data-i18n="admin.crm.contact.sub">Etusivun "Ota yhteyttä"
+          -napista jätetyt yhteystiedot.</p>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="crm-contact"></table>
+      <p class="muted small" id="crm-contact-empty" hidden style="margin:12px 0 4px" data-i18n="admin.crm.contact.empty">Ei avoimia yhteydenottopyyntöjä.</p>
     </div>
     <!-- (The old invoice ledger lived here — removed: payment happens at
          booking, so there is nothing to chase. Receipts stay linked on the

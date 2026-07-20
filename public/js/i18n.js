@@ -817,6 +817,91 @@ const I18N_DICT = {
   "admin.emails.type.package_low": { fi: "Paketissa 1 treeni jäljellä", en: "Package: 1 session left" },
   "admin.emails.type.package_done": { fi: "Paketti käytetty", en: "Package fully used" },
   "admin.emails.type.reminder": { fi: "Treenimuistutus", en: "Session reminder" },
+  "admin.emails.type.verify": { fi: "Vahvistuskoodi", en: "Verification code" },
+
+  // --- landing: header menu ---------------------------------------------------
+  "landing.menu.button": { fi: "Valikko", en: "Menu" },
+  "landing.menu.book": { fi: "Varaa treeni", en: "Book a session" },
+  "landing.menu.coaches": { fi: "Tutustu valmentajiin", en: "Meet the coaches" },
+  "landing.menu.groups": { fi: "Ryhmätreenit", en: "Group sessions" },
+  "landing.menu.packages": { fi: "Treenipaketit", en: "Training packages" },
+  "landing.menu.contact": { fi: "Ota yhteyttä", en: "Get in touch" },
+
+  // --- landing: get-in-touch modal -------------------------------------------
+  "landing.contactmodal.title": { fi: "Jätä yhteystietosi", en: "Leave your contact info" },
+  "landing.contactmodal.body": { fi: "Jätä sähköpostisi tai puhelinnumerosi, niin olemme sinuun yhteydessä.", en: "Leave your email or phone number and we will get back to you." },
+  "landing.contactmodal.placeholder": { fi: "Sähköposti tai puhelinnumero", en: "Email or phone number" },
+  "landing.contactmodal.send": { fi: "Lähetä", en: "Send" },
+  "landing.contactmodal.done": { fi: "Kiitos! Olemme sinuun pian yhteydessä.", en: "Thanks! We will be in touch soon." },
+
+  // --- landing: training packages section -------------------------------------
+  "landing.pkg.kicker": { fi: "Treenipaketit", en: "Training packages" },
+  "landing.pkg.title": { fi: "Säästä paketilla", en: "Save with a package" },
+  "landing.pkg.sub": { fi: "Osta treenit etukäteen — paketti käytetään automaattisesti, kun varaat, eivätkä treenit vanhene. Voit ostaa uuden paketin milloin tahansa.", en: "Buy sessions upfront — the package is used automatically when you book, and sessions never expire. Buy a new one whenever you like." },
+  "landing.pkg.tag.pack3": { fi: "HYVÄ STARTTI", en: "GOOD START" },
+  "landing.pkg.tag.pack5": { fi: "SUOSITUIN", en: "MOST POPULAR" },
+  "landing.pkg.tag.pack8": { fi: "ELIITTI", en: "ELITE" },
+  "landing.pkg.name.pack3": { fi: "Startti­paketti", en: "Starter pack" },
+  "landing.pkg.name.pack5": { fi: "Suosikki­paketti", en: "Favourite pack" },
+  "landing.pkg.name.pack8": { fi: "Eliitti­paketti", en: "Elite pack" },
+  "landing.pkg.bio.pack3": { fi: "Kolme treeniä, joilla pääset kunnolla vauhtiin. Näet kehityksen jo ensimmäisinä viikkoina — hyvä tapa aloittaa säännöllinen valmennus.", en: "Three sessions to get properly going. You see progress in the very first weeks — a good way to start training regularly." },
+  "landing.pkg.bio.pack5": { fi: "Viisi treeniä suosikkihintaan — paras tasapaino hinnan ja kehityksen välillä. Pelaajiemme suosituin valinta.", en: "Five sessions at a favourable price — the best balance of cost and progress. Our players' most popular choice." },
+  "landing.pkg.bio.pack8": { fi: "Kahdeksan treenin eliittipaketti tosissaan treenaavalle: paras treenikohtainen hinta ja tulokset, jotka näkyvät kentällä asti.", en: "The eight-session elite package for players who mean it: the best per-session price and results that show on the pitch." },
+  "landing.pkg.save": { fi: "Säästät {save}", en: "You save {save}" },
+  "landing.pkg.sessions": { fi: "{n} treeniä", en: "{n} sessions" },
+  "landing.pkg.cta": { fi: "Osta paketti", en: "Buy the package" },
+
+  // --- landing: group sessions (player-started) --------------------------------
+  "landing.groups.age": { fi: "Ikäryhmä", en: "Age group" },
+  "landing.groups.age_of": { fi: "{age} v", en: "ages {age}" },
+  "landing.groups.join_title": { fi: "Liity ryhmään", en: "Join a group" },
+  "landing.groups.start_title": { fi: "Aloita uusi ryhmä", en: "Start a new group" },
+  "landing.groups.start_sub": { fi: "Valitse valmentajan vapaa aika (vähintään 5 päivän päästä) ja ikäryhmäsi — muut pelaajat voivat liittyä samaan treeniin.", en: "Pick a coach's free time (at least 5 days ahead) and your age group — other players can join the same session." },
+  "landing.groups.pick_slot": { fi: "Valitse aika", en: "Pick a time" },
+  "landing.groups.pick_age": { fi: "Valitse ikäryhmä", en: "Pick the age group" },
+  "landing.groups.pick_city": { fi: "Kaupunki", en: "City" },
+  "landing.groups.start_cta": { fi: "Aloita ryhmä — {price}", en: "Start the group — {price}" },
+  "landing.groups.none_start": { fi: "Ei vapaita aloitusaikoja juuri nyt.", en: "No free starting times right now." },
+
+  // --- email verification -----------------------------------------------------
+  "verify.title": { fi: "Vahvista sähköpostisi", en: "Confirm your email" },
+  "verify.body": { fi: "Lähetimme 6-numeroisen koodin osoitteeseen {email}. Syötä se tähän:", en: "We sent a 6-digit code to {email}. Enter it here:" },
+  "verify.placeholder": { fi: "Koodi", en: "Code" },
+  "verify.submit": { fi: "Vahvista", en: "Confirm" },
+  "verify.resend": { fi: "Lähetä koodi uudelleen", en: "Resend the code" },
+  "verify.done": { fi: "Sähköposti vahvistettu!", en: "Email confirmed!" },
+  "verify.sent": { fi: "Uusi koodi lähetetty — tarkista postilaatikkosi.", en: "New code sent — check your inbox." },
+  "login.form.area": { fi: "Kotikaupunki", en: "Home area" },
+
+  // --- misc -------------------------------------------------------------------
+  "mybookings.table.plain": { fi: "Henkilökohtainen treeni", en: "1-on-1 session" },
+  "app.player.homescreen": { fi: "Vinkki: valitse selaimesta \"Lisää kotinäytölle\", niin sovellus on aina taskussasi.", en: "Tip: choose \"Add to Home Screen\" in your browser and the app is always in your pocket." },
+  "app.player.chats_hint": { fi: "Valmentajasi viestit löytyvät Viestit-välilehdeltä.", en: "Your coach's messages are on the Chats tab." },
+  "app.player.upcoming_empty": { fi: "Ei tulevia treenejä — varaa seuraava sivustolta.", en: "No upcoming sessions — book your next one on the site." },
+  "app.player.book_cta": { fi: "Varaa treeni", en: "Book a session" },
+
+  // --- admin: finance + plain numbers + contact leads --------------------------
+  "admin.finance.heading": { fi: "Talous", en: "Finances" },
+  "admin.finance.sub": { fi: "Tulot tuotteittain, valmentajapalkkiot ja kate kuukausittain. Tulot kirjataan maksuhetkelle, palkkiot treenin pitokuukaudelle.", en: "Revenue by product, coach payouts and net margin per month. Revenue is booked when paid; payouts on the month the session was held." },
+  "admin.finance.th.month": { fi: "Kuukausi", en: "Month" },
+  "admin.finance.th.oneonone": { fi: "1-on-1", en: "1-on-1" },
+  "admin.finance.th.groups": { fi: "Ryhmät", en: "Groups" },
+  "admin.finance.th.packages": { fi: "Paketit", en: "Packages" },
+  "admin.finance.th.revenue": { fi: "Tulot", en: "Revenue" },
+  "admin.finance.th.payouts": { fi: "Palkkiot", en: "Payouts" },
+  "admin.finance.th.net": { fi: "Kate", en: "Net" },
+  "admin.finance.upcoming": { fi: "{n} tulevaa treeniä — arvioidut palkkiot {sum}", en: "{n} upcoming sessions — estimated payouts {sum}" },
+  "admin.finance.owed": { fi: "Paketeista käyttämättä {n} maksettua treeniä", en: "{n} prepaid package sessions still owed" },
+  "admin.numbers.started": { fi: "Varauksia aloitettu", en: "Bookings started" },
+  "admin.numbers.completed": { fi: "Varauksia tehty", en: "Bookings made" },
+  "admin.numbers.sessions": { fi: "Pidetyt treenit", en: "Sessions held" },
+  "admin.numbers.visitors": { fi: "Kävijät", en: "Visitors" },
+  "admin.numbers.pageviews": { fi: "Sivulataukset", en: "Page views" },
+  "admin.crm.contact.heading": { fi: "Yhteydenottopyynnöt", en: "Contact requests" },
+  "admin.crm.contact.sub": { fi: "Etusivun \"Ota yhteyttä\" -napista jätetyt yhteystiedot.", en: "Contacts left through the landing page's get-in-touch button." },
+  "admin.crm.contact.empty": { fi: "Ei avoimia yhteydenottopyyntöjä.", en: "No open contact requests." },
+  "admin.crm.contact.mark": { fi: "Merkitse hoidetuksi", en: "Mark handled" },
+  "admin.crm.contact.handled": { fi: "Hoidettu", en: "Handled" },
 };
 
 // Server-sent strings (API error messages, notification texts, config labels).
@@ -934,6 +1019,14 @@ const I18N_SERVER_EXACT = {
   "The balance cannot go below zero.": "Saldo ei voi mennä alle nollan.",
   "The customer's session package has no sessions left — can't reactivate.": "Asiakkaan treenipaketissa ei ole treenejä jäljellä — varausta ei voi palauttaa.",
   "Your group training spot was released because the payment was not completed. The spot is open again — you are welcome to book anew.": "Ryhmätreenipaikkasi vapautettiin, koska maksua ei suoritettu loppuun. Paikka on jälleen vapaana — voit varata sen uudelleen.",
+  "Please pick your home area.": "Valitse kotikaupunkisi.",
+  "That code is not right — check the email and try again.": "Koodi ei täsmää — tarkista sähköposti ja yritä uudelleen.",
+  "A code was just sent — check your inbox (and spam), or wait a minute.": "Koodi lähetettiin juuri — tarkista postilaatikkosi (ja roskaposti) tai odota hetki.",
+  "Please verify your email address first.": "Vahvista ensin sähköpostiosoitteesi.",
+  "Please pick an age group.": "Valitse ikäryhmä.",
+  "This group session is for a different age group.": "Tämä ryhmätreeni on eri ikäryhmälle.",
+  "Group sessions can be started at least 5 days ahead.": "Ryhmätreenin voi aloittaa aikaisintaan 5 päivän päähän.",
+  "Leave a valid email address or phone number.": "Jätä toimiva sähköpostiosoite tai puhelinnumero.",
   "Helsinki": "Helsinki",
   "Espoo": "Espoo",
   "Vantaa": "Vantaa",
@@ -968,9 +1061,10 @@ const I18N_SERVER_PATTERNS = [
     (m) => `${I18N_SERVER_EXACT[m[4]] || m[4]} perui treenisi valmentajan ${m[1]} kanssa ${fiDate(m[2])} klo ${m[3]}.00. Olemme pahoillamme!${m[5] ? ' ' + (I18N_SERVER_EXACT[m[5].trim()] || m[5]) : ''}`],
   [/^Good news — your session with (.+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 is back on\.$/,
     (m) => `Hyviä uutisia — treenisi valmentajan ${m[1]} kanssa ${fiDate(m[2])} klo ${m[3]}.00 järjestetään sittenkin.`],
-  // Coach alert: a customer just booked (focus id + city resolve via the exact map).
-  [/^New booking: (.+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 — ([\w-]+) \((.+)\)\.$/,
-    (m) => `Uusi varaus: ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 — ${I18N_SERVER_EXACT[m[4]] || m[4]} (${I18N_SERVER_EXACT[m[5]] || m[5]}).`],
+  // Coach alert: a customer just booked (focus id + city resolve via the
+  // exact map; the focus is optional since July 2026).
+  [/^New booking: (.+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 — (?:([\w-]+) )?\((.+)\)\.$/,
+    (m) => `Uusi varaus: ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 — ${m[4] ? (I18N_SERVER_EXACT[m[4]] || m[4]) + ' ' : ''}(${I18N_SERVER_EXACT[m[5]] || m[5]}).`],
   // Coach alert: an unpaid booking was auto-released.
   [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was released because the payment was not completed\. The slot is open again\.$/,
     (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 vapautettiin, koska maksua ei suoritettu. Aika on jälleen vapaana.`],
