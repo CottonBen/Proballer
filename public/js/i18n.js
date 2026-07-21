@@ -1021,6 +1021,8 @@ const I18N_SERVER_EXACT = {
   "Your group training spot was released because the payment was not completed. The spot is open again — you are welcome to book anew.": "Ryhmätreenipaikkasi vapautettiin, koska maksua ei suoritettu loppuun. Paikka on jälleen vapaana — voit varata sen uudelleen.",
   "Please pick your home area.": "Valitse kotikaupunkisi.",
   "That code is not right — check the email and try again.": "Koodi ei täsmää — tarkista sähköposti ja yritä uudelleen.",
+  "We could not find a signup for this email — please sign up again.": "Tälle sähköpostille ei löytynyt kesken olevaa rekisteröitymistä — luo tili uudelleen.",
+  "Too many wrong attempts — please sign up again.": "Liian monta väärää yritystä — luo tili uudelleen.",
   "A code was just sent — check your inbox (and spam), or wait a minute.": "Koodi lähetettiin juuri — tarkista postilaatikkosi (ja roskaposti) tai odota hetki.",
   "Please verify your email address first.": "Vahvista ensin sähköpostiosoitteesi.",
   "Please pick an age group.": "Valitse ikäryhmä.",

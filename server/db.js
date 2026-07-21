@@ -266,6 +266,23 @@ CREATE TABLE IF NOT EXISTS packages (
 );
 CREATE INDEX IF NOT EXISTS idx_packages_customer ON packages (customer_id);
 
+-- Signups waiting for their email verification code. The REAL user row is
+-- created only when the code is confirmed — refreshing the page mid-signup
+-- leaves no account behind. Rows expire after a day.
+CREATE TABLE IF NOT EXISTS pending_signups (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  email TEXT NOT NULL UNIQUE,
+  password_hash TEXT NOT NULL,
+  name TEXT NOT NULL,
+  phone TEXT NOT NULL DEFAULT '',
+  area TEXT NOT NULL DEFAULT '',
+  lang TEXT NOT NULL DEFAULT 'fi',
+  code TEXT NOT NULL,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  sent_at TEXT NOT NULL,
+  created_at TEXT NOT NULL
+);
+
 -- "Get in touch" requests from the landing menu: a minimal lead (email or
 -- phone number), shown in the admin CRM next to the phone-number leads.
 CREATE TABLE IF NOT EXISTS contact_requests (

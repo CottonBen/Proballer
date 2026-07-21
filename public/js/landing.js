@@ -549,13 +549,26 @@ function showGate(cb) {
         payload.area = String(fd.get('area') || '');
       }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
+      // A signup is NOT an account yet — the emailed code creates it.
+      if (res.pendingSignup) {
+        renderVerifyPanel(bodyEl, res.email, (vres) => {
+          LANDING_USER = vres.user;
+          LANDING_VERIFIED = true;
+          initHeaderAuth();
+          updateMenuLabels();
+          closeGate();
+          const cb = gateDone; gateDone = null;
+          if (cb) cb();
+        }, true);
+        return;
+      }
       // Coaches have their own app; customers and admins stay to browse/book.
       if (res.user.role === 'coach') { location.href = DASH_FOR_ROLE.coach; return; }
       LANDING_USER = res.user;
       initHeaderAuth();
       updateMenuLabels();
-      // New accounts (and unverified old ones) confirm their email before
-      // the action continues.
+      // Legacy: an account from the brief window when unverified accounts
+      // could exist confirms its code before the action continues.
       const me = await API.get('/me').catch(() => null);
       LANDING_VERIFIED = Boolean(me && me.verified);
       if (!LANDING_VERIFIED) {
@@ -578,8 +591,10 @@ function showGate(cb) {
   render();
 }
 
-// The 6-digit email code form, reusable inside the gate.
-function renderVerifyPanel(container, email, onDone) {
+// The 6-digit email code form, reusable inside the gate. With
+// `pending` = true the code CREATES the account (/auth/verify-signup);
+// otherwise it verifies a legacy logged-in account (/auth/verify).
+function renderVerifyPanel(container, email, onDone, pending = false) {
   container.innerHTML = `
     <h3 style="margin:0 0 8px">${t('verify.title')}</h3>
     <p class="muted small">${t('verify.body', { email: esc(email) })}</p>
@@ -597,14 +612,17 @@ function renderVerifyPanel(container, email, onDone) {
     e.preventDefault();
     const err = container.querySelector('#verify-error');
     err.textContent = '';
+    const code = container.querySelector('#verify-code').value.trim();
     try {
-      await API.post('/auth/verify', { code: container.querySelector('#verify-code').value.trim() });
+      const vres = pending
+        ? await API.post('/auth/verify-signup', { email, code })
+        : await API.post('/auth/verify', { code });
       toast(t('verify.done'));
-      onDone();
+      onDone(vres);
     } catch (ex) { err.textContent = I18N.server(ex.message); }
   });
   container.querySelector('#verify-resend').addEventListener('click', async () => {
-    try { await API.post('/auth/resend-code', {}); toast(t('verify.sent')); }
+    try { await API.post('/auth/resend-code', { email }); toast(t('verify.sent')); }
     catch (ex) { toast(I18N.server(ex.message), true); }
   });
 }

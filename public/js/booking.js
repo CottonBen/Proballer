@@ -399,13 +399,18 @@ function renderAuthPanel() {
         payload.area = String(fd.get('area') || '');
       }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
+      // A signup is NOT an account yet — the emailed code creates it.
+      if (res.pendingSignup) {
+        wizardVerifyPanel(panel, res.email, true);
+        return;
+      }
       if (res.user.role !== 'customer' && res.user.role !== 'admin') {
         err.textContent = t('booking.auth.staff_error');
         return;
       }
       initHeaderAuth();
-      // New (or still-unverified) accounts confirm their email code first —
-      // the booking can't be paid without it.
+      // Legacy unverified accounts confirm their email code first — the
+      // booking can't be paid without it.
       const meNow = await API.get('/me').catch(() => null);
       if (meNow && meNow.user && !meNow.verified && meNow.user.role !== 'admin') {
         wizardVerifyPanel(panel, res.user.email);
@@ -419,8 +424,9 @@ function renderAuthPanel() {
 }
 
 // The 6-digit email code, inline in the wizard (self-contained — this file
-// also runs on pages without landing.js).
-function wizardVerifyPanel(panel, email) {
+// also runs on pages without landing.js). With `pending` = true the code
+// CREATES the account; otherwise it verifies a legacy logged-in one.
+function wizardVerifyPanel(panel, email, pending = false) {
   panel.innerHTML = `
     <div class="card" style="margin-top:16px">
       <h3 style="margin:0 0 8px">${t('verify.title')}</h3>
@@ -440,14 +446,17 @@ function wizardVerifyPanel(panel, email) {
     e.preventDefault();
     const err = panel.querySelector('#wv-error');
     err.textContent = '';
+    const code = panel.querySelector('#wv-code').value.trim();
     try {
-      await API.post('/auth/verify', { code: panel.querySelector('#wv-code').value.trim() });
+      if (pending) await API.post('/auth/verify-signup', { email, code });
+      else await API.post('/auth/verify', { code });
       toast(t('verify.done'));
+      initHeaderAuth();
       renderReview();
     } catch (ex) { err.textContent = I18N.server(ex.message); }
   });
   panel.querySelector('#wv-resend').addEventListener('click', async () => {
-    try { await API.post('/auth/resend-code', {}); toast(t('verify.sent')); }
+    try { await API.post('/auth/resend-code', { email }); toast(t('verify.sent')); }
     catch (ex) { toast(I18N.server(ex.message), true); }
   });
 }

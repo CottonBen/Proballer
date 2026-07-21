@@ -86,21 +86,34 @@ function bookingLine(lang, b, coachName) {
 // ---------------------------------------------------------------------------
 // Transactional emails
 // ---------------------------------------------------------------------------
-// The 6-digit code new accounts confirm their address with (sent at signup
-// and from the "resend" button). The welcome email follows verification.
-function sendVerifyCodeEmail(userId) {
-  const u = db.prepare('SELECT id, name, email, lang, verify_code FROM users WHERE id = ?').get(userId);
-  if (!u || !u.verify_code) return;
-  const lang = pickLang(u.lang);
+// The 6-digit code that turns a signup into an account. One renderer for
+// both shapes: a pending_signups row (no user yet) and a legacy unverified
+// user row. The welcome email follows verification.
+function renderVerifyCode({ name, email, lang: rawLang, code, userId = null }) {
+  if (!code) return;
+  const lang = pickLang(rawLang);
   const subject = tr(lang, 'email.verify.subject', { siteName: config.siteName });
   const html = shell(lang, tr(lang, 'email.verify.title'),
-    `<p>${esc(tr(lang, 'email.greeting', { name: u.name }))}</p>
+    `<p>${esc(tr(lang, 'email.greeting', { name }))}</p>
      <p>${esc(tr(lang, 'email.verify.body'))}</p>
      <div style="background:#f4f4f5;border-radius:10px;padding:18px;margin:14px 0;text-align:center">
-       <span style="font-size:2rem;font-weight:800;letter-spacing:.35em">${esc(u.verify_code)}</span>
+       <span style="font-size:2rem;font-weight:800;letter-spacing:.35em">${esc(code)}</span>
      </div>
      <p style="color:#6b6b70">${esc(tr(lang, 'email.verify.note'))}</p>`);
-  deliver({ type: 'verify', userId: u.id, to: u.email, subject, html });
+  deliver({ type: 'verify', userId, to: email, subject, html });
+}
+
+// A pending signup (account not created yet).
+function sendSignupCodeEmail(pending) {
+  if (!pending) return;
+  renderVerifyCode({ name: pending.name, email: pending.email, lang: pending.lang, code: pending.code });
+}
+
+// Legacy: an existing unverified user row.
+function sendVerifyCodeEmail(userId) {
+  const u = db.prepare('SELECT id, name, email, lang, verify_code FROM users WHERE id = ?').get(userId);
+  if (!u) return;
+  renderVerifyCode({ name: u.name, email: u.email, lang: u.lang, code: u.verify_code, userId: u.id });
 }
 
 function sendWelcomeEmail(userId) {
@@ -479,6 +492,7 @@ function automationStatus() {
 }
 
 module.exports = {
+  sendSignupCodeEmail,
   sendVerifyCodeEmail,
   sendWelcomeEmail,
   sendBookingConfirmedEmail,

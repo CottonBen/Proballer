@@ -370,22 +370,62 @@ router.post('/auth/signup', loginThrottle, (req, res) => {
   if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
-  // New accounts verify their email with a 6-digit code before they can book
-  // or pay — so we never contact an address that isn't really theirs. The
-  // welcome email follows the successful verification.
+  // NO account yet: the signup waits in pending_signups until the emailed
+  // 6-digit code is confirmed (POST /auth/verify-signup). Refreshing the page
+  // mid-signup leaves nothing behind; signing up again just mints a new code.
+  db.prepare('DELETE FROM pending_signups WHERE created_at < ?')
+    .run(new Date(Date.now() - 24 * 3600000).toISOString());
   const code = String(crypto.randomInt(100000, 1000000));
-  const info = db.prepare(`INSERT INTO users
-    (email, password_hash, name, role, lang, phone, area, email_verified, verify_code, verify_sent_at, created_at)
-    VALUES (?,?,?,?,?,?,?,0,?,?,?)`)
-    .run(email, bcrypt.hashSync(password, 10), name, 'customer', readLang(req.body) || 'fi',
-      phone, area, code, nowISO(), nowISO());
-  createSession(res, Number(info.lastInsertRowid));
-  recordEvent(req, 'signup', {});
-  emails.sendVerifyCodeEmail(Number(info.lastInsertRowid));
-  res.json({ user: { id: Number(info.lastInsertRowid), name, email, role: 'customer' }, verifyRequired: true });
+  db.prepare(`INSERT INTO pending_signups
+      (email, password_hash, name, phone, area, lang, code, attempts, sent_at, created_at)
+    VALUES (?,?,?,?,?,?,?,0,?,?)
+    ON CONFLICT(email) DO UPDATE SET
+      password_hash = excluded.password_hash, name = excluded.name,
+      phone = excluded.phone, area = excluded.area, lang = excluded.lang,
+      code = excluded.code, attempts = 0, sent_at = excluded.sent_at`)
+    .run(email, bcrypt.hashSync(password, 10), name, phone, area,
+      readLang(req.body) || 'fi', code, nowISO(), nowISO());
+  recordEvent(req, 'signup_started', {});
+  emails.sendSignupCodeEmail(db.prepare('SELECT * FROM pending_signups WHERE email = ?').get(email));
+  res.json({ pendingSignup: true, email });
 });
 
-// Confirm the 6-digit code from the verification email.
+// The emailed code turns a pending signup into a real, verified account.
+router.post('/auth/verify-signup', loginThrottle, (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const code = String(req.body?.code || '').trim();
+  const pending = db.prepare('SELECT * FROM pending_signups WHERE email = ?').get(email);
+  if (!pending || Date.parse(pending.created_at) < Date.now() - 24 * 3600000) {
+    return res.status(404).json({ error: 'We could not find a signup for this email — please sign up again.' });
+  }
+  if (pending.attempts >= 5) {
+    db.prepare('DELETE FROM pending_signups WHERE id = ?').run(pending.id);
+    return res.status(429).json({ error: 'Too many wrong attempts — please sign up again.' });
+  }
+  if (!code || code !== pending.code) {
+    db.prepare('UPDATE pending_signups SET attempts = attempts + 1 WHERE id = ?').run(pending.id);
+    return res.status(400).json({ error: 'That code is not right — check the email and try again.' });
+  }
+  // Race guard: the email may have registered through another tab meanwhile.
+  if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
+    db.prepare('DELETE FROM pending_signups WHERE id = ?').run(pending.id);
+    return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
+  }
+  const info = db.prepare(`INSERT INTO users
+      (email, password_hash, name, role, lang, phone, area, email_verified, created_at)
+    VALUES (?,?,?,?,?,?,?,1,?)`)
+    .run(email, pending.password_hash, pending.name, 'customer', pending.lang,
+      pending.phone, pending.area, nowISO());
+  db.prepare('DELETE FROM pending_signups WHERE id = ?').run(pending.id);
+  const userId = Number(info.lastInsertRowid);
+  createSession(res, userId);
+  recordEvent(req, 'signup', {});
+  emails.sendWelcomeEmail(userId);
+  res.json({ user: { id: userId, name: pending.name, email, role: 'customer' } });
+});
+
+// Legacy: a logged-in account that predates account-at-verify and never
+// confirmed its code (created in the brief window this flow was live).
 router.post('/auth/verify', loginThrottle, (req, res) => {
   if (!req.user) return res.status(401).json({ error: 'Please log in.' });
   const code = String(req.body?.code || '').trim();
@@ -400,8 +440,20 @@ router.post('/auth/verify', loginThrottle, (req, res) => {
   res.json({ ok: true, verified: true });
 });
 
-// A fresh code, at most once a minute.
+// A fresh code, at most once a minute. Works for a pending signup (by email)
+// and for a legacy logged-in unverified account.
 router.post('/auth/resend-code', (req, res) => {
+  const email = String(req.body?.email || '').trim().toLowerCase();
+  const pending = email ? db.prepare('SELECT * FROM pending_signups WHERE email = ?').get(email) : null;
+  if (pending) {
+    if (Date.now() - Date.parse(pending.sent_at) < 60000) {
+      return res.status(429).json({ error: 'A code was just sent — check your inbox (and spam), or wait a minute.' });
+    }
+    db.prepare('UPDATE pending_signups SET code = ?, sent_at = ?, attempts = 0 WHERE id = ?')
+      .run(String(crypto.randomInt(100000, 1000000)), nowISO(), pending.id);
+    emails.sendSignupCodeEmail(db.prepare('SELECT * FROM pending_signups WHERE id = ?').get(pending.id));
+    return res.json({ ok: true });
+  }
   if (!req.user) return res.status(401).json({ error: 'Please log in.' });
   const u = db.prepare('SELECT id, email_verified, verify_sent_at FROM users WHERE id = ?').get(req.user.id);
   if (!u || u.email_verified) return res.json({ ok: true });
