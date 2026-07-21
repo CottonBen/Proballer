@@ -48,29 +48,17 @@ const cap = (s) => String(s).charAt(0).toUpperCase() + String(s).slice(1);
 
 const DASH_FOR_ROLE = { admin: '/admin', coach: '/coach', customer: '/my-bookings' };
 
-// Fills the header auth area. Anonymous: booking CTA + "Log in" + language
-// toggle. Known: role buttons + logout + toggle (customers keep the CTA too).
+// Fills the header auth area. No "log in" or "book a session" buttons here
+// (owner's call, July 2026): the landing menu carries both, and booking
+// itself asks for the login. Anonymous visitors get just the language
+// toggle; logged-in users their role buttons + logout.
 async function initHeaderAuth() {
   const box = document.getElementById('auth-box');
   if (!box) return null;
   let me = { user: null };
   try { me = await API.get('/me'); } catch { /* treat as anonymous */ }
   box.innerHTML = '';
-  const bookCta = () => {
-    const a = document.createElement('a');
-    a.href = '/#coaches';
-    a.className = 'btn btn-primary btn-sm';
-    a.textContent = t('common.cta.book');
-    return a;
-  };
-  if (!me.user) {
-    box.appendChild(bookCta());
-    const a = document.createElement('a');
-    a.href = '/login';
-    a.className = 'btn btn-ghost btn-sm';
-    a.textContent = t('common.login');
-    box.appendChild(a);
-  } else {
+  if (me.user) {
     // Chats: prominent for every logged-in role, with an unread badge.
     const chats = document.createElement('a');
     chats.href = '/chats';
@@ -79,7 +67,6 @@ async function initHeaderAuth() {
       (me.unreadChats ? ` <span class="hdr-badge">${me.unreadChats > 9 ? '9+' : me.unreadChats}</span>` : '');
     box.appendChild(chats);
     // Dual-role users (admin + coach profile) get a button for each hat.
-    if (me.user.role === 'customer') box.appendChild(bookCta());
     const links = [];
     if (me.user.role === 'admin') links.push(['/admin', t('common.admin')]);
     if (me.coachProfile) links.push(['/coach', t('common.mycalendar')]);
