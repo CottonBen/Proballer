@@ -628,8 +628,9 @@ body.theme-green::before {
   .reveal { opacity: 1; transform: none; }
 }
 
-/* --- header site menu (six quick choices) ---------------------------------- */
-.site-header { position: relative; }
+/* --- header site menu (six quick choices) ----------------------------------
+   NOTE: the header is position:sticky (defined above) — that already anchors
+   this absolutely-positioned dropdown, so the menu rides along on scroll. */
 .site-menu {
   position: absolute; right: 18px; top: calc(100% + 6px);
   background: #141416; border: 1px solid var(--line);
