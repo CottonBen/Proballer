@@ -970,6 +970,11 @@ router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) 
   if (date < helsinkiDateOffset(config.groupTraining.minLeadDays)) {
     return res.status(400).json({ error: 'Group sessions can be started at least 5 days ahead.' });
   }
+  // Fill the open group before opening another (owner's rule): while this
+  // coach has an upcoming session with spots left, players join that one.
+  if (groups.openJoinableSession(coach.id)) {
+    return res.status(409).json({ error: 'This coach already has an open group session — join it instead of starting a new one.' });
+  }
   const slotErr = groupSlotError({ coachId, date, hour, location });
   if (slotErr) return res.status(400).json({ error: slotErr });
   if (!db.prepare('SELECT 1 FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')

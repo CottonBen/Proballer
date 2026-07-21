@@ -42,12 +42,30 @@ function publicShape(gs) {
   };
 }
 
+// The coach's upcoming open session that still has room, if any. While one
+// exists the coach takes JOINS, not new sessions — fill one before opening
+// another (owner's rule). A full or past session doesn't block.
+function openJoinableSession(coachId) {
+  const hki = helsinkiNow();
+  const rows = db.prepare(`SELECT * FROM group_sessions
+    WHERE coach_id = ? AND status = 'open' AND (date > ? OR (date = ? AND hour > ?))`)
+    .all(coachId, hki.date, hki.date, hki.hour);
+  return rows.find((gs) => takenCount(gs.id) < gs.capacity) || null;
+}
+
 // Free coach hours a player can START a group session on: availability at
 // least `minLeadDays` days out, with no booking or group session on the hour.
-// Grouped per coach so the landing page can offer a compact picker.
+// Grouped per coach so the landing page can offer a compact picker. Coaches
+// whose current group still has room are excluded — join that one instead.
 function startableSlots() {
   const from = helsinkiDateOffset(config.groupTraining.minLeadDays);
   const to = helsinkiDateOffset(config.bookingHorizonDays);
+  const hki = helsinkiNow();
+  const blocked = new Set(db.prepare(`SELECT id, coach_id, capacity FROM group_sessions
+    WHERE status = 'open' AND (date > ? OR (date = ? AND hour > ?))`)
+    .all(hki.date, hki.date, hki.hour)
+    .filter((g) => takenCount(g.id) < g.capacity)
+    .map((g) => g.coach_id));
   const rows = db.prepare(`
     SELECT a.coach_id, a.date, a.hour, c.name, c.locations, c.photos
     FROM availability a JOIN coaches c ON c.id = a.coach_id
@@ -59,6 +77,7 @@ function startableSlots() {
     ORDER BY a.date, a.hour LIMIT 400`).all(from, to);
   const byCoach = new Map();
   for (const r of rows) {
+    if (blocked.has(r.coach_id)) continue;
     if (!byCoach.has(r.coach_id)) {
       let photo = null, locations = [];
       try { photo = (JSON.parse(r.photos || '[]'))[0] || null; } catch { /* keep null */ }
@@ -227,7 +246,7 @@ async function cancelGroupSession(gs, actor /* 'coach' | 'admin' */) {
 }
 
 module.exports = {
-  takenCount, publicShape, upcomingOpen, roster, startableSlots,
+  takenCount, publicShape, upcomingOpen, roster, startableSlots, openJoinableSession,
   createSignup, markSignupPaid, expirePendingSignups,
   cancelSignup, cancelGroupSession,
 };
