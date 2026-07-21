@@ -1808,6 +1808,7 @@ router.post('/admin/groups/:id/players', requireRole('admin'), (req, res) => {
       VALUES (?,?,?, 0, 'confirmed', ?, ?)`)
       .run('GSU-' + crypto.randomBytes(3).toString('hex').toUpperCase(), gs.id, user.id, nowISO(), nowISO());
     emails.sendGroupConfirmedEmail(Number(info.lastInsertRowid));
+    emails.sendGroupBookedCopies(Number(info.lastInsertRowid));
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       return res.status(409).json({ error: 'That player already has a spot in this session.' });
@@ -2347,6 +2348,7 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
             + `(${groups.takenCount(gs.id)}/${gs.capacity}).`, nowISO());
       }
       emails.sendGroupConfirmedEmail(su.id);
+      emails.sendGroupBookedCopies(su.id);
     }
     sheets.scheduleSync();
     return res.status(201).json({

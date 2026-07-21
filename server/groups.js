@@ -176,6 +176,7 @@ function markSignupPaid(code, stripeSession) {
         + `(${takenCount(gs.id)}/${gs.capacity}).`, nowISO());
   }
   require('./emails').sendGroupConfirmedEmail(su.id);
+  require('./emails').sendGroupBookedCopies(su.id);
   require('./sheets').scheduleSync();
   return true;
 }

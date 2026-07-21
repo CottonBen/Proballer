@@ -870,6 +870,10 @@ const I18N_DICT = {
   "admin.emails.type.package_done": { fi: "Paketti käytetty", en: "Package fully used" },
   "admin.emails.type.reminder": { fi: "Treenimuistutus", en: "Session reminder" },
   "admin.emails.type.verify": { fi: "Vahvistuskoodi", en: "Verification code" },
+  "admin.emails.type.payreq": { fi: "Maksupyyntö", en: "Payment request" },
+  "admin.emails.type.admin_booking": { fi: "Varausilmoitus ylläpidolle", en: "Booking notice to admin" },
+  "admin.emails.type.admin_group": { fi: "Ryhmäilmoitus ylläpidolle", en: "Group notice to admin" },
+  "admin.emails.type.coach_group": { fi: "Ryhmäilmoitus valmentajalle", en: "Group notice to coach" },
 
   // --- landing: header menu ---------------------------------------------------
   "landing.menu.button": { fi: "Valikko", en: "Menu" },

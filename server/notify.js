@@ -51,12 +51,14 @@ function announceBookingToCoach(bookingId) {
   // The customer has obviously "seen" their own booking's system line.
   markChatRead(chat.id, b.customer_id, sysId);
   if (b.notes) postChatMessage(chat.id, b.customer_id, b.notes);
-  // The same moment the coach hears, both sides get email: the customer's
-  // confirmation, and the coach's copy with a link to the coach app (pick the
-  // pitch, message the player). For card bookings that is when the payment
-  // confirms, so no email can promise a session that might evaporate unpaid.
+  // The same moment the coach hears, everyone gets email: the customer's
+  // confirmation, the coach's copy with a link to the coach app (pick the
+  // pitch, message the player), and the admins' copy for the business inbox.
+  // For card bookings that is when the payment confirms, so no email can
+  // promise a session that might evaporate unpaid.
   require('./emails').sendBookingConfirmedEmail(b.id);
   require('./emails').sendCoachBookingEmail(b.id);
+  require('./emails').sendAdminBookingEmail(b.id);
   return true;
 }
 

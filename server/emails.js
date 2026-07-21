@@ -193,6 +193,104 @@ function sendCoachBookingEmail(bookingId) {
 // The unpaid-booking sweep cancelled this booking (payment never completed):
 // tell the customer plainly that nothing is booked and nothing was charged,
 // so an interrupted checkout can't be mistaken for a confirmed session.
+// ---------------------------------------------------------------------------
+// Admin copies: the business inbox hears about every booking the moment it is
+// definitely ON — the same chokepoints that announce to the coach.
+// ---------------------------------------------------------------------------
+const adminRecipients = () =>
+  db.prepare("SELECT id, name, email, lang FROM users WHERE role = 'admin'").all();
+
+// One line stating how the money stands at announce time.
+const paymentStateLine = (lang, { free, paid, atSession }) =>
+  tr(lang, 'email.adminbooking.payment', {
+    state: tr(lang, free ? 'email.paystate.free' : paid ? 'email.paystate.paid'
+      : atSession ? 'email.paystate.at_session' : 'email.paystate.unpaid'),
+  });
+
+function sendAdminBookingEmail(bookingId) {
+  const x = bookingBundle(bookingId);
+  if (!x) return;
+  const { b, customer, coach } = x;
+  const inv = db.prepare('SELECT status, at_session FROM invoices WHERE booking_id = ?').get(b.id);
+  const phone = db.prepare('SELECT phone FROM users WHERE id = ?').get(b.customer_id).phone;
+  const state = {
+    free: b.total_cents === 0,
+    // A package-funded booking has no invoice — the package purchase paid it.
+    paid: Boolean(b.package_id) || Boolean(inv && inv.status === 'paid'),
+    atSession: Boolean(inv && inv.at_session === 1 && inv.status !== 'paid'),
+  };
+  // A dual-role admin+coach already got the (richer) coach copy of THIS booking.
+  const coachLogin = db.prepare(`SELECT u.email FROM coaches c
+    JOIN users u ON u.id = c.user_id WHERE c.id = ?`).get(b.coach_id);
+  for (const a of adminRecipients()) {
+    if (coachLogin && a.email === coachLogin.email) continue;
+    const lang = pickLang(a.lang);
+    const subject = tr(lang, 'email.adminbooking.subject',
+      { siteName: config.siteName, date: localDate(lang, b.date) });
+    const html = shell(lang, tr(lang, 'email.adminbooking.title'),
+      `<p>${esc(tr(lang, 'email.adminbooking.body', { customer: customer.name }))}</p>
+       ${detailBox([
+         bookingLine(lang, b, coach.name),
+         tr(lang, 'email.adminbooking.customerline', { name: customer.name, email: customer.email })
+           + (phone ? ' · ' + phone : ''),
+         tr(lang, 'email.adminbooking.price', { price: eur(b.total_cents) }),
+         paymentStateLine(lang, state),
+         tr(lang, 'email.booking.ref', { code: b.code }),
+       ])}`);
+    deliver({ type: 'admin_booking', userId: a.id, bookingCode: b.code, to: a.email, subject, html });
+  }
+}
+
+// Coach + admin copies of a group signup, sent when the spot is definitely ON
+// (payment confirmed, or an admin confirmed it directly). The customer's own
+// confirmation is sendGroupConfirmedEmail.
+function sendGroupBookedCopies(signupId) {
+  const x = groupBundle(signupId);
+  if (!x) return;
+  const { su, gs, customer, coach } = x;
+  const taken = require('./groups').takenCount(gs.id);
+  const state = {
+    free: su.price_cents === 0,
+    paid: Boolean(su.paid_at),
+    atSession: !su.paid_at && su.price_cents > 0,
+  };
+  const coachUser = db.prepare(`SELECT u.name, u.email, u.lang FROM coaches c
+    JOIN users u ON u.id = c.user_id WHERE c.id = ?`).get(gs.coach_id);
+  if (coachUser) {
+    const lang = pickLang(coachUser.lang);
+    const subject = tr(lang, 'email.coachgroup.subject',
+      { siteName: config.siteName, date: localDate(lang, gs.date) });
+    const html = shell(lang, tr(lang, 'email.coachgroup.title'),
+      `<p>${esc(tr(lang, 'email.greeting', { name: coachUser.name }))}</p>
+       <p>${esc(tr(lang, 'email.coachgroup.body', { customer: customer.name }))}</p>
+       ${detailBox([
+         groupLine(lang, gs, coach),
+         ...(gs.age_group ? [tr(lang, 'email.group.age', { age: gs.age_group })] : []),
+         tr(lang, 'email.group.spots', { taken, capacity: gs.capacity }),
+       ])}
+       ${button(`${config.siteUrl}/app`, tr(lang, 'email.coachbooking.cta'))}`);
+    deliver({ type: 'coach_group', bookingCode: su.code, to: coachUser.email, subject, html });
+  }
+  for (const a of adminRecipients()) {
+    // A dual-role admin+coach already got the coach copy of THIS signup.
+    if (coachUser && a.email === coachUser.email) continue;
+    const lang = pickLang(a.lang);
+    const subject = tr(lang, 'email.admingroup.subject',
+      { siteName: config.siteName, date: localDate(lang, gs.date) });
+    const html = shell(lang, tr(lang, 'email.admingroup.title'),
+      `<p>${esc(tr(lang, 'email.admingroup.body', { customer: customer.name }))}</p>
+       ${detailBox([
+         groupLine(lang, gs, coach),
+         tr(lang, 'email.adminbooking.customerline', { name: customer.name, email: customer.email }),
+         tr(lang, 'email.adminbooking.price', { price: eur(su.price_cents) }),
+         paymentStateLine(lang, state),
+         tr(lang, 'email.group.spots', { taken, capacity: gs.capacity }),
+         tr(lang, 'email.group.ref', { code: su.code }),
+       ])}`);
+    deliver({ type: 'admin_group', userId: a.id, bookingCode: su.code, to: a.email, subject, html });
+  }
+}
+
 // Admin created a booking for this customer and chose "send a payment
 // request": the email carries a login-free pay link (GET /api/pay/:token
 // mints a fresh Stripe Checkout every time it is opened). `payBy` on the
@@ -545,6 +643,8 @@ module.exports = {
   sendWelcomeEmail,
   sendBookingConfirmedEmail,
   sendCoachBookingEmail,
+  sendAdminBookingEmail,
+  sendGroupBookedCopies,
   sendPitchConfirmedEmail,
   sendBookingReleasedEmail,
   sendPaymentRequestEmail,
