@@ -180,6 +180,10 @@ function sendCoachBookingEmail(bookingId) {
      <p>${esc(tr(lang, 'email.coachbooking.body', { customer: customer.name }))}</p>
      ${detailBox([
        bookingLine(lang, b, customer.name),
+       // The coach's own cut in euros — never the full price the client pays
+       // (coaches are never shown prices or percentages, only their fee).
+       // Same estimate the coach app shows; the final amount locks at completion.
+       tr(lang, 'email.coachbooking.fee', { fee: eur(require('./tiers').estimateUpcomingCents(b)) }),
        tr(lang, 'email.coachbooking.ref', { code: b.code }),
      ])}
      ${b.notes ? `<p>${esc(tr(lang, 'email.coachbooking.notes', { notes: b.notes }))}</p>` : ''}
