@@ -36,6 +36,7 @@ const I18N_DICT = {
   'common.close':          { fi: 'Sulje', en: 'Close' },
   'common.password.show':  { fi: 'Näytä salasana', en: 'Show password' },
   'common.password.hide':  { fi: 'Piilota salasana', en: 'Hide password' },
+  'common.open_app':       { fi: 'Avaa sovellus', en: 'Open the app' },
   'common.password.reveal':  { fi: 'Näytä', en: 'Show' },
   'common.password.conceal': { fi: 'Piilota', en: 'Hide' },
 
