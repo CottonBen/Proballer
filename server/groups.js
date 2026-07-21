@@ -7,7 +7,7 @@
 
 const crypto = require('node:crypto');
 const config = require('../config');
-const { db, nowISO, helsinkiNow, helsinkiDateOffset, slotTooSoon } = require('./db');
+const { db, nowISO, helsinkiNow, helsinkiDateOffset } = require('./db');
 
 const genCode = (prefix) => prefix + '-' + crypto.randomBytes(3).toString('hex').toUpperCase();
 
@@ -89,14 +89,14 @@ function startableSlots() {
   return [...byCoach.values()];
 }
 
-// Upcoming open sessions for the landing page (soonest first). Sessions
-// inside the minimum booking lead can't be joined, so they aren't shown.
+// Upcoming open sessions for the landing page (soonest first). Unlike 1-on-1
+// bookings, group spots can be grabbed until the very last minute (owner's
+// call) — the session is happening anyway, a late joiner only fills it up.
 function upcomingOpen() {
   const hki = helsinkiNow();
   return db.prepare(`SELECT * FROM group_sessions
     WHERE status = 'open' AND (date > ? OR (date = ? AND hour > ?))
     ORDER BY date, hour LIMIT 24`).all(hki.date, hki.date, hki.hour)
-    .filter((gs) => !slotTooSoon(gs.date, gs.hour))
     .map(publicShape);
 }
 
@@ -121,9 +121,6 @@ function createSignup(gs, customerId) {
   const hki = helsinkiNow();
   if (gs.date < hki.date || (gs.date === hki.date && gs.hour <= hki.hour)) {
     return { error: 'That time is already in the past.' };
-  }
-  if (slotTooSoon(gs.date, gs.hour)) {
-    return { error: 'This group session starts in less than 24 hours and can no longer be booked.' };
   }
   if (takenCount(gs.id) >= gs.capacity) return { error: 'This group session is already full.' };
   let info;
