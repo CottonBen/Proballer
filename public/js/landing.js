@@ -299,9 +299,6 @@ function buildPackages() {
 function updateMenuLabels() {
   const loginItem = document.querySelector('#site-menu [data-menu="login"]');
   if (loginItem) loginItem.textContent = LANDING_USER ? t('common.mybookings') : t('common.login');
-  // The app link only makes sense with an account (players, coaches, admin).
-  const appItem = document.querySelector('#site-menu [data-menu="app"]');
-  if (appItem) appItem.hidden = !LANDING_USER;
 }
 
 function initMenu() {
