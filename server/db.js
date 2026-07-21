@@ -426,6 +426,18 @@ function helsinkiDateOffset(days) {
 
 function nowISO() { return new Date().toISOString(); }
 
+// True when a Helsinki slot starts less than config.bookingMinLeadHours away
+// (hour granularity: a slot exactly on the cutoff counts as too soon, since
+// the booking minute has already ticked past the hour). Supports multiples
+// of 24 h — the cutoff lands on "same hour, N days ahead".
+function slotTooSoon(date, hour) {
+  const lead = config.bookingMinLeadHours || 0;
+  if (!lead) return false;
+  const now = helsinkiNow();
+  const cutDate = helsinkiDateOffset(Math.floor(lead / 24));
+  return date < cutDate || (date === cutDate && hour <= now.hour);
+}
+
 // ---------------------------------------------------------------------------
 // Lazy auto-completion: a confirmed booking whose slot has ended counts as a
 // completed session. Runs cheaply before reads that depend on status.
@@ -526,6 +538,7 @@ module.exports = {
   DATA_DIR,
   helsinkiNow,
   helsinkiDateOffset,
+  slotTooSoon,
   nowISO,
   autoCompleteBookings,
 };

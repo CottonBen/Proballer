@@ -5,7 +5,7 @@ const path = require('node:path');
 const fs = require('node:fs');
 const crypto = require('node:crypto');
 const config = require('../../config');
-const { db, DATA_DIR, nowISO, helsinkiNow, helsinkiDateOffset, autoCompleteBookings } = require('../db');
+const { db, DATA_DIR, nowISO, helsinkiNow, helsinkiDateOffset, slotTooSoon, autoCompleteBookings } = require('../db');
 const { createSession, destroySession, requireRole, loginThrottle } = require('../auth');
 const { createInvoiceForBooking, sendReceiptForInvoice, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
@@ -337,7 +337,8 @@ router.get('/coaches/:id/slots', (req, res) => {
         WHERE b.coach_id = a.coach_id AND b.date = a.date AND b.hour = a.hour
           AND b.status != 'cancelled')
     ORDER BY a.date, a.hour`).all(coach.id, to, date, date, hour);
-  res.json({ coach: coachPublic(coach), slots: rows });
+  // Sessions need a minimum lead time — slots inside it aren't offered.
+  res.json({ coach: coachPublic(coach), slots: rows.filter((r) => !slotTooSoon(r.date, r.hour)) });
 });
 
 // Client-side funnel breadcrumbs (whitelisted types only).
@@ -692,6 +693,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   }
   const now = helsinkiNow();
   if (date < now.date || (date === now.date && hour <= now.hour)) return fail('That time is already in the past.');
+  if (slotTooSoon(date, hour)) return fail('Sessions must be booked at least 24 hours in advance.');
   if (date > helsinkiDateOffset(config.bookingHorizonDays)) return fail('That date is too far ahead.');
 
   // Position and focus are OPTIONAL since July 2026: the wizard only asks for

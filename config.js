@@ -125,6 +125,11 @@ module.exports = {
   // How many days ahead coaches can publish availability / customers can book.
   bookingHorizonDays: 60,
 
+  // Sessions must be booked at least this many hours before they start (the
+  // coach needs time to plan, pick the pitch and message the player). Applies
+  // to 1-on-1 bookings and group-spot purchases alike. Multiples of 24 only.
+  bookingMinLeadHours: 24,
+
   // Coach commission tiers, based on COMPLETED sessions in the current calendar
   // month: sessions #1-5 pay the Tier 1 rate, #6-15 Tier 2, #16+ Tier 3.
   // IMPORTANT: coaches are never shown the percentages — the UI only ever shows

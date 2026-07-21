@@ -1029,6 +1029,8 @@ const I18N_SERVER_EXACT = {
   "This group session is for a different age group.": "Tämä ryhmätreeni on eri ikäryhmälle.",
   "Group sessions can be started at least 5 days ahead.": "Ryhmätreenin voi aloittaa aikaisintaan 5 päivän päähän.",
   "This coach already has an open group session — join it instead of starting a new one.": "Tällä valmentajalla on jo avoin ryhmätreeni — liity siihen ennen uuden aloittamista.",
+  "Sessions must be booked at least 24 hours in advance.": "Treenit on varattava vähintään 24 tuntia etukäteen.",
+  "This group session starts in less than 24 hours and can no longer be booked.": "Tämä ryhmätreeni alkaa alle 24 tunnin päästä, eikä paikkoja voi enää varata.",
   "Leave a valid email address or phone number.": "Jätä toimiva sähköpostiosoite tai puhelinnumero.",
   "Helsinki": "Helsinki",
   "Espoo": "Espoo",
