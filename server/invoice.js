@@ -132,7 +132,18 @@ async function sendReceiptForInvoice(invoiceNumber, method) {
 //  - free (0 €) booking          -> mark paid, send the receipt right away
 //  - Stripe configured, amount>0 -> no email yet (receipt follows the payment)
 //  - no Stripe (legacy)          -> email the bank-transfer invoice
-function createInvoiceForBooking(bookingId) {
+//
+// opts.flow marks an ADMIN-created booking and overrides the payment shape:
+//  - 'paid'       -> the money already changed hands: paid from the start,
+//                    receipt (method 'manual') emailed right away
+//  - 'at_session' -> customer pays on the pitch: pay_by NULL (the unpaid
+//                    sweep never releases it), at_session flag for the UIs,
+//                    no email here
+//  - 'link'       -> payment request emailed by the caller: long pay window
+//                    (config.adminPayLinkHours) + a login-free pay token.
+//                    Without Stripe there is nothing to link to, so it
+//                    degrades to the at-session shape.
+function createInvoiceForBooking(bookingId, opts = {}) {
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
   const customer = db.prepare('SELECT name, email, lang FROM users WHERE id = ?').get(booking.customer_id);
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
@@ -140,37 +151,50 @@ function createInvoiceForBooking(bookingId) {
   const lang = pickLang(customer.lang);
 
   const free = booking.total_cents === 0;
+  const flow = free ? null : (opts.flow || null);
+  const prepaid = flow === 'paid';
+  const linkFlow = flow === 'link' && Boolean(config.stripe.secretKey);
+  const atSession = flow === 'at_session' || (flow === 'link' && !linkFlow);
   // Card payments are due AT booking, within config.stripe.payWindowMinutes
   // (and always before the session — expireUnpaidBookings enforces both).
   // pay_by stays NULL on free and legacy bank-transfer invoices so the sweep
   // never touches them.
-  const cardFlow = !free && Boolean(config.stripe.secretKey);
+  const cardFlow = !flow && !free && Boolean(config.stripe.secretKey);
+  const linkDue = helsinkiDateOffset(Math.ceil((config.adminPayLinkHours || 72) / 24));
   const inv = {
     number: nextInvoiceNumber(),
     issued_at: nowISO(),
-    due_date: cardFlow ? helsinkiDateOffset(0) : helsinkiDateOffset(config.invoice.dueDays),
-    pay_by: cardFlow ? new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString() : null,
+    due_date: cardFlow || prepaid ? helsinkiDateOffset(0)
+      : atSession ? booking.date
+      : linkFlow ? (booking.date < linkDue ? booking.date : linkDue)
+      : helsinkiDateOffset(config.invoice.dueDays),
+    pay_by: cardFlow ? new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString()
+      : linkFlow ? new Date(Date.now() + (config.adminPayLinkHours || 72) * 3600000).toISOString()
+      : null,
+    pay_token: linkFlow ? require('node:crypto').randomBytes(16).toString('hex') : null,
   };
-  const html = renderInvoiceHTML(inv, booking, customer, coach.name, focus || booking.focus, lang,
-    free ? { method: 'credit', date: helsinkiNow().date } : null);
+  const paidStamp = free ? { method: 'credit', date: helsinkiNow().date }
+    : prepaid ? { method: 'manual', date: helsinkiNow().date } : null;
+  const html = renderInvoiceHTML(inv, booking, customer, coach.name, focus || booking.focus, lang, paidStamp);
   const fileName = `${inv.number}.html`;
   fs.writeFileSync(path.join(OUTBOX, fileName), html);
 
   const res = db.prepare(`INSERT INTO invoices
-    (booking_id, number, customer_email, amount_cents, issued_at, due_date, status, html_path, pay_by)
-    VALUES (?,?,?,?,?,?,?,?,?)`)
+    (booking_id, number, customer_email, amount_cents, issued_at, due_date, status, html_path, pay_by,
+     pay_token, at_session)
+    VALUES (?,?,?,?,?,?,?,?,?,?,?)`)
     .run(bookingId, inv.number, customer.email, booking.total_cents, inv.issued_at, inv.due_date,
-      free ? 'paid' : 'sent', fileName, inv.pay_by);
+      free || prepaid ? 'paid' : 'sent', fileName, inv.pay_by, inv.pay_token, atSession ? 1 : 0);
 
   // Fire-and-forget: never let email problems break a booking.
-  if (free) {
+  if (free || prepaid) {
     sendMail({
       to: customer.email,
       subject: tr(lang, 'email.receiptSubject', { siteName: config.siteName, number: inv.number }),
       html,
       log: { type: 'receipt', userId: booking.customer_id, bookingCode: booking.code },
     }).catch(err => console.error('[mailer]', err.message));
-  } else if (!config.stripe.secretKey) {
+  } else if (!config.stripe.secretKey && !flow) {
     sendInvoiceEmail({ to: customer.email, number: inv.number, html, lang,
       log: { userId: booking.customer_id, bookingCode: booking.code } })
       .catch(err => console.error('[mailer]', err.message));

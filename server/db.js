@@ -373,6 +373,14 @@ for (const stmt of [
   "ALTER TABLE group_sessions ADD COLUMN age_group TEXT NOT NULL DEFAULT ''",
   // Who started the session: 'coach' (app) or 'player' (booked a free slot).
   "ALTER TABLE group_sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT 'coach'",
+  // Admin-created bookings: a payment-request link the customer can open
+  // WITHOUT logging in (GET /api/pay/:token mints a fresh Stripe Checkout).
+  'ALTER TABLE invoices ADD COLUMN pay_token TEXT',
+  'ALTER TABLE group_signups ADD COLUMN pay_token TEXT',
+  // 1 = the admin agreed the customer pays at the session (cash/MobilePay on
+  // the pitch): pay_by stays NULL so the unpaid sweep never releases it, and
+  // the admin marks the invoice paid once the money changes hands.
+  'ALTER TABLE invoices ADD COLUMN at_session INTEGER NOT NULL DEFAULT 0',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }
@@ -394,8 +402,13 @@ for (const stmt of [
 // existed: still-unpaid card invoices get a 72 h window from this boot, so the
 // sweep can release them instead of letting the bookings complete unpaid.
 // Idempotent — after the first run no row matches (pay_by is set).
+// Pay-at-session invoices are excluded: they intentionally live with pay_by
+// NULL (the customer pays on the pitch), and one acquires a stripe_session_id
+// the moment the customer merely OPENS the online pay button — that must not
+// arm a release deadline the admin promised wouldn't exist.
 db.prepare(`UPDATE invoices SET pay_by = ?
-  WHERE pay_by IS NULL AND status = 'sent' AND stripe_session_id IS NOT NULL`)
+  WHERE pay_by IS NULL AND status = 'sent' AND stripe_session_id IS NOT NULL
+    AND at_session = 0`)
   .run(new Date(Date.now() + 72 * 3600000).toISOString());
 
 // ---------------------------------------------------------------------------

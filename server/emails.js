@@ -193,6 +193,30 @@ function sendCoachBookingEmail(bookingId) {
 // The unpaid-booking sweep cancelled this booking (payment never completed):
 // tell the customer plainly that nothing is booked and nothing was charged,
 // so an interrupted checkout can't be mistaken for a confirmed session.
+// Admin created a booking for this customer and chose "send a payment
+// request": the email carries a login-free pay link (GET /api/pay/:token
+// mints a fresh Stripe Checkout every time it is opened). `payBy` on the
+// invoice sets the deadline the copy quotes.
+function sendPaymentRequestEmail(invoiceNumber) {
+  const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(invoiceNumber);
+  if (!inv || !inv.pay_token) return;
+  const x = bookingBundle(inv.booking_id);
+  if (!x) return;
+  const { b, customer, coach, lang } = x;
+  const subject = tr(lang, 'email.payreq.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.payreq.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.payreq.body'))}</p>
+     ${detailBox([
+       bookingLine(lang, b, coach.name),
+       tr(lang, 'email.payreq.price', { price: eur(b.total_cents) }),
+       tr(lang, 'email.booking.ref', { code: b.code }),
+     ])}
+     ${button(`${config.siteUrl}/api/pay/${inv.pay_token}`, tr(lang, 'email.payreq.cta'))}
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.payreq.note'))}</p>`);
+  deliver({ type: 'payreq', userId: customer.id, bookingCode: b.code, to: customer.email, subject, html });
+}
+
 function sendBookingReleasedEmail(bookingId) {
   const x = bookingBundle(bookingId);
   if (!x) return;
@@ -233,10 +257,13 @@ function sendGroupConfirmedEmail(signupId) {
   if (!x) return;
   const { su, gs, customer, coach, lang } = x;
   const taken = require('./groups').takenCount(gs.id);
+  // Admin-created "pay at the session" spots are confirmed but UNPAID — the
+  // copy must not claim their payment was received.
+  const paid = Boolean(su.paid_at) || su.price_cents === 0;
   const subject = tr(lang, 'email.group.subject', { siteName: config.siteName, date: localDate(lang, gs.date) });
   const html = shell(lang, tr(lang, 'email.group.title'),
     `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
-     <p>${esc(tr(lang, 'email.group.body'))}</p>
+     <p>${esc(tr(lang, paid ? 'email.group.body' : 'email.group.body_unpaid', { price: eur(su.price_cents) }))}</p>
      ${detailBox([
        groupLine(lang, gs, coach),
        ...(gs.age_group ? [tr(lang, 'email.group.age', { age: gs.age_group })] : []),
@@ -259,6 +286,27 @@ function sendGroupReleasedEmail(signupId) {
      <p style="color:#6b6b70">${esc(tr(lang, 'email.grouprelease.note'))}</p>
      ${button(`${config.siteUrl}/#groups`, tr(lang, 'email.grouprelease.cta'))}`);
   deliver({ type: 'group_release', userId: customer.id, bookingCode: su.code, to: customer.email, subject, html });
+}
+
+// The group-spot twin of sendPaymentRequestEmail: admin reserved a spot for
+// this player, the email's link completes the payment without logging in.
+function sendGroupPaymentRequestEmail(signupId) {
+  const x = groupBundle(signupId);
+  if (!x || !x.su.pay_token) return;
+  const { su, gs, customer, coach, lang } = x;
+  const subject = tr(lang, 'email.payreq.subject', { siteName: config.siteName });
+  const html = shell(lang, tr(lang, 'email.payreq.title'),
+    `<p>${esc(tr(lang, 'email.greeting', { name: customer.name }))}</p>
+     <p>${esc(tr(lang, 'email.payreq.groupbody'))}</p>
+     ${detailBox([
+       groupLine(lang, gs, coach),
+       ...(gs.age_group ? [tr(lang, 'email.group.age', { age: gs.age_group })] : []),
+       tr(lang, 'email.payreq.price', { price: eur(su.price_cents) }),
+       tr(lang, 'email.group.ref', { code: su.code }),
+     ])}
+     ${button(`${config.siteUrl}/api/pay/${su.pay_token}`, tr(lang, 'email.payreq.cta'))}
+     <p style="color:#6b6b70">${esc(tr(lang, 'email.payreq.note'))}</p>`);
+  deliver({ type: 'payreq', userId: customer.id, bookingCode: su.code, to: customer.email, subject, html });
 }
 
 // The business cancelled: the whole session ('session_cancelled') or just this
@@ -499,6 +547,8 @@ module.exports = {
   sendCoachBookingEmail,
   sendPitchConfirmedEmail,
   sendBookingReleasedEmail,
+  sendPaymentRequestEmail,
+  sendGroupPaymentRequestEmail,
   sendGroupConfirmedEmail,
   sendGroupReleasedEmail,
   sendGroupCancelledEmail,

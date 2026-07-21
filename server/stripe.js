@@ -54,7 +54,11 @@ async function stripeRequest(method, path, params) {
 // booking invoice, { group_signup } for a group-training spot, { package }
 // for a prepaid session package. `successParam` lands on /my-bookings so the
 // return page knows what to refresh. `description` is shown on Stripe's page.
-function createCheckoutSession({ metadata, successParam, amountCents, description, customerEmail, origin, lang }) {
+// successUrl/cancelUrl (optional) override the default /my-bookings landing —
+// used by the login-free payment links (/api/pay/:token), whose payers may
+// have no way to open /my-bookings.
+function createCheckoutSession({ metadata, successParam, amountCents, description, customerEmail, origin, lang,
+  successUrl, cancelUrl }) {
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     locale: lang === 'fi' ? 'fi' : 'en',
@@ -73,12 +77,23 @@ function createCheckoutSession({ metadata, successParam, amountCents, descriptio
       },
     }],
     metadata,
-    success_url: `${origin}/my-bookings?${successParam}`,
-    cancel_url: `${origin}/my-bookings?paycancel=1`,
+    success_url: successUrl || `${origin}/my-bookings?${successParam}`,
+    cancel_url: cancelUrl || `${origin}/my-bookings?paycancel=1`,
   });
 }
 
 const retrieveSession = (id) => stripeRequest('GET', `/checkout/sessions/${encodeURIComponent(id)}`);
+
+// Best-effort expiry of a superseded Checkout session, so re-opening a pay
+// link can never leave TWO live sessions for the same purchase (double charge,
+// or a payment landing on a session the return leg no longer knows about).
+// Errors are swallowed: an already-completed or already-expired session
+// cannot be expired, and that is fine — the caller mints a fresh one anyway.
+async function expireSession(id) {
+  if (!enabled() || !id) return;
+  try { await stripeRequest('POST', `/checkout/sessions/${encodeURIComponent(id)}/expire`, {}); }
+  catch { /* completed or already expired — nothing to do */ }
+}
 
 // Full refund of a payment (group spot cancelled by the business). Returns
 // true when Stripe accepted the refund. Callers alert the admins on false —
@@ -220,6 +235,6 @@ function webhookHandler(req, res) {
 }
 
 module.exports = {
-  enabled, createCheckoutSession, retrieveSession, refundPayment,
+  enabled, createCheckoutSession, retrieveSession, expireSession, refundPayment,
   markInvoicePaid, alertAdmins, webhookHandler,
 };

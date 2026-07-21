@@ -131,6 +131,13 @@ module.exports = {
   // starts, since the coach is coming anyway. Multiples of 24 only.
   bookingMinLeadHours: 24,
 
+  // Admin-created bookings with "send a payment request by email": how long
+  // the customer has to pay through the emailed link before the reservation
+  // is released (the session start is always a deadline too, whichever comes
+  // first). Longer than the normal at-booking window on purpose — the
+  // customer isn't sitting in the checkout when the email arrives.
+  adminPayLinkHours: 72,
+
   // Coach commission tiers, based on COMPLETED sessions in the current calendar
   // month: sessions #1-5 pay the Tier 1 rate, #6-15 Tier 2, #16+ Tier 3.
   // IMPORTANT: coaches are never shown the percentages — the UI only ever shows

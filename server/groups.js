@@ -185,6 +185,16 @@ function markSignupPaid(code, stripeSession) {
 // makes the non-purchase explicit.
 function expirePendingSignups() {
   const now = new Date().toISOString();
+  // A pending spot whose session has already STARTED is dead regardless of
+  // its pay_by (an admin pay-link window can outlive the session): cancel it
+  // silently — a "your spot was released, book anew" email after the session
+  // took place would only confuse. A late payment on it is caught by
+  // markSignupPaid's session-gone guard, which alerts the admins to refund.
+  const hki = helsinkiNow();
+  db.prepare(`UPDATE group_signups SET status = 'cancelled'
+    WHERE status = 'pending' AND group_session_id IN (
+      SELECT id FROM group_sessions WHERE date < ? OR (date = ? AND hour <= ?))`)
+    .run(hki.date, hki.date, hki.hour);
   const stale = db.prepare(`SELECT id, customer_id FROM group_signups
     WHERE status = 'pending' AND pay_by IS NOT NULL AND pay_by < ?`).all(now);
   for (const s of stale) {

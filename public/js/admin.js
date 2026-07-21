@@ -40,6 +40,12 @@ const WIN_LABEL = {
   });
   document.getElementById('add-coach').addEventListener('click', () => openCoachEditor(null));
 
+  document.getElementById('nb-close').addEventListener('click', nbClose);
+  document.getElementById('nb-backdrop').addEventListener('click', (e) => {
+    if (e.target.id === 'nb-backdrop') nbClose();
+  });
+  document.getElementById('new-booking').addEventListener('click', openNewBooking);
+
   document.getElementById('sheets-sync').addEventListener('click', syncSheets);
   document.getElementById('remove-demo').addEventListener('click', removeDemo);
 
@@ -91,6 +97,9 @@ async function loadGroups() {
         : esc(g.location);
       const players = g.players.map((p) =>
         `<span class="chip ${p.paid ? '' : 'gray'}" title="${esc(p.email)}">${esc(p.name)}${
+          p.status === 'confirmed' && !p.paid
+            ? `<button class="link-btn" data-supaid="${p.signupId}" data-name="${esc(p.name)}"
+                 title="${esc(t('admin.groups.markpaid'))}" style="padding:0 0 0 5px">€</button>` : ''}${
           g.status === 'open'
             ? `<button class="link-btn" data-rmplayer="${g.id}:${p.signupId}" data-name="${esc(p.name)}"
                  style="padding:0 0 0 5px">×</button>` : ''}</span>`).join(' ');
@@ -132,6 +141,16 @@ async function loadGroups() {
       await API.post(`/admin/groups/${b.dataset.gaddp}/players`, { email });
       await loadGroups();
     } catch (e) { toast(I18N.server(e.message), true); }
+  }));
+  // The at-session money arrived (cash/MobilePay on the pitch).
+  tbl.querySelectorAll('[data-supaid]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('admin.groups.markpaid.confirm', { name: b.dataset.name }))) return;
+    b.disabled = true;
+    try {
+      await API.post(`/admin/group-signups/${b.dataset.supaid}/paid`, {});
+      toast(t('admin.groups.markpaid.done'));
+      await Promise.all([loadGroups(), loadFinance()]);
+    } catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
   }));
   tbl.querySelectorAll('[data-rmplayer]').forEach((b) => b.addEventListener('click', async () => {
     const [gid, sid] = b.dataset.rmplayer.split(':');
@@ -735,12 +754,19 @@ async function loadBookings(status) {
         <td>${esc(fmtDate(b.date))} ${String(b.hour).padStart(2, '0')}${hourSep}00</td>
         <td>${esc(b.coach)}</td>
         <td title="${esc(b.customer_email)}">${esc(b.customer)}</td>
-        <td>${esc(posLabel(b.position))} · ${esc(I18N.server(b.focus))}${b.is_online ? ' · ' + t('mybookings.table.online') : ' · ' + esc(b.location)}</td>
+        <td>${(() => {
+          // Position/focus are optional since July 2026 — collapse the empties.
+          const what = [b.position ? posLabel(b.position) : '', b.focus ? I18N.server(b.focus) : '']
+            .filter(Boolean).join(' · ') || t('mybookings.table.plain');
+          return `${esc(what)} · ${b.is_online ? t('mybookings.table.online') : esc(b.location)}`;
+        })()}</td>
         <td>${eur(b.total_cents)}</td>
         <td><span class="status-tag status-${esc(b.status)}">${esc(t('common.status.' + b.status))}</span></td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>
-             <span class="muted small">${esc(t('admin.invoicestatus.' + b.invoice_status))}</span>` : '—'}</td>
+             <span class="muted small">${esc(t('admin.invoicestatus.' + b.invoice_status))}${
+               b.invoice_at_session && b.invoice_status === 'sent'
+                 ? ' · ' + esc(t('admin.invoicestatus.atsession')) : ''}</span>` : '—'}</td>
         <td style="white-space:nowrap">
           ${b.status === 'confirmed' ? `
             <button class="btn btn-ghost btn-sm" data-act="completed" data-id="${b.id}"
@@ -784,12 +810,378 @@ async function loadBookings(status) {
     try {
       await API.post(`/admin/invoices/${encodeURIComponent(btn.dataset.paid)}/paid`, {});
       toast(t('admin.invoices.paid.toast'));
-      await Promise.all([refresh(), loadBookings(status), loadCRM()]);
+      await Promise.all([refresh(), loadBookings(status), loadCRM(), loadFinance()]);
     } catch (err) {
       btn.disabled = false;
       toast(I18N.server(err.message), true);
     }
   }));
+}
+
+// --- create a booking on behalf of a customer ---------------------------------
+// Four steps: customer (existing account or a new one) -> session (1-on-1 slot
+// or an open group session) -> payment mode (email a pay link / already paid /
+// pay at the session) -> confirm. POST /admin/bookings does the rest.
+let NB = null; // wizard state while the modal is open
+
+function openNewBooking() {
+  if (!CONFIG || !A) return; // page still booting — the wizard needs both
+  NB = {
+    step: 1, mode: 'existing', customer: null, results: [], q: '',
+    newC: { name: '', email: '', phone: '', area: '', lang: 'fi' },
+    kind: null, groups: null, group: null,
+    coachId: null, cal: {}, city: null, slot: null, notes: '',
+    payment: null, submitting: false,
+  };
+  document.getElementById('nb-backdrop').classList.add('open');
+  nbSearch('');
+  nbPaint();
+}
+
+function nbClose() {
+  if (NB && NB.submitting) return; // the POST is in flight — let it finish
+  document.getElementById('nb-backdrop').classList.remove('open');
+  NB = null;
+}
+
+async function nbSearch(q) {
+  const nb = NB; // the modal may close while the fetch is in flight
+  try {
+    const rows = await API.get('/admin/customers' + (q ? `?q=${encodeURIComponent(q)}` : ''));
+    if (NB === nb && nb && nb.q === q) { nb.results = rows; nbRenderResults(); }
+  } catch { /* search hiccup — keep the previous list */ }
+}
+
+function nbRenderResults() {
+  const wrap = document.getElementById('nb-results');
+  if (!wrap || !NB) return;
+  if (!NB.results.length) { wrap.innerHTML = `<p class="small muted">${t('admin.nb.noresults')}</p>`; return; }
+  wrap.innerHTML = NB.results.map((u) => `
+    <button class="btn ${NB.customer && NB.customer.id === u.id ? 'btn-primary' : 'btn-ghost'} btn-sm" data-cust="${u.id}"
+      style="display:flex;width:100%;justify-content:space-between;gap:10px;margin-bottom:6px;text-align:left">
+      <span>${esc(u.name)}</span><span class="muted small">${esc(u.email)}</span>
+    </button>`).join('');
+  wrap.querySelectorAll('[data-cust]').forEach((b) => b.addEventListener('click', () => {
+    NB.customer = NB.results.find((u) => u.id === Number(b.dataset.cust));
+    nbRenderResults();
+  }));
+}
+
+// Keep typed values across re-renders (mode/step switches).
+function nbReadStep1() {
+  const el = (id) => document.getElementById(id);
+  if (el('nb-name')) NB.newC.name = el('nb-name').value.trim();
+  if (el('nb-email')) NB.newC.email = el('nb-email').value.trim();
+  if (el('nb-phone')) NB.newC.phone = el('nb-phone').value.trim();
+  if (el('nb-area')) NB.newC.area = el('nb-area').value;
+  if (el('nb-lang')) NB.newC.lang = el('nb-lang').value;
+}
+function nbReadNotes() {
+  const el = document.getElementById('nb-notes');
+  if (el) NB.notes = el.value;
+}
+
+async function nbLoadCalendar(coachId) {
+  const nb = NB; // the modal may close while the fetch is in flight
+  if (nb.cal[coachId] !== undefined) return;
+  nb.cal[coachId] = null; // loading
+  const to = (() => {
+    const d = new Date(A.today + 'T12:00:00Z');
+    d.setUTCDate(d.getUTCDate() + (CONFIG.bookingHorizonDays || 60));
+    return d.toISOString().slice(0, 10);
+  })();
+  try {
+    const data = await API.get(`/admin/coaches/${coachId}/calendar?from=${A.today}&to=${to}`);
+    const booked = new Set(data.bookings.map((b) => `${b.date}|${b.hour}`));
+    const nowH = new Date().getHours(); // admin's clock ≈ Helsinki; the server re-checks anyway
+    nb.cal[coachId] = {
+      free: data.slots
+        .filter((s) => !booked.has(`${s.date}|${s.hour}`))
+        .filter((s) => s.date > A.today || (s.date === A.today && s.hour > nowH))
+        .sort((a, b) => (a.date === b.date ? a.hour - b.hour : (a.date < b.date ? -1 : 1))),
+    };
+  } catch { nb.cal[coachId] = { free: [] }; }
+  if (NB === nb && nb.step === 2 && nb.kind === 'single' && nb.coachId === coachId) nbPaint();
+}
+
+async function nbLoadGroups() {
+  const nb = NB; // the modal may close while the fetch is in flight
+  if (nb.groups) return;
+  try {
+    const rows = await API.get('/admin/groups');
+    const nowH = new Date().getHours();
+    nb.groups = rows.filter((g) => g.status === 'open' && g.taken < g.capacity
+      && (g.date > A.today || (g.date === A.today && g.hour > nowH)));
+  } catch { nb.groups = []; }
+  if (NB === nb && nb.step === 2 && nb.kind === 'group') nbPaint();
+}
+
+function nbSlotsHtml(hh) {
+  const cal = NB.cal[NB.coachId];
+  if (!cal) return `<p class="small muted">${t('admin.loading')}</p>`;
+  if (!cal.free.length) return `<p class="small muted">${t('admin.nb.noslots')}</p>`;
+  const byDate = new Map();
+  cal.free.forEach((s) => {
+    if (!byDate.has(s.date)) byDate.set(s.date, []);
+    byDate.get(s.date).push(s.hour);
+  });
+  let out = '';
+  for (const [date, hours] of byDate) {
+    out += `<div style="margin-bottom:8px"><div class="small muted">${esc(fmtDate(date))}</div>
+      <div style="display:flex;gap:6px;flex-wrap:wrap;margin-top:4px">
+        ${hours.map((h) => `<span class="chip chip-toggle ${NB.slot && NB.slot.date === date && NB.slot.hour === h ? 'on' : ''}"
+          data-slot="${date}|${h}">${hh(h)}</span>`).join('')}
+      </div></div>`;
+  }
+  return out;
+}
+
+function nbGroupsHtml(hh) {
+  if (!NB.groups) return `<p class="small muted">${t('admin.loading')}</p>`;
+  if (!NB.groups.length) return `<p class="small muted">${t('admin.nb.nogroups')}</p>`;
+  return '<div style="max-height:280px;overflow-y:auto">' + NB.groups.map((g) => `
+    <button class="btn ${NB.group && NB.group.code === g.code ? 'btn-primary' : 'btn-ghost'} btn-sm" data-group="${esc(g.code)}"
+      style="display:flex;width:100%;justify-content:space-between;gap:10px;margin-bottom:6px;text-align:left;flex-wrap:wrap">
+      <span>${esc(fmtDate(g.date))} ${hh(g.hour)} · ${esc(g.coach)} · ${esc(g.location)}${g.ageGroup ? ' · ' + esc(g.ageGroup) : ''}</span>
+      <span class="muted small">${t('admin.nb.group.spots', { taken: g.taken, capacity: g.capacity })} · ${eur(g.priceCents)}</span>
+    </button>`).join('') + '</div>';
+}
+
+function nbPaint() {
+  if (!NB) return;
+  const box = document.getElementById('nb-modal-body');
+  const hourSep = I18N.lang === 'fi' ? '.' : ':';
+  const hh = (h) => `${String(h).padStart(2, '0')}${hourSep}00`;
+  const head = `<h2 style="font-size:1.5rem;margin-bottom:2px">${t('admin.nb.title')}</h2>
+    <p class="small muted" style="margin:0 0 14px">${t('admin.nb.step', { n: NB.step })}</p>`;
+  const nav = (nextLabel = t('admin.nb.next')) => `
+    <div class="form-error" id="nb-err"></div>
+    <div style="display:flex;gap:10px;justify-content:space-between;margin-top:16px">
+      ${NB.step > 1 ? `<button class="btn btn-ghost" id="nb-back">${t('admin.nb.back')}</button>` : '<span></span>'}
+      <button class="btn btn-primary" id="nb-next">${nextLabel}</button>
+    </div>`;
+
+  if (NB.step === 1) {
+    const chip = (val, label) => `<span class="chip chip-toggle ${NB.mode === val ? 'on' : ''}" data-mode="${val}">${label}</span>`;
+    box.innerHTML = `${head}
+      <div style="display:flex;gap:8px;margin-bottom:12px">
+        ${chip('existing', t('admin.nb.existing'))}${chip('new', t('admin.nb.new'))}
+      </div>
+      ${NB.mode === 'existing' ? `
+        <input type="text" id="nb-q" placeholder="${esc(t('admin.nb.search.ph'))}" value="${esc(NB.q)}" autocomplete="off">
+        <div id="nb-results" style="max-height:260px;overflow-y:auto;margin-top:8px"></div>` : `
+        <p class="small muted" style="margin:0 0 10px">${t('admin.nb.newnote')}</p>
+        <input type="text" id="nb-name" placeholder="${esc(t('admin.nb.name.ph'))}" value="${esc(NB.newC.name)}" maxlength="80" style="margin-bottom:8px">
+        <input type="email" id="nb-email" placeholder="${esc(t('admin.nb.email.ph'))}" value="${esc(NB.newC.email)}" autocomplete="off" style="margin-bottom:8px">
+        <input type="text" id="nb-phone" placeholder="${esc(t('admin.nb.phone.ph'))}" value="${esc(NB.newC.phone)}" style="margin-bottom:8px">
+        <div style="display:flex;gap:8px">
+          <label class="small muted" style="flex:1">${t('admin.nb.area')}
+            <select class="input" id="nb-area" style="width:100%;margin-top:4px">
+              <option value="">${t('admin.nb.area.none')}</option>
+              ${(CONFIG.locations || []).map((l) => `<option ${NB.newC.area === l ? 'selected' : ''}>${esc(l)}</option>`).join('')}
+            </select></label>
+          <label class="small muted" style="flex:1">${t('admin.nb.lang')}
+            <select class="input" id="nb-lang" style="width:100%;margin-top:4px">
+              <option value="fi" ${NB.newC.lang === 'fi' ? 'selected' : ''}>Suomi</option>
+              <option value="en" ${NB.newC.lang === 'en' ? 'selected' : ''}>English</option>
+            </select></label>
+        </div>`}
+      ${nav()}`;
+    box.querySelectorAll('[data-mode]').forEach((c) => c.addEventListener('click', () => {
+      nbReadStep1();
+      NB.mode = c.dataset.mode;
+      nbPaint();
+    }));
+    if (NB.mode === 'existing') {
+      nbRenderResults();
+      let timer = null;
+      box.querySelector('#nb-q').addEventListener('input', (e) => {
+        NB.q = e.target.value.trim();
+        clearTimeout(timer);
+        timer = setTimeout(() => nbSearch(NB.q), 250);
+      });
+    }
+  }
+
+  if (NB.step === 2) {
+    const kindChip = (val, label) => `<span class="chip chip-toggle ${NB.kind === val ? 'on' : ''}" data-kind="${val}">${label}</span>`;
+    let body = `<label class="small muted">${t('admin.nb.kind')}</label>
+      <div style="display:flex;gap:8px;margin:6px 0 14px">
+        ${kindChip('single', t('admin.nb.kind.single'))}${kindChip('group', t('admin.nb.kind.group'))}</div>`;
+    if (NB.kind === 'single') {
+      const coach = A.coaches.find((c) => c.id === NB.coachId) || null;
+      body += `
+        <label class="small muted">${t('admin.nb.coach')}</label>
+        <select class="input" id="nb-coach" style="width:100%;margin:4px 0 12px">
+          <option value="">${t('admin.nb.coach.pick')}</option>
+          ${A.coaches.map((c) => `<option value="${c.id}" ${NB.coachId === c.id ? 'selected' : ''}>${esc(c.name)}</option>`).join('')}
+        </select>
+        ${coach ? `
+        <label class="small muted">${t('admin.nb.city')}</label>
+        <div style="display:flex;gap:8px;flex-wrap:wrap;margin:6px 0 12px">
+          ${coach.locations.map((l) => `<span class="chip chip-toggle ${NB.city === l ? 'on' : ''}" data-city="${esc(l)}">${esc(l)}</span>`).join('')}
+        </div>
+        <label class="small muted">${t('admin.nb.slot')}</label>
+        <div id="nb-slots" style="max-height:220px;overflow-y:auto;margin:6px 0 12px">${nbSlotsHtml(hh)}</div>
+        <label class="small muted">${t('admin.nb.notes')}</label>
+        <textarea id="nb-notes" rows="2" maxlength="500" style="margin-top:4px">${esc(NB.notes)}</textarea>` : ''}`;
+    } else if (NB.kind === 'group') {
+      body += nbGroupsHtml(hh);
+    }
+    box.innerHTML = `${head}${body}${nav()}`;
+    box.querySelectorAll('[data-kind]').forEach((c) => c.addEventListener('click', () => {
+      nbReadNotes();
+      NB.kind = c.dataset.kind;
+      if (NB.kind === 'group') nbLoadGroups();
+      nbPaint();
+    }));
+    const coachSel = box.querySelector('#nb-coach');
+    if (coachSel) coachSel.addEventListener('change', () => {
+      nbReadNotes();
+      NB.coachId = Number(coachSel.value) || null;
+      NB.city = null;
+      NB.slot = null;
+      const coach = A.coaches.find((c) => c.id === NB.coachId);
+      if (coach && coach.locations.length === 1) NB.city = coach.locations[0];
+      if (NB.coachId) nbLoadCalendar(NB.coachId);
+      nbPaint();
+    });
+    box.querySelectorAll('[data-city]').forEach((c) => c.addEventListener('click', () => {
+      nbReadNotes(); NB.city = c.dataset.city; nbPaint();
+    }));
+    box.querySelectorAll('[data-slot]').forEach((c) => c.addEventListener('click', () => {
+      nbReadNotes();
+      const [date, hour] = c.dataset.slot.split('|');
+      NB.slot = { date, hour: Number(hour) };
+      nbPaint();
+    }));
+    const notesEl = box.querySelector('#nb-notes');
+    if (notesEl) notesEl.addEventListener('input', () => { NB.notes = notesEl.value; });
+    box.querySelectorAll('[data-group]').forEach((b) => b.addEventListener('click', () => {
+      NB.group = NB.groups.find((g) => g.code === b.dataset.group);
+      nbPaint();
+    }));
+  }
+
+  if (NB.step === 3) {
+    const stripeOn = CONFIG.payment && CONFIG.payment.stripeEnabled;
+    const opt = (val, label, sub) => `
+      <button class="btn ${NB.payment === val ? 'btn-primary' : 'btn-ghost'}" data-pay="${val}"
+        style="display:block;width:100%;text-align:left;margin-bottom:8px">
+        <strong>${label}</strong><br><span class="small" style="opacity:.8">${sub}</span>
+      </button>`;
+    box.innerHTML = `${head}
+      <label class="small muted">${t('admin.nb.payment')}</label>
+      <div style="margin-top:6px">
+        ${stripeOn ? opt('link', t('admin.nb.pay.link'),
+          t('admin.nb.pay.link.sub', { hours: CONFIG.adminPayLinkHours || 72 })) : ''}
+        ${opt('paid', t('admin.nb.pay.paid'), t('admin.nb.pay.paid.sub'))}
+        ${opt('at_session', t('admin.nb.pay.at_session'), t('admin.nb.pay.at_session.sub'))}
+      </div>${nav()}`;
+    box.querySelectorAll('[data-pay]').forEach((b) => b.addEventListener('click', () => {
+      NB.payment = b.dataset.pay; nbPaint();
+    }));
+  }
+
+  if (NB.step === 4) {
+    const cust = NB.mode === 'existing' ? NB.customer : NB.newC;
+    let sessionLine, priceCents;
+    if (NB.kind === 'single') {
+      const coach = A.coaches.find((c) => c.id === NB.coachId);
+      sessionLine = `${coach ? coach.name : ''} · ${fmtDate(NB.slot.date)} ${hh(NB.slot.hour)} · ${NB.city}`;
+      const price = CONFIG.pricing.sessionPrice * 100;
+      priceCents = price - Math.round(price * (CONFIG.pricing.salePercent || 0) / 100);
+    } else {
+      sessionLine = `${t('admin.nb.kind.group')} · ${NB.group.coach} · ${fmtDate(NB.group.date)} ${hh(NB.group.hour)} · ${NB.group.location}`;
+      priceCents = NB.group.priceCents;
+    }
+    const row = (k, v) => `<tr><td class="muted" style="white-space:nowrap">${k}</td><td>${v}</td></tr>`;
+    box.innerHTML = `${head}
+      <h3 style="margin:0 0 10px">${t('admin.nb.confirm')}</h3>
+      <table class="data">
+        ${row(t('admin.nb.sum.customer'), `${esc(cust.name)} <span class="muted small">${esc(cust.email)}</span>${
+          NB.mode === 'new' ? ` <span class="chip gray" style="font-size:.65rem">${t('admin.nb.sum.newaccount')}</span>` : ''}`)}
+        ${row(t('admin.nb.sum.session'), esc(sessionLine))}
+        ${NB.kind === 'single' && NB.notes ? row(t('admin.nb.notes'), esc(NB.notes)) : ''}
+        ${row(t('admin.nb.sum.price'), `<strong>${eur(priceCents)}</strong>`)}
+        ${row(t('admin.nb.sum.payment'), esc(t('admin.nb.pay.' + NB.payment)))}
+      </table>
+      ${nav(t('admin.nb.create'))}`;
+  }
+
+  const backBtn = box.querySelector('#nb-back');
+  if (backBtn) backBtn.addEventListener('click', () => {
+    nbReadStep1();
+    nbReadNotes();
+    NB.step -= 1;
+    nbPaint();
+  });
+  box.querySelector('#nb-next').addEventListener('click', nbNext);
+}
+
+async function nbNext() {
+  const err = document.getElementById('nb-err');
+  err.textContent = '';
+  if (NB.step === 1) {
+    if (NB.mode === 'existing') {
+      if (!NB.customer) { err.textContent = t('admin.nb.err.customer'); return; }
+    } else {
+      nbReadStep1();
+      if (NB.newC.name.length < 2) { err.textContent = I18N.server('Please give your name.'); return; }
+      if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(NB.newC.email)) {
+        err.textContent = I18N.server('That email address does not look right.'); return;
+      }
+    }
+    NB.step = 2; nbPaint(); return;
+  }
+  if (NB.step === 2) {
+    nbReadNotes();
+    if (NB.kind === 'single') {
+      if (!NB.coachId || !NB.city || !NB.slot) { err.textContent = t('admin.nb.err.slot'); return; }
+    } else if (NB.kind === 'group') {
+      if (!NB.group) { err.textContent = t('admin.nb.err.group'); return; }
+    } else {
+      err.textContent = I18N.server('Choose the session type.'); return;
+    }
+    NB.step = 3; nbPaint(); return;
+  }
+  if (NB.step === 3) {
+    if (!NB.payment) { err.textContent = I18N.server('Choose how the payment is handled.'); return; }
+    NB.step = 4; nbPaint(); return;
+  }
+  // Step 4: create it.
+  if (NB.submitting) return;
+  NB.submitting = true;
+  const btn = document.getElementById('nb-next');
+  btn.disabled = true;
+  btn.textContent = t('admin.saving');
+  const payload = {
+    kind: NB.kind, payment: NB.payment,
+    customer: NB.mode === 'existing' ? { id: NB.customer.id } : { ...NB.newC },
+  };
+  if (NB.kind === 'single') {
+    Object.assign(payload, {
+      coachId: NB.coachId, date: NB.slot.date, hour: NB.slot.hour,
+      location: NB.city, notes: NB.notes,
+    });
+  } else {
+    payload.groupCode = NB.group.code;
+  }
+  try {
+    const r = await API.post('/admin/bookings', payload);
+    toast(NB.payment === 'link'
+      ? t('admin.nb.done.link', { email: r.customer.email })
+      : t('admin.nb.done.' + NB.payment));
+    NB.submitting = false; // allow nbClose again before tearing the state down
+    nbClose();
+    const cur = document.querySelector('#booking-filter button.on');
+    await Promise.all([refresh(), loadBookings(cur ? cur.dataset.s : ''), loadGroups(), loadCRM(), loadFinance()]);
+  } catch (e) {
+    NB.submitting = false;
+    btn.disabled = false;
+    btn.textContent = t('admin.nb.create');
+    err.textContent = I18N.server(e.message);
+  }
 }
 
 // --- CRM: customers + leads + reviews -------------------------------------------

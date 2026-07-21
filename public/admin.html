@@ -79,11 +79,14 @@
     <!-- bookings -->
     <div class="dash-title">
       <h2 style="font-size:1.8rem" data-i18n="admin.bookings.heading">Varaukset</h2>
-      <div class="window-pills" id="booking-filter">
+      <div style="display:flex;gap:12px;align-items:center;flex-wrap:wrap">
+        <button class="btn btn-primary btn-sm" id="new-booking" data-i18n="admin.nb.open">+ Luo varaus</button>
+        <div class="window-pills" id="booking-filter">
         <button data-s="" class="on" data-i18n="admin.filter.all">Kaikki</button>
         <button data-s="confirmed" data-i18n="admin.bookings.filter.upcoming">Tulevat</button>
         <button data-s="completed" data-i18n="admin.bookings.filter.completed">Pidetyt</button>
         <button data-s="cancelled" data-i18n="admin.bookings.filter.cancelled">Perutut</button>
+        </div>
       </div>
     </div>
     <div class="card" style="overflow-x:auto">
@@ -209,6 +212,14 @@
     <div class="modal" style="max-width:640px" role="dialog" aria-modal="true">
       <button class="close" id="coach-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
       <div id="coach-modal-body"></div>
+    </div>
+  </div>
+
+  <!-- create-a-booking-for-a-customer modal -->
+  <div class="modal-backdrop" id="nb-backdrop">
+    <div class="modal" style="max-width:640px" role="dialog" aria-modal="true">
+      <button class="close" id="nb-close" data-i18n-aria="common.close" aria-label="Sulje">×</button>
+      <div id="nb-modal-body"></div>
     </div>
   </div>
 
