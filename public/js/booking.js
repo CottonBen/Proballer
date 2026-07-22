@@ -25,6 +25,8 @@ async function openWizard(coach, site, preset = null) {
   W.notes = preset ? preset.notes : '';
   W.package = 'single';
   W.pkgInfo = undefined; // fetched once at the review step
+  W.code = '';           // promo code the customer typed (validated server-side)
+  W.codeInfo = null;     // { code, discountCents, finalCents } once applied
   W.step = 0;
   backdrop().classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -250,6 +252,23 @@ async function renderReview() {
       </div>
     </div>` : '';
 
+  // Promo code box — shown only when the customer actually pays now (not for a
+  // free credit or a package-funded session). The server re-validates and
+  // computes the real discount at submit; this is just a live preview.
+  const canPromo = payNowCents > 0 && !hasCredit && !pkgRemaining;
+  const promoBox = canPromo ? `
+    <div style="margin-top:16px">
+      <div class="small muted" style="text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${t('booking.promo.title')}</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <input id="promo-input" maxlength="32" placeholder="${esc(t('booking.promo.placeholder'))}"
+          style="text-transform:uppercase;flex:1;min-width:120px" value="${esc(W.code)}">
+        <button class="btn btn-ghost btn-sm" id="promo-apply">${t('booking.promo.apply')}</button>
+      </div>
+      <p class="small" id="promo-msg" style="margin:6px 0 0">${W.codeInfo
+        ? `<span style="color:var(--lime)">${t('booking.promo.applied', { code: esc(W.codeInfo.code), off: eur(W.codeInfo.discountCents), total: eur(W.codeInfo.finalCents) })}</span>`
+        : ''}</p>
+    </div>` : '';
+
   body().innerHTML = header(t(STEP_TITLE_KEYS[3])) + `
     <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.time_label')}</span>
@@ -281,6 +300,7 @@ async function renderReview() {
                   : t('booking.review.invoice_note_delivery_mybookings'),
                 method: esc(payMethod),
               }))}</p>
+    ${promoBox}
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -297,8 +317,28 @@ async function renderReview() {
   // Package choice re-renders the review so the price + note follow along.
   body().querySelectorAll('[data-pkg]').forEach((card) => card.addEventListener('click', () => {
     W.package = card.dataset.pkg;
+    W.codeInfo = null; // the code must be re-checked against the new price
     renderReview();
   }));
+
+  // Promo code: validate against what the customer pays now (preview only — the
+  // server re-checks and computes the real discount at submit).
+  const promoInput = body().querySelector('#promo-input');
+  if (promoInput) {
+    const applyPromo = async () => {
+      const code = promoInput.value.trim().toUpperCase();
+      W.code = code;
+      const msg = body().querySelector('#promo-msg');
+      if (!code) { W.codeInfo = null; if (msg) msg.textContent = ''; return; }
+      try {
+        const r = await API.post('/discounts/validate', { code, baseCents: payNowCents });
+        if (r.valid) { W.codeInfo = r; renderReview(); }
+        else { W.codeInfo = null; if (msg) msg.innerHTML = `<span class="form-error">${esc(r.error || t('booking.promo.invalid'))}</span>`; }
+      } catch { W.codeInfo = null; if (msg) msg.innerHTML = `<span class="form-error">${esc(t('booking.promo.invalid'))}</span>`; }
+    };
+    body().querySelector('#promo-apply').addEventListener('click', applyPromo);
+    promoInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') { e.preventDefault(); applyPromo(); } });
+  }
 
   if (needsAuth) renderAuthPanel();
   else if (needsVerify) wizardVerifyPanel(body().querySelector('#auth-panel'), W.user.email || '');
@@ -317,6 +357,7 @@ async function renderReview() {
         location: W.location,
         notes: W.notes.trim(),
         package: chosenPkg ? chosenPkg.id : undefined,
+        code: W.code || undefined, // promo code, re-validated server-side
         lang: I18N.lang, // the invoice is generated in this language
       });
       W.step = 4;

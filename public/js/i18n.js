@@ -947,6 +947,11 @@ const I18N_DICT = {
   "landing.groups.pay_failed": { fi: "Maksun aloitus epäonnistui — paikka odottaa maksua Omat varaukset -sivulla.", en: "Could not start the payment — your spot awaits payment on the My bookings page." },
 
   // --- packages: booking wizard ----------------------------------------------
+  "booking.promo.title": { fi: "Alennuskoodi", en: "Discount code" },
+  "booking.promo.placeholder": { fi: "Kirjoita koodi", en: "Enter code" },
+  "booking.promo.apply": { fi: "Käytä", en: "Apply" },
+  "booking.promo.applied": { fi: "Koodi {code} käytössä — säästät {off}. Maksat {total}.", en: "Code {code} applied — you save {off}. You pay {total}." },
+  "booking.promo.invalid": { fi: "Koodi ei kelpaa.", en: "That code is not valid." },
   "booking.pkg.title": { fi: "Valitse paketti", en: "Choose a package" },
   "booking.pkg.single": { fi: "Yksittäinen treeni", en: "Single session" },
   "booking.pkg.multi": { fi: "{n} treenin paketti", en: "{n}-session package" },
