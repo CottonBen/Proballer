@@ -88,6 +88,18 @@ app.use((req, res, next) => {
 
 app.use('/api', require('./routes/api'));
 
+// The financial model is ADMIN-ONLY at the page level too — customers,
+// coaches and anonymous visitors are redirected away before the shell is
+// even served (its APIs additionally enforce the admin role themselves).
+// The HTML lives OUTSIDE public/ on purpose: the static file server below
+// must never offer an ungated path to it.
+app.get('/admin/financial-model', (req, res) => {
+  if (!req.user) return res.redirect('/login');
+  if (req.user.role !== 'admin') return res.redirect('/');
+  res.set('Cache-Control', 'no-store');
+  res.sendFile(path.join(__dirname, 'pages', 'financial-model.html'));
+});
+
 // Admin-uploaded coach photos, served from the persistent data disk. Uploads
 // get a unique random filename each time, so they are safe to cache for long.
 app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { maxAge: '7d' }));

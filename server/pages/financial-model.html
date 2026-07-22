@@ -1,0 +1,139 @@
+<!doctype html>
+<html lang="fi">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title data-i18n="fm.title">Talousmalli — Proballers Coaching</title>
+  <link rel="icon" href="/assets/favicon.svg?v=2" type="image/svg+xml">
+  <link rel="icon" href="/assets/favicon-32.png" sizes="32x32" type="image/png">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<!-- ADMIN-ONLY financial scenario-planning tool. This page is served by a
+     gated route in server/app.js (never by the static file server), its APIs
+     are admin-only, and everything on it is either clearly-labelled ACTUAL
+     read-only data or MODELLED assumptions that live in fm_* tables only. -->
+<body class="theme-green">
+  <header class="site-header">
+    <div class="wrap">
+      <a class="brand" href="/">
+        <img src="/assets/logo.svg?v=2" alt="">
+        <span>Proballers <em>Coaching</em></span>
+      </a>
+      <div id="auth-box"></div>
+    </div>
+  </header>
+
+  <main class="wrap">
+    <div class="dash-title">
+      <div>
+        <h1 style="font-size:2.4rem" data-i18n="fm.heading">Talousmalli</h1>
+        <p class="muted" style="margin:0" data-i18n="fm.subtitle">Skenaariotyökalu hinnoittelun, kulujen ja
+          tavoitteiden mallintamiseen. Tämä on suunnittelutyökalu — ei kirjanpitoa.</p>
+      </div>
+      <a class="btn btn-ghost btn-sm" href="/admin" data-i18n="fm.back">← Komentokeskus</a>
+    </div>
+
+    <p class="small muted" style="margin:0 0 18px" data-i18n="fm.disclaimer">Kaikki mallinnetut luvut ovat
+      yksinkertaistettuja arvioita. Vero on yksinkertaistettu mallinnusoletus eikä korvaa suomalaista vero-
+      tai kirjanpitoneuvontaa. Mallin muuttaminen ei koskaan muuta oikeita varauksia, maksuja tai asiakastietoja.</p>
+
+    <!-- ═══════════ ACTUAL BUSINESS DATA (read-only) ═══════════ -->
+    <div class="dash-title" style="margin-bottom:6px">
+      <div>
+        <h2 style="font-size:1.6rem;margin:0"><span class="chip" style="font-size:.65rem;vertical-align:middle;margin-right:8px" data-i18n="fm.badge.actual">TOTEUMA</span><span data-i18n="fm.actual.heading">Todellinen liiketoiminta</span></h2>
+        <p class="muted small" style="margin:0" data-i18n="fm.actual.sub">Vain luku — samat luvut kuin
+          Komentokeskuksen talousraportissa. Malli ei koskaan muuta näitä.</p>
+      </div>
+      <button class="btn btn-ghost btn-sm" id="fm-load-actuals" data-i18n="fm.actual.load">Lataa toteuma malliin</button>
+    </div>
+    <div class="grid stat-grid" id="fm-actual-cards" style="margin-bottom:26px"></div>
+
+    <!-- ═══════════ FINANCIAL SCENARIO MODEL (assumptions) ═══════════ -->
+    <div class="dash-title" style="margin-bottom:6px">
+      <div>
+        <h2 style="font-size:1.6rem;margin:0"><span class="chip gray" style="font-size:.65rem;vertical-align:middle;margin-right:8px" data-i18n="fm.badge.model">MALLI</span><span data-i18n="fm.model.heading">Skenaariomalli</span></h2>
+        <p class="muted small" style="margin:0" data-i18n="fm.model.sub">Liu'uta oletuksia — kaikki luvut,
+          katteet, nollapiste ja kaaviot päivittyvät heti.</p>
+      </div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap">
+        <button class="btn btn-ghost btn-sm" id="fm-save-defaults" data-i18n="fm.defaults.save">Tallenna oletusarvoiksi</button>
+      </div>
+    </div>
+
+    <div class="grid" style="grid-template-columns:minmax(300px,5fr) minmax(300px,7fr);gap:18px;align-items:start">
+      <div class="card" id="fm-sliders"></div>
+      <div>
+        <div class="grid stat-grid" id="fm-kpis" style="margin-bottom:18px"></div>
+        <div class="card" style="overflow-x:auto"><table class="data" id="fm-waterfall"></table></div>
+      </div>
+    </div>
+
+    <!-- break-even + customers needed -->
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:18px;margin-top:18px">
+      <div class="card">
+        <h3 style="margin:0 0 4px" data-i18n="fm.be.heading">Nollapiste (break-even)</h3>
+        <p class="small muted" style="margin:0 0 10px" data-i18n="fm.be.sub">Kuinka paljon myyntiä tarvitaan,
+          että kiinteät kulut on katettu — sen jälkeen jokainen treeni tuottaa voittoa.</p>
+        <div id="fm-be"></div>
+      </div>
+      <div class="card">
+        <h3 style="margin:0 0 4px" data-i18n="fm.need.heading">Montako asiakasta tarvitsen?</h3>
+        <p class="small muted" style="margin:0 0 10px" data-i18n="fm.need.sub">Nykyisillä oletuksilla
+          (hinta, treenit/asiakas, kulut, vero).</p>
+        <div style="overflow-x:auto"><table class="data" id="fm-need"></table></div>
+      </div>
+    </div>
+
+    <!-- solve for -->
+    <div class="card" style="margin-top:18px">
+      <h3 style="margin:0 0 4px" data-i18n="fm.solve.heading">Tavoitelaskuri — ratkaise taaksepäin</h3>
+      <p class="small muted" style="margin:0 0 12px" data-i18n="fm.solve.sub">Aseta tavoite ja valitse mikä
+        muuttuja ratkaistaan — muut oletukset pysyvät ennallaan. Tulos on erillinen tavoiteskenaario, se ei
+        muuta malliasi.</p>
+      <div id="fm-solve-form" style="display:flex;gap:10px;flex-wrap:wrap;align-items:flex-end"></div>
+      <div id="fm-solve-result" style="margin-top:14px"></div>
+    </div>
+
+    <!-- monthly costs -->
+    <div class="card" style="margin-top:18px">
+      <h3 style="margin:0 0 4px" data-i18n="fm.costs.heading">Kuukausikulut</h3>
+      <p class="small muted" style="margin:0 0 12px" data-i18n="fm.costs.sub">Mallin kulurivit (Render, Gandi,
+        Brevo, vakuutus, markkinointi…). Kiinteä = sama summa joka kuukausi; per treeni ja % liikevaihdosta =
+        muuttuvia kuluja. Nämä ovat mallinnusoletuksia — eivät kirjanpitoa.</p>
+      <div style="overflow-x:auto"><table class="data" id="fm-costs-table"></table></div>
+      <div id="fm-cost-add" style="display:flex;gap:8px;flex-wrap:wrap;align-items:flex-end;margin-top:12px"></div>
+    </div>
+
+    <!-- scenarios -->
+    <div class="card" style="margin-top:18px">
+      <h3 style="margin:0 0 4px" data-i18n="fm.scen.heading">Skenaariot</h3>
+      <p class="small muted" style="margin:0 0 12px" data-i18n="fm.scen.sub">Tallenna nykyiset oletukset
+        nimellä ja vertaa skenaarioita rinnakkain. Tallennetut skenaariot ovat erillään oikeasta
+        liiketoimintadatasta.</p>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+        <input type="text" id="fm-scen-name" maxlength="60" style="max-width:240px">
+        <button class="btn btn-primary btn-sm" id="fm-scen-save" data-i18n="fm.scen.save">Tallenna skenaario</button>
+      </div>
+      <div id="fm-scen-list" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px"></div>
+      <div id="fm-scen-compare" style="margin-top:14px;overflow-x:auto"></div>
+    </div>
+
+    <!-- charts -->
+    <div class="grid" style="grid-template-columns:repeat(auto-fit,minmax(340px,1fr));gap:18px;margin-top:18px">
+      <div class="card"><h3 style="margin:0 0 8px" data-i18n="fm.chart.customers">Liikevaihto ja kulut asiakasmäärän kasvaessa</h3><div id="fm-chart-customers"></div></div>
+      <div class="card"><h3 style="margin:0 0 8px" data-i18n="fm.chart.price">Nettotulos hinnan muuttuessa</h3><div id="fm-chart-price"></div></div>
+      <div class="card"><h3 style="margin:0 0 8px" data-i18n="fm.chart.projection">12 kk ennuste (uudet asiakkaat/kk mukana)</h3><div id="fm-chart-projection"></div></div>
+    </div>
+
+    <p class="small muted" style="margin:20px 0" data-i18n="fm.footnote">Bruttokate = liikevaihto miinus suorat
+      kulut (valmentajapalkkiot ja muut muuttuvat kulut) jaettuna liikevaihdolla. Nettomarginaali = nettotulos
+      jaettuna liikevaihdolla mallinnettujen kulujen ja veron jälkeen. Katetuotto per treeni = mitä yksi
+      lisätreeni tuo kiinteiden kulujen kattamiseen.</p>
+  </main>
+
+  <script src="/js/i18n.js"></script>
+  <script src="/js/common.js"></script>
+  <script src="/js/fm-model.js"></script>
+  <script src="/js/financial-model.js"></script>
+</body>
+</html>

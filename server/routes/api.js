@@ -2675,6 +2675,169 @@ router.get('/admin/sources', requireRole('admin'), (req, res) => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// Financial MODEL (the admin-only scenario-planning tool at
+// /admin/financial-model). Strictly separated from operational data:
+//  - reads actual business performance through the SAME primitives the
+//    finance report uses (paid invoices / paid group spots / paid packages /
+//    snapshotted coach payouts) — read-only, and clearly labelled "actual";
+//  - writes touch ONLY the fm_costs / fm_scenarios tables and the
+//    'fm_defaults' meta row. No endpoint here can modify bookings, invoices,
+//    payments, customers or coaches.
+// All endpoints are admin-only; the page itself is gated in server/app.js.
+// ---------------------------------------------------------------------------
+const FM_KINDS = new Set(['fixed', 'per_session', 'pct_revenue']);
+
+function fmReadCost(body, existing = {}) {
+  const name = body.name === undefined ? existing.name : String(body.name || '').trim().slice(0, 60);
+  const kind = body.kind === undefined ? existing.kind : String(body.kind);
+  const amountCents = body.amountEur === undefined
+    ? (existing.amount_cents || 0)
+    : Math.round(Number(body.amountEur) * 100);
+  const percent = body.percent === undefined ? (existing.percent || 0) : Number(body.percent);
+  const notes = body.notes === undefined ? (existing.notes || '') : String(body.notes || '').trim().slice(0, 300);
+  const active = body.active === undefined ? (existing.active ?? 1) : (body.active ? 1 : 0);
+  if (!name) return { error: 'Give the cost a name.' };
+  if (!FM_KINDS.has(kind)) return { error: 'Pick a cost type.' };
+  if (!Number.isFinite(amountCents) || amountCents < 0 || amountCents > 100000 * 100) {
+    return { error: 'The amount must be between 0 and 100 000 €.' };
+  }
+  if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
+    return { error: 'The percentage must be between 0 and 100.' };
+  }
+  return { name, kind, amountCents, percent, notes, active };
+}
+
+router.get('/admin/financial-model/data', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  tiers.snapshotPendingPayouts();
+  const month = helsinkiNow().date.slice(0, 7);
+  const from30 = helsinkiDateOffset(-29);
+  const sum = (sql, ...p) => db.prepare(sql).get(...p).s || 0;
+  const cnt = (sql, ...p) => db.prepare(sql).get(...p).n || 0;
+
+  // Revenue over a date window — the finance report's exact primitives.
+  const revenueSince = (from) =>
+    sum(`SELECT SUM(i.amount_cents) s FROM invoices i JOIN bookings b ON b.id = i.booking_id
+         JOIN users u ON u.id = b.customer_id
+         WHERE i.status = 'paid' AND u.demo = 0 AND substr(i.issued_at, 1, 10) >= ?`, from)
+    + sum(`SELECT SUM(g.price_cents) s FROM group_signups g JOIN users u ON u.id = g.customer_id
+         WHERE g.status = 'confirmed' AND g.paid_at IS NOT NULL AND u.demo = 0
+           AND substr(g.paid_at, 1, 10) >= ?`, from)
+    + sum(`SELECT SUM(p.price_cents) s FROM packages p JOIN users u ON u.id = p.customer_id
+         WHERE p.status = 'active' AND p.paid_at IS NOT NULL AND u.demo = 0
+           AND substr(p.paid_at, 1, 10) >= ?`, from);
+
+  const paid1on1Cents30 = sum(`SELECT SUM(i.amount_cents) s FROM invoices i
+      JOIN bookings b ON b.id = i.booking_id JOIN users u ON u.id = b.customer_id
+      WHERE i.status = 'paid' AND u.demo = 0 AND substr(i.issued_at, 1, 10) >= ?`, from30);
+  const paid1on1Count30 = cnt(`SELECT COUNT(*) n FROM invoices i
+      JOIN bookings b ON b.id = i.booking_id JOIN users u ON u.id = b.customer_id
+      WHERE i.status = 'paid' AND u.demo = 0 AND i.amount_cents > 0
+        AND substr(i.issued_at, 1, 10) >= ?`, from30);
+  const payouts30 = sum(`SELECT SUM(earn_cents) s FROM bookings
+      WHERE status = 'completed' AND earn_cents IS NOT NULL AND date >= ?`, from30);
+  const revenue30 = revenueSince(from30);
+
+  const actual = {
+    month,
+    revenueThisMonthCents: revenueSince(month + '-01'),
+    revenue30Cents: revenue30,
+    customersTotal: cnt("SELECT COUNT(*) n FROM users WHERE role = 'customer' AND demo = 0"),
+    customersActive30: cnt(`SELECT COUNT(DISTINCT id) n FROM (
+        SELECT b.customer_id id FROM bookings b JOIN users u ON u.id = b.customer_id
+          WHERE b.status != 'cancelled' AND b.demo = 0 AND u.demo = 0 AND b.date >= ?
+        UNION
+        SELECT g.customer_id FROM group_signups g
+          JOIN group_sessions s ON s.id = g.group_session_id
+          JOIN users u ON u.id = g.customer_id
+          WHERE g.status = 'confirmed' AND u.demo = 0 AND s.date >= ?)`, from30, from30),
+    sessions1on1Completed30: cnt(`SELECT COUNT(*) n FROM bookings b JOIN users u ON u.id = b.customer_id
+        WHERE b.status = 'completed' AND b.demo = 0 AND u.demo = 0 AND b.date >= ?`, from30),
+    groupSessions30: cnt(`SELECT COUNT(*) n FROM group_sessions
+        WHERE status = 'completed' AND date >= ?`, from30),
+    groupSpotsPaid30: cnt(`SELECT COUNT(*) n FROM group_signups g JOIN users u ON u.id = g.customer_id
+        WHERE g.status = 'confirmed' AND g.paid_at IS NOT NULL AND u.demo = 0
+          AND substr(g.paid_at, 1, 10) >= ?`, from30),
+    avgPaid1on1Cents: paid1on1Count30 ? Math.round(paid1on1Cents30 / paid1on1Count30) : null,
+    avgCoachCostCents: (() => {
+      const r = db.prepare(`SELECT AVG(earn_cents) a FROM bookings
+        WHERE status = 'completed' AND earn_cents IS NOT NULL AND date >= ?`).get(helsinkiDateOffset(-89));
+      return r.a == null ? null : Math.round(r.a);
+    })(),
+    payouts30Cents: payouts30,
+    // Profit BEFORE fixed costs — the operational records don't know about
+    // rent/software/etc, so this is revenue minus coach payouts, labelled so.
+    profitBeforeFixed30Cents: revenue30 - payouts30,
+  };
+
+  const costs = db.prepare('SELECT * FROM fm_costs ORDER BY active DESC, kind, id').all()
+    .map((c) => ({ id: c.id, name: c.name, kind: c.kind, amountEur: c.amount_cents / 100,
+      percent: c.percent, active: Boolean(c.active), notes: c.notes }));
+  const defaultsRow = db.prepare("SELECT value FROM meta WHERE key = 'fm_defaults'").get();
+  let defaults = null;
+  try { defaults = defaultsRow ? JSON.parse(defaultsRow.value) : null; } catch { /* corrupt = none */ }
+  const scenarios = db.prepare('SELECT id, name, data, created_at FROM fm_scenarios ORDER BY id DESC').all()
+    .map((s) => { let data = null; try { data = JSON.parse(s.data); } catch { /* skip */ }
+      return { id: s.id, name: s.name, data, createdAt: s.created_at.slice(0, 10) }; })
+    .filter((s) => s.data);
+  res.json({ actual, costs, defaults, scenarios });
+});
+
+router.post('/admin/financial-model/costs', requireRole('admin'), (req, res) => {
+  const v = fmReadCost(req.body || {});
+  if (v.error) return res.status(400).json({ error: v.error });
+  const info = db.prepare(`INSERT INTO fm_costs (name, kind, amount_cents, percent, active, notes, created_at)
+    VALUES (?,?,?,?,?,?,?)`)
+    .run(v.name, v.kind, v.amountCents, v.percent, v.active, v.notes, nowISO());
+  res.status(201).json({ ok: true, id: Number(info.lastInsertRowid) });
+});
+
+router.put('/admin/financial-model/costs/:id', requireRole('admin'), (req, res) => {
+  const c = db.prepare('SELECT * FROM fm_costs WHERE id = ?').get(Number(req.params.id));
+  if (!c) return res.status(404).json({ error: 'Cost not found.' });
+  const v = fmReadCost(req.body || {}, c);
+  if (v.error) return res.status(400).json({ error: v.error });
+  db.prepare(`UPDATE fm_costs SET name = ?, kind = ?, amount_cents = ?, percent = ?, active = ?, notes = ?
+    WHERE id = ?`).run(v.name, v.kind, v.amountCents, v.percent, v.active, v.notes, c.id);
+  res.json({ ok: true });
+});
+
+router.delete('/admin/financial-model/costs/:id', requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM fm_costs WHERE id = ?').run(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+router.post('/admin/financial-model/scenarios', requireRole('admin'), (req, res) => {
+  const name = String(req.body?.name || '').trim().slice(0, 60);
+  if (!name) return res.status(400).json({ error: 'Give the scenario a name.' });
+  const data = req.body?.data;
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Nothing to save.' });
+  const json = JSON.stringify(data);
+  if (json.length > 20000) return res.status(400).json({ error: 'The scenario is too large.' });
+  if (db.prepare('SELECT COUNT(*) n FROM fm_scenarios').get().n >= 50) {
+    return res.status(409).json({ error: 'Scenario limit reached — delete old scenarios first.' });
+  }
+  const info = db.prepare('INSERT INTO fm_scenarios (name, data, created_at) VALUES (?,?,?)')
+    .run(name, json, nowISO());
+  res.status(201).json({ ok: true, id: Number(info.lastInsertRowid) });
+});
+
+router.delete('/admin/financial-model/scenarios/:id', requireRole('admin'), (req, res) => {
+  db.prepare('DELETE FROM fm_scenarios WHERE id = ?').run(Number(req.params.id));
+  res.json({ ok: true });
+});
+
+router.put('/admin/financial-model/defaults', requireRole('admin'), (req, res) => {
+  const data = req.body?.data;
+  if (!data || typeof data !== 'object') return res.status(400).json({ error: 'Nothing to save.' });
+  const json = JSON.stringify(data);
+  if (json.length > 20000) return res.status(400).json({ error: 'The defaults are too large.' });
+  db.prepare(`INSERT INTO meta (key, value) VALUES ('fm_defaults', ?)
+    ON CONFLICT(key) DO UPDATE SET value = excluded.value`).run(json);
+  res.json({ ok: true });
+});
+
 // Admin moderation: remove a review outright.
 router.post('/admin/reviews/:id/delete', requireRole('admin'), (req, res) => {
   const info = db.prepare('DELETE FROM reviews WHERE id = ?').run(Number(req.params.id));

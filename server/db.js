@@ -295,6 +295,33 @@ CREATE TABLE IF NOT EXISTS contact_requests (
 
 -- Coach <-> customer chat. One thread per pair, auto-created on first booking.
 -- Admins are implicit members of every chat (business oversight).
+-- ---------------------------------------------------------------------------
+-- Financial MODEL tables (fm_*): the admin-only scenario-planning tool.
+-- These hold MODELLED assumptions only — never operational/accounting data.
+-- Nothing in the booking/invoice/payment flow reads or writes them, and the
+-- financial model never writes anywhere else.
+-- ---------------------------------------------------------------------------
+CREATE TABLE IF NOT EXISTS fm_costs (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  -- 'fixed'       = operating cost, a flat amount per month (amount_cents)
+  -- 'per_session' = direct/variable cost per session held (amount_cents)
+  -- 'pct_revenue' = direct/variable cost as % of revenue (percent)
+  kind TEXT NOT NULL CHECK (kind IN ('fixed','per_session','pct_revenue')),
+  amount_cents INTEGER NOT NULL DEFAULT 0,
+  percent REAL NOT NULL DEFAULT 0,
+  active INTEGER NOT NULL DEFAULT 1,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
+
+CREATE TABLE IF NOT EXISTS fm_scenarios (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  name TEXT NOT NULL,
+  data TEXT NOT NULL,          -- JSON snapshot of every model assumption
+  created_at TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS chats (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   coach_id INTEGER NOT NULL REFERENCES coaches(id),
