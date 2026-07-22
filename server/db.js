@@ -344,6 +344,24 @@ CREATE TABLE IF NOT EXISTS chat_reads (
   last_read_id INTEGER NOT NULL DEFAULT 0,
   PRIMARY KEY (chat_id, user_id)
 );
+
+-- Promo/discount codes a customer types at checkout (or the admin applies).
+-- A code takes either a percentage or a fixed euro amount off, and can be
+-- limited by a number of uses, an expiry date, or both. "Uses" are DERIVED
+-- (count of non-cancelled purchases carrying the code), never stored — so a
+-- cancelled booking automatically frees its use, same idea as packages.
+CREATE TABLE IF NOT EXISTS discounts (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  code TEXT NOT NULL UNIQUE,               -- stored UPPERCASE
+  kind TEXT NOT NULL CHECK (kind IN ('percent','fixed')),
+  percent REAL NOT NULL DEFAULT 0,         -- for 'percent' (20 = 20% off)
+  amount_cents INTEGER NOT NULL DEFAULT 0, -- for 'fixed' (1000 = 10 € off)
+  max_uses INTEGER,                        -- NULL = unlimited
+  expires_at TEXT,                         -- ISO datetime; NULL = never expires
+  active INTEGER NOT NULL DEFAULT 1,
+  notes TEXT NOT NULL DEFAULT '',
+  created_at TEXT NOT NULL
+);
 `);
 
 // Idempotent column migrations for databases created before a feature existed.
@@ -418,6 +436,15 @@ for (const stmt of [
   "ALTER TABLE contact_requests ADD COLUMN source TEXT NOT NULL DEFAULT ''",
   // First-touch lookups + per-visitor grouping in the sources report.
   'CREATE INDEX IF NOT EXISTS idx_visits_visitor ON visits (visitor_id)',
+  // Promo code redeemed on a purchase (server/discounts.js). discount_code is
+  // the (uppercase) code; code_discount_cents is what it took off, kept for the
+  // invoice/receipt breakdown. '' / 0 = no code used.
+  "ALTER TABLE bookings ADD COLUMN discount_code TEXT NOT NULL DEFAULT ''",
+  'ALTER TABLE bookings ADD COLUMN code_discount_cents INTEGER NOT NULL DEFAULT 0',
+  "ALTER TABLE group_signups ADD COLUMN discount_code TEXT NOT NULL DEFAULT ''",
+  'ALTER TABLE group_signups ADD COLUMN code_discount_cents INTEGER NOT NULL DEFAULT 0',
+  "ALTER TABLE packages ADD COLUMN discount_code TEXT NOT NULL DEFAULT ''",
+  'ALTER TABLE packages ADD COLUMN code_discount_cents INTEGER NOT NULL DEFAULT 0',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

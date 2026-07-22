@@ -62,14 +62,18 @@ function customerPackageSummary(customerId) {
 }
 
 // A new pending purchase, held until pay_by like an unpaid booking.
-function createPackagePurchase(customerId, optionId) {
+// opts (all optional): { priceCents } overrides the package price (a promo code
+// applied by the caller), plus { discountCode, codeDiscountCents } for the receipt.
+function createPackagePurchase(customerId, optionId, opts = {}) {
   const opt = findOption(optionId);
   if (!opt) return null;
+  const priceCents = opts.priceCents != null ? opts.priceCents : opt.price * 100;
   const info = db.prepare(`INSERT INTO packages
-    (code, customer_id, sessions_total, price_cents, status, pay_by, created_at)
-    VALUES (?,?,?,?, 'pending', ?, ?)`)
-    .run(genCode('PKG'), customerId, opt.sessions, opt.price * 100,
-      new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(), nowISO());
+    (code, customer_id, sessions_total, price_cents, status, pay_by, discount_code, code_discount_cents, created_at)
+    VALUES (?,?,?,?, 'pending', ?, ?, ?, ?)`)
+    .run(genCode('PKG'), customerId, opt.sessions, priceCents,
+      new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(),
+      opts.discountCode || '', opts.codeDiscountCents || 0, nowISO());
   return db.prepare('SELECT * FROM packages WHERE id = ?').get(Number(info.lastInsertRowid));
 }
 

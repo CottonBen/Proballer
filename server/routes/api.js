@@ -16,6 +16,7 @@ const pitches = require('../pitches');
 const emails = require('../emails');
 const groups = require('../groups');
 const packages = require('../packages');
+const discounts = require('../discounts');
 const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
 const attribution = require('../attribution');
 const attio = require('../attio');
@@ -753,6 +754,32 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   const pkg = fundingPkg || newPkg;
   if (pkg) discount = Math.max(0, price - packages.perSessionCents(pkg));
 
+  // Promo/discount code (optional). Applies to what the customer pays NOW:
+  // buying a package in the wizard -> off the package price; paying per session
+  // -> off the post-sale price. A funded (already-paid) package or a free credit
+  // leaves nothing to discount, so the code is ignored there.
+  let promoCode = '', promoOffCents = 0;
+  const promoInput = String(req.body?.code || '');
+  if (promoInput && !credit && !fundingPkg) {
+    if (newPkg) {
+      const ap = discounts.apply(newPkg.price_cents, promoInput);
+      if (ap.error) {
+        db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
+        return fail(ap.error);
+      }
+      if (ap.discountCents > 0) {
+        db.prepare('UPDATE packages SET price_cents = ?, discount_code = ?, code_discount_cents = ? WHERE id = ?')
+          .run(ap.finalCents, ap.code, ap.discountCents, newPkg.id);
+        newPkg.price_cents = ap.finalCents;
+      }
+    } else {
+      const ap = discounts.apply(price - discount, promoInput);
+      if (ap.error) return fail(ap.error);
+      promoCode = ap.code;
+      promoOffCents = ap.discountCents;
+    }
+  }
+
   const code = 'PBF-' + require('node:crypto').randomBytes(3).toString('hex').toUpperCase();
   // Optional free-text wishes for the coach, asked in the wizard's notes step.
   const notes = String(req.body?.notes || '').trim().slice(0, 500);
@@ -763,18 +790,18 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   // bank-transfer bookings have nothing pending, so the coach hears
   // immediately; a booking waiting on a NEW package purchase is announced
   // when that payment confirms (packages.markPackagePaid).
-  const cardFlow = !pkg && stripe.enabled() && price - discount > 0;
+  const cardFlow = !pkg && stripe.enabled() && price - discount - promoOffCents > 0;
 
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
        price_cents, discount_cents, total_cents, credit_applied, notes, package_id,
-       coach_notified, status, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
+       discount_code, code_discount_cents, coach_notified, status, created_at)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus ? focus.id : '',
-        (focus && focus.online) ? 1 : 0, price, discount, price - discount, credit ? 1 : 0, notes,
-        pkg ? pkg.id : null, nowISO());
+        (focus && focus.online) ? 1 : 0, price, discount, price - discount - promoOffCents, credit ? 1 : 0, notes,
+        pkg ? pkg.id : null, promoCode, promoOffCents, nowISO());
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
     if (newPkg) db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
@@ -824,10 +851,16 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
       payUrl = session.url;
     } catch (err) { console.error('[stripe]', err.message); }
   } else if (newPkg) {
-    // One payment for the whole package; this booking rides along as its
-    // first session and is announced when the payment confirms.
-    try { payUrl = await packageCheckout(req, newPkg); }
-    catch (err) { console.error('[stripe]', err.message); }
+    if (newPkg.price_cents === 0) {
+      // A code made the package free — activate it now (this also announces the
+      // linked booking to the coach), no Stripe checkout needed.
+      packages.markPackagePaid(newPkg.code, null);
+    } else {
+      // One payment for the whole package; this booking rides along as its
+      // first session and is announced when the payment confirms.
+      try { payUrl = await packageCheckout(req, newPkg); }
+      catch (err) { console.error('[stripe]', err.message); }
+    }
   }
 
   res.status(201).json({
@@ -836,7 +869,8 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
       code, date, hour, location, position, focus: focus ? focus.id : '',
       focusLabel: focus ? focus.label : '',
       online: Boolean(focus && focus.online), coach: coach.name,
-      priceCents: price, discountCents: discount, totalCents: price - discount,
+      priceCents: price, discountCents: discount, totalCents: price - discount - promoOffCents,
+      codeDiscountCents: promoOffCents, discountCode: promoCode,
       creditApplied: Boolean(credit),
     },
     invoice: invoice ? { number: invoice.number, dueDate: invoice.due_date,
@@ -993,6 +1027,10 @@ router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) 
     .get(coachId, date, hour)) {
     return res.status(409).json({ error: 'The coach is not available at that time.' });
   }
+  // Validate any promo code BEFORE creating the session, so a bad code never
+  // leaves an orphaned empty group session behind.
+  const gap = discounts.apply(config.groupTraining.pricePerPlayer * 100, String(req.body?.code || ''));
+  if (gap.error) return res.status(400).json({ error: gap.error });
   const info = db.prepare(`INSERT INTO group_sessions
     (code, coach_id, date, hour, location, capacity, price_cents, status, age_group, created_by, created_at)
     VALUES (?,?,?,?,?,?,?, 'open', ?, 'player', ?)`)
@@ -1001,7 +1039,8 @@ router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) 
   db.prepare('DELETE FROM availability WHERE coach_id = ? AND date = ? AND hour = ?')
     .run(coachId, date, hour);
   const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(Number(info.lastInsertRowid));
-  const made = groups.createSignup(gs, req.user.id);
+  const made = groups.createSignup(gs, req.user.id,
+    { priceCents: gap.finalCents, discountCode: gap.code, codeDiscountCents: gap.discountCents });
   if (made.error) return res.status(409).json({ error: made.error });
   const su = made.signup;
   recordEvent(req, 'group_start', { code: gs.code, ageGroup });
@@ -1057,7 +1096,10 @@ router.post('/groups/:code/join', requireRole('customer', 'admin'), async (req, 
   if (gs.age_group && gs.age_group !== ageGroup) {
     return res.status(409).json({ error: 'This group session is for a different age group.' });
   }
-  const made = groups.createSignup(gs, req.user.id);
+  const gap = discounts.apply(gs.price_cents, String(req.body?.code || ''));
+  if (gap.error) return res.status(400).json({ error: gap.error });
+  const made = groups.createSignup(gs, req.user.id,
+    { priceCents: gap.finalCents, discountCode: gap.code, codeDiscountCents: gap.discountCents });
   if (made.error) return res.status(409).json({ error: made.error });
   if (!gs.age_group) db.prepare('UPDATE group_sessions SET age_group = ? WHERE id = ?').run(ageGroup, gs.id);
   const su = made.signup;
@@ -1319,7 +1361,22 @@ router.post('/packages/buy', requireRole('customer', 'admin'), async (req, res) 
   if (!requireVerified(req, res)) return;
   const pkg = packages.createPackagePurchase(req.user.id, String(req.body?.package || ''));
   if (!pkg) return res.status(400).json({ error: 'Unknown package.' });
+  const ap = discounts.apply(pkg.price_cents, String(req.body?.code || ''));
+  if (ap.error) {
+    db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(pkg.id, 'pending');
+    return res.status(400).json({ error: ap.error });
+  }
+  if (ap.discountCents > 0) {
+    db.prepare('UPDATE packages SET price_cents = ?, discount_code = ?, code_discount_cents = ? WHERE id = ?')
+      .run(ap.finalCents, ap.code, ap.discountCents, pkg.id);
+    pkg.price_cents = ap.finalCents;
+  }
   recordEvent(req, 'package_buy', { code: pkg.code, sessions: pkg.sessions_total });
+  if (pkg.price_cents === 0) {
+    // A code covered the whole package — activate it now, no checkout needed.
+    packages.markPackagePaid(pkg.code, null);
+    return res.status(201).json({ payUrl: null, code: pkg.code });
+  }
   try {
     res.status(201).json({ payUrl: await packageCheckout(req, pkg), code: pkg.code });
   } catch (err) {
@@ -2320,6 +2377,13 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
     if (slot.error) return res.status(slot.status).json({ error: slot.error });
   }
 
+  // Optional promo code the admin applies. Validate it up front (base depends on
+  // the session type) so a bad code fails before any account is created.
+  const salePriceCents = config.pricing.sessionPrice * 100
+    - Math.round(config.pricing.sessionPrice * 100 * config.pricing.salePercent / 100);
+  const adminAp = discounts.apply(kind === 'group' ? gs.price_cents : salePriceCents, String(req.body?.code || ''));
+  if (adminAp.error) return res.status(400).json({ error: adminAp.error });
+
   const resolved = resolveAdminCustomer(req.body);
   if (resolved.error) return res.status(resolved.status).json({ error: resolved.error });
   const { user: customer, created } = resolved;
@@ -2330,7 +2394,8 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
 
   if (kind === 'group') {
     // createSignup re-checks open/past/capacity and one-spot-per-player.
-    const made = groups.createSignup(gs, customer.id);
+    const made = groups.createSignup(gs, customer.id,
+      { priceCents: adminAp.finalCents, discountCode: adminAp.code, codeDiscountCents: adminAp.discountCents });
     if (made.error) { discardNewAccount(); return res.status(409).json({ error: made.error }); }
     const su = made.signup;
     if (payment === 'link' && stripe.enabled()) {
@@ -2370,16 +2435,17 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
   // the admin flow decides the money path explicitly via `payment`.
   const price = config.pricing.sessionPrice * 100;
   const discount = Math.round(price * config.pricing.salePercent / 100);
+  const promoOffCents = adminAp.discountCents;   // validated against the sale price above
   const code = 'PBF-' + crypto.randomBytes(3).toString('hex').toUpperCase();
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
        price_cents, discount_cents, total_cents, credit_applied, notes, package_id,
-       coach_notified, status, created_at)
-      VALUES (?,?,?,?,?,?,'','',0,?,?,?,0,?,NULL,0,'confirmed',?)`)
-      .run(code, customer.id, coach.id, date, hour, location, price, discount, price - discount,
-        notes, nowISO());
+       discount_code, code_discount_cents, coach_notified, status, created_at)
+      VALUES (?,?,?,?,?,?,'','',0,?,?,?,0,?,NULL,?,?,0,'confirmed',?)`)
+      .run(code, customer.id, coach.id, date, hour, location, price, discount, price - discount - promoOffCents,
+        notes, adminAp.code, promoOffCents, nowISO());
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
@@ -2406,6 +2472,39 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
     invoice: { number: invoice.number, amountCents: invoice.amount_cents, payBy: invoice.pay_by || null },
     customer: { id: customer.id, name: customer.name, email: customer.email, created },
   });
+});
+
+// ---------------------------------------------------------------------------
+// Discount / promo codes.
+// ---------------------------------------------------------------------------
+// Live check for the booking wizard: given the price the customer is about to
+// pay (baseCents), returns what a code would take off — or why it can't be used.
+router.post('/discounts/validate', requireRole('customer', 'admin'), (req, res) => {
+  const baseCents = Math.max(0, Math.round(Number(req.body?.baseCents) || 0));
+  const code = String(req.body?.code || '');
+  if (!discounts.norm(code)) return res.json({ valid: false });
+  const ap = discounts.apply(baseCents, code);
+  if (ap.error) return res.json({ valid: false, error: ap.error });
+  res.json({
+    valid: true, code: ap.code, label: discounts.label(ap.discount),
+    discountCents: ap.discountCents, finalCents: ap.finalCents,
+  });
+});
+
+router.get('/admin/discounts', requireRole('admin'), (req, res) => res.json(discounts.list()));
+router.post('/admin/discounts', requireRole('admin'), (req, res) => {
+  const r = discounts.create(req.body || {});
+  if (r.error) return res.status(400).json({ error: r.error });
+  res.status(201).json({ ok: true, id: r.id });
+});
+router.patch('/admin/discounts/:id', requireRole('admin'), (req, res) => {
+  const r = discounts.update(req.params.id, req.body || {});
+  if (r.error) return res.status(r.error === 'Discount not found.' ? 404 : 400).json({ error: r.error });
+  res.json({ ok: true });
+});
+router.delete('/admin/discounts/:id', requireRole('admin'), (req, res) => {
+  discounts.remove(req.params.id);
+  res.json({ ok: true });
 });
 
 // The at-session money arrived (cash/MobilePay on the pitch): mark the spot paid.

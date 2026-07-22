@@ -72,6 +72,8 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focus, lang, paid 
         ? esc(L('invoice.freeSession'))
         : esc(trCfg(lang, config.pricing.saleLabel)) + ' −' + config.pricing.salePercent + '%'}</span></td>
       <td>−${eur(booking.discount_cents)}</td></tr>` : ''}
+    ${booking.code_discount_cents > 0 ? `<tr><td><span class="badge">${esc(L('invoice.codeDiscount', { code: booking.discount_code }))}</span></td>
+      <td>−${eur(booking.code_discount_cents)}</td></tr>` : ''}
     <tr class="total"><td>${esc(paid ? L('receipt.totalPaid') : L('invoice.totalDue'))}</td><td>${eur(booking.total_cents)}</td></tr>
   </table>
   <p class="muted">${esc(trCfg(lang, config.pricing.vatNote))}</p>

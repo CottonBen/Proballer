@@ -116,20 +116,25 @@ function roster(groupSessionId) {
 // check and the insert race harmlessly: the unique index stops the same
 // customer doubling up, and a simultaneous over-claim is caught by re-counting
 // after insert (the loser is rolled back).
-function createSignup(gs, customerId) {
+// opts (all optional): { priceCents } overrides the per-player price (a promo
+// code applied by the caller), plus { discountCode, codeDiscountCents } recorded
+// for the receipt. Omit opts for the normal full-price spot.
+function createSignup(gs, customerId, opts = {}) {
   if (gs.status !== 'open') return { error: 'This group session is not open for booking.' };
   const hki = helsinkiNow();
   if (gs.date < hki.date || (gs.date === hki.date && gs.hour <= hki.hour)) {
     return { error: 'That time is already in the past.' };
   }
   if (takenCount(gs.id) >= gs.capacity) return { error: 'This group session is already full.' };
+  const priceCents = opts.priceCents != null ? opts.priceCents : gs.price_cents;
   let info;
   try {
     info = db.prepare(`INSERT INTO group_signups
-      (code, group_session_id, customer_id, price_cents, status, pay_by, created_at)
-      VALUES (?,?,?,?, 'pending', ?, ?)`)
-      .run(genCode('GSU'), gs.id, customerId, gs.price_cents,
-        new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(), nowISO());
+      (code, group_session_id, customer_id, price_cents, status, pay_by, discount_code, code_discount_cents, created_at)
+      VALUES (?,?,?,?, 'pending', ?, ?, ?, ?)`)
+      .run(genCode('GSU'), gs.id, customerId, priceCents,
+        new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(),
+        opts.discountCode || '', opts.codeDiscountCents || 0, nowISO());
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
       return { error: 'You already have a spot in this group session.' };
