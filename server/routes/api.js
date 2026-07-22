@@ -2559,14 +2559,22 @@ router.get('/admin/finance', requireRole('admin'), (req, res) => {
   }
   const sum = (sql, ...params) => db.prepare(sql).get(...params).s || 0;
   const rows = months.map((month) => {
+    // Demo rows are excluded everywhere so this report, the sources report
+    // and the financial model's actuals always quote the same figures.
     const oneOnOne = sum(`SELECT SUM(i.amount_cents) s FROM invoices i
-      WHERE i.status = 'paid' AND substr(i.issued_at, 1, 7) = ?`, month);
-    const groups_ = sum(`SELECT SUM(price_cents) s FROM group_signups
-      WHERE status = 'confirmed' AND paid_at IS NOT NULL AND substr(paid_at, 1, 7) = ?`, month);
-    const pkgs = sum(`SELECT SUM(price_cents) s FROM packages
-      WHERE status = 'active' AND paid_at IS NOT NULL AND substr(paid_at, 1, 7) = ?`, month);
+      JOIN bookings b ON b.id = i.booking_id
+      WHERE i.status = 'paid' AND b.demo = 0 AND substr(i.issued_at, 1, 7) = ?`, month);
+    const groups_ = sum(`SELECT SUM(g.price_cents) s FROM group_signups g
+      JOIN users u ON u.id = g.customer_id
+      WHERE g.status = 'confirmed' AND g.paid_at IS NOT NULL AND u.demo = 0
+        AND substr(g.paid_at, 1, 7) = ?`, month);
+    const pkgs = sum(`SELECT SUM(p.price_cents) s FROM packages p
+      JOIN users u ON u.id = p.customer_id
+      WHERE p.status = 'active' AND p.paid_at IS NOT NULL AND u.demo = 0
+        AND substr(p.paid_at, 1, 7) = ?`, month);
     const payout = sum(`SELECT SUM(earn_cents) s FROM bookings
-      WHERE status = 'completed' AND earn_cents IS NOT NULL AND substr(date, 1, 7) = ?`, month);
+      WHERE status = 'completed' AND earn_cents IS NOT NULL AND demo = 0
+        AND substr(date, 1, 7) = ?`, month);
     const revenue = oneOnOne + groups_ + pkgs;
     return {
       month,
@@ -2736,7 +2744,7 @@ router.get('/admin/financial-model/data', requireRole('admin'), (req, res) => {
       WHERE i.status = 'paid' AND u.demo = 0 AND i.amount_cents > 0
         AND substr(i.issued_at, 1, 10) >= ?`, from30);
   const payouts30 = sum(`SELECT SUM(earn_cents) s FROM bookings
-      WHERE status = 'completed' AND earn_cents IS NOT NULL AND date >= ?`, from30);
+      WHERE status = 'completed' AND earn_cents IS NOT NULL AND demo = 0 AND date >= ?`, from30);
   const revenue30 = revenueSince(from30);
 
   const actual = {
@@ -2762,7 +2770,7 @@ router.get('/admin/financial-model/data', requireRole('admin'), (req, res) => {
     avgPaid1on1Cents: paid1on1Count30 ? Math.round(paid1on1Cents30 / paid1on1Count30) : null,
     avgCoachCostCents: (() => {
       const r = db.prepare(`SELECT AVG(earn_cents) a FROM bookings
-        WHERE status = 'completed' AND earn_cents IS NOT NULL AND date >= ?`).get(helsinkiDateOffset(-89));
+        WHERE status = 'completed' AND earn_cents IS NOT NULL AND demo = 0 AND date >= ?`).get(helsinkiDateOffset(-89));
       return r.a == null ? null : Math.round(r.a);
     })(),
     payouts30Cents: payouts30,

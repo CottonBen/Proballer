@@ -170,7 +170,19 @@ function renderSliders() {
 }
 
 // --- KPI cards + waterfall table ----------------------------------------------
+// recalc() coalesces bursts: a slider drag fires tens of input events per
+// second, and each full recalc runs the need-table's six bisection solves
+// plus ~120 chart samples — one recalc per ~frame is plenty. setTimeout (not
+// requestAnimationFrame) on purpose: rAF never fires in a background tab,
+// which would leave the page blank until it gains focus.
+let recalcQueued = false;
 function recalc() {
+  if (recalcQueued) return;
+  recalcQueued = true;
+  setTimeout(() => { recalcQueued = false; recalcNow(); }, 16);
+}
+
+function recalcNow() {
   const d = deriveNow();
   renderKpis(d);
   renderWaterfall(d);
@@ -358,6 +370,7 @@ function renderCosts() {
       await API.put(`/admin/financial-model/costs/${c.id}`,
         c.kind === 'pct_revenue' ? { percent: v } : { amountEur: v });
       if (c.kind === 'pct_revenue') c.percent = v; else c.amountEur = v;
+      renderCosts(); // keep the Σ totals row in step with the edit
       recalc();
     } catch (e) { toast(I18N.server(e.message), true); }
   }));
@@ -482,7 +495,9 @@ function renderCompare(id) {
   const out = document.getElementById('fm-scen-compare');
   if (!s) { out.innerHTML = ''; return; }
   const a = deriveNow();
-  const b = FM.derive(s.data);
+  // Costs are a shared environment, not part of a scenario: comparing uses
+  // TODAY'S cost table (like loading does), so compare and load always agree.
+  const b = FM.derive({ ...s.data, costs: S.costs });
   const money = (v) => eurF(v);
   const rows = [
     [t('fm.in.price'), money(a.assumptions.price), money(b.assumptions.price), null],
@@ -526,7 +541,7 @@ function renderChart(el, seriesList, { xLabels, marker = null, xValue }) {
       ? `<line x1="${X(marker)}" x2="${X(marker)}" y1="${pad}" y2="${H - pad}" stroke="rgba(247,161,58,.7)" stroke-dasharray="4 3"/>` : ''}
     ${seriesList.map((s) => `<polyline points="${pts(s.values)}" fill="none" stroke="${s.color}"
       stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
-    <g data-hover hidden>
+    <g data-hover display="none">
       <line x1="0" x2="0" y1="${pad}" y2="${H - pad}" stroke="rgba(255,255,255,.4)"/>
       ${seriesList.map((s) => `<circle r="3.5" fill="${s.color}" stroke="#0a0a0b" stroke-width="1.5"/>`).join('')}
     </g>
@@ -558,7 +573,9 @@ function renderChart(el, seriesList, { xLabels, marker = null, xValue }) {
       dots[k].setAttribute('cx', x);
       dots[k].setAttribute('cy', Y(s.values[i]));
     });
-    hover.hidden = false;
+    // SVG elements have no `hidden` IDL property — toggle the display
+    // attribute instead (assigning .hidden would be a silent no-op expando).
+    hover.removeAttribute('display');
     tip.innerHTML = `<strong>${esc(xValue(i))}</strong><br>`
       + seriesList.map((s) => `<span style="color:${s.color}">●</span> ${esc(s.label)}: <strong>${eurF(s.values[i])}</strong>`).join('<br>');
     tip.hidden = false;
@@ -572,7 +589,7 @@ function renderChart(el, seriesList, { xLabels, marker = null, xValue }) {
       tip.style.left = `${Math.round(px + 10)}px`;
     }
   };
-  const hide = () => { hover.hidden = true; tip.hidden = true; };
+  const hide = () => { hover.setAttribute('display', 'none'); tip.hidden = true; };
   svg.addEventListener('pointermove', (e) => show(e.clientX));
   svg.addEventListener('pointerdown', (e) => show(e.clientX));
   svg.addEventListener('pointerleave', hide);

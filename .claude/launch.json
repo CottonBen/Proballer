@@ -32,14 +32,6 @@
         "PORT": "3000",
         "STRIPE_SECRET_KEY": "sk_test_dummy"
       }
-    },
-    {
-      "name": "email-preview",
-      "runtimeExecutable": "/Users/user/.local/bin/node",
-      "runtimeArgs": [
-        "/private/tmp/claude-501/-Users-user-Downloads/372df22a-7fa8-4753-8af0-62ab18f8ecdb/scratchpad/email-server.js"
-      ],
-      "port": 3299
     }
   ]
 }

@@ -190,8 +190,15 @@ const FM = (() => {
       }
       x = increasing ? hi : lo; // the side that meets/exceeds the target
     }
-    if (solveFor === 'customers' || solveFor === 'sessions') x = Math.ceil(x - 1e-6);
-    else x = Math.ceil(x * 100 - 1e-4) / 100; // price / sessions-per-customer: next cent / 0.01
+    // Round toward the side that still MEETS the target: up when the metric
+    // grows with x, down when it shrinks with x (e.g. customers under a
+    // negative contribution) — otherwise the whole-unit answer would overshoot
+    // past the target it claims to hit.
+    if (solveFor === 'customers' || solveFor === 'sessions') {
+      x = increasing ? Math.ceil(x - 1e-6) : Math.floor(x + 1e-6);
+    } else {
+      x = increasing ? Math.ceil(x * 100 - 1e-4) / 100 : Math.floor(x * 100 + 1e-4) / 100;
+    }
     const derived = apply(x);
     return {
       ok: true,
