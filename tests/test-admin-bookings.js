@@ -265,7 +265,10 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
 
     // --- the 24 h lead does NOT apply to admins ------------------------------
     const hh = helsinkiHour();
-    const soon = hh <= 17 ? { date: helsinkiDate(0), hour: hh + 2 } : { date: helsinkiDate(1), hour: 8 };
+    // Pick a within-24h slot at a valid business hour (08–19). Clamp the low
+    // end so a run just after midnight doesn't land on e.g. 02:00 and get
+    // rejected for being outside business hours before the 24h rule is tested.
+    const soon = hh <= 17 ? { date: helsinkiDate(0), hour: Math.max(hh + 2, 8) } : { date: helsinkiDate(1), hour: 8 };
     addSlot(soon.date, soon.hour);
     r = await cust('POST', '/bookings', { coachId, date: soon.date, hour: soon.hour, location: 'Helsinki' });
     check('public booking inside 24 h is rejected', r.status === 400
