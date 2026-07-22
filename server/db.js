@@ -381,6 +381,16 @@ for (const stmt of [
   // the pitch): pay_by stays NULL so the unpaid sweep never releases it, and
   // the admin marks the invoice paid once the money changes hands.
   'ALTER TABLE invoices ADD COLUMN at_session INTEGER NOT NULL DEFAULT 0',
+  // Acquisition source (server/attribution.js is the ONE definition): each
+  // landing view records where it came from; leads/signups/accounts get the
+  // visitor's first-touch source stamped on them at creation. '' = row from
+  // before source tracking (reported as "unknown").
+  "ALTER TABLE visits ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE pending_signups ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE contact_requests ADD COLUMN source TEXT NOT NULL DEFAULT ''",
+  // First-touch lookups + per-visitor grouping in the sources report.
+  'CREATE INDEX IF NOT EXISTS idx_visits_visitor ON visits (visitor_id)',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

@@ -65,6 +65,23 @@
       <p class="small muted" id="finance-outlook" style="margin:12px 0 4px"></p>
     </div>
 
+    <!-- acquisition sources: leads/customers/bookings/revenue by origin -->
+    <div class="dash-title">
+      <div>
+        <h2 style="font-size:1.8rem" data-i18n="admin.sources.heading">Lähteet — mistä asiakkaat tulevat</h2>
+        <p class="muted small" style="margin:0" data-i18n="admin.sources.sub">Kävijät, liidit, uudet asiakkaat,
+          varaukset ja liikevaihto hankintalähteittäin. Aikaväli valitaan sivun ylälaidan painikkeista;
+          lähde määräytyy kävijän ensimmäisestä käynnistä (utm_source-parametri tai viittaava sivusto).</p>
+      </div>
+    </div>
+    <div class="card" style="overflow-x:auto">
+      <table class="data" id="sources-table"></table>
+      <p class="muted small" id="sources-empty" hidden style="margin:12px 0 4px" data-i18n="admin.sources.empty">Ei vielä
+        lähdedataa — se alkaa kertyä kävijöistä, yhteydenotoista ja rekisteröitymisistä.</p>
+      <p class="small muted" style="margin:12px 0 4px" data-i18n="admin.sources.hint">Vinkki: lisää kampanjalinkkeihin
+        ?utm_source=facebook (tms.), niin lähde kirjautuu aina varmasti oikein.</p>
+    </div>
+
     <!-- coaches -->
     <div class="dash-title">
       <h2 style="font-size:1.8rem" data-i18n="admin.coaches.heading">Miten valmentajilla menee</h2>

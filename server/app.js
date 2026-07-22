@@ -71,13 +71,17 @@ app.use((req, res, next) => {
   if (req.method === 'GET' && ACQUISITION_PAGES.has(req.path) && !BOT_UA.test(ua)
       && !(req.user && (req.user.role === 'admin' || req.user.role === 'coach'))) {
     const { date } = helsinkiNow();
-    // For cookieless hits (bots/scripts that don't persist cookies) derive a
-    // stable id from IP+UA+day so repeated hits collapse to one unique/day
-    // instead of inflating the count with a fresh random id each request.
-    const countId = hadCookie ? vid
+    // A real browser's FIRST view is logged under its freshly minted cookie id
+    // — that view carries the campaign's utm/referrer, and first-touch source
+    // attribution must find it under the same id later requests use. (It also
+    // stops first-time humans counting as two uniques: hash id + cookie id.)
+    // Only UA-less scripts (which never keep cookies) still get the stable
+    // IP+day hash, so their repeated hits collapse to one unique instead of
+    // minting a fresh id per request.
+    const countId = hadCookie || ua ? vid
       : 'h' + crypto.createHash('sha256').update(`${req.ip}|${ua}|${date}`).digest('hex').slice(0, 23);
-    db.prepare('INSERT INTO visits (visitor_id, path, day, ts) VALUES (?,?,?,?)')
-      .run(countId, req.path, date, nowISO());
+    db.prepare('INSERT INTO visits (visitor_id, path, day, ts, source) VALUES (?,?,?,?,?)')
+      .run(countId, req.path, date, nowISO(), require('./attribution').requestSource(req));
   }
   next();
 });

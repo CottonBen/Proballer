@@ -17,6 +17,7 @@ const emails = require('../emails');
 const groups = require('../groups');
 const packages = require('../packages');
 const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
+const attribution = require('../attribution');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
 const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
@@ -381,14 +382,14 @@ router.post('/auth/signup', loginThrottle, (req, res) => {
     .run(new Date(Date.now() - 24 * 3600000).toISOString());
   const code = String(crypto.randomInt(100000, 1000000));
   db.prepare(`INSERT INTO pending_signups
-      (email, password_hash, name, phone, area, lang, code, attempts, sent_at, created_at)
-    VALUES (?,?,?,?,?,?,?,0,?,?)
+      (email, password_hash, name, phone, area, lang, code, attempts, sent_at, created_at, source)
+    VALUES (?,?,?,?,?,?,?,0,?,?,?)
     ON CONFLICT(email) DO UPDATE SET
       password_hash = excluded.password_hash, name = excluded.name,
       phone = excluded.phone, area = excluded.area, lang = excluded.lang,
       code = excluded.code, attempts = 0, sent_at = excluded.sent_at`)
     .run(email, bcrypt.hashSync(password, 10), name, phone, area,
-      readLang(req.body) || 'fi', code, nowISO(), nowISO());
+      readLang(req.body) || 'fi', code, nowISO(), nowISO(), attribution.visitorSource(req));
   recordEvent(req, 'signup_started', {});
   emails.sendSignupCodeEmail(db.prepare('SELECT * FROM pending_signups WHERE email = ?').get(email));
   res.json({ pendingSignup: true, email });
@@ -416,10 +417,10 @@ router.post('/auth/verify-signup', loginThrottle, (req, res) => {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
   const info = db.prepare(`INSERT INTO users
-      (email, password_hash, name, role, lang, phone, area, email_verified, created_at)
-    VALUES (?,?,?,?,?,?,?,1,?)`)
+      (email, password_hash, name, role, lang, phone, area, email_verified, created_at, source)
+    VALUES (?,?,?,?,?,?,?,1,?,?)`)
     .run(email, pending.password_hash, pending.name, 'customer', pending.lang,
-      pending.phone, pending.area, nowISO());
+      pending.phone, pending.area, nowISO(), pending.source || '');
   db.prepare('DELETE FROM pending_signups WHERE id = ?').run(pending.id);
   const userId = Number(info.lastInsertRowid);
   createSession(res, userId);
@@ -542,8 +543,8 @@ router.post('/contact', (req, res) => {
   }
   // The same contact twice is still one lead.
   if (!db.prepare('SELECT 1 FROM contact_requests WHERE contact = ? AND handled_at IS NULL').get(contact)) {
-    db.prepare('INSERT INTO contact_requests (contact, kind, created_at) VALUES (?,?,?)')
-      .run(contact, isEmail ? 'email' : 'phone', nowISO());
+    db.prepare('INSERT INTO contact_requests (contact, kind, created_at, source) VALUES (?,?,?,?)')
+      .run(contact, isEmail ? 'email' : 'phone', nowISO(), attribution.visitorSource(req));
     for (const a of db.prepare("SELECT id FROM users WHERE role = 'admin'").all()) {
       db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
         .run(a.id, `New contact request from the website: ${contact}`, nowISO());
@@ -2250,8 +2251,8 @@ function resolveAdminCustomer(body) {
     return { error: 'An account with this email already exists — pick it from the existing customers.', status: 409 };
   }
   const info = db.prepare(`INSERT INTO users
-      (email, password_hash, name, role, lang, phone, area, email_verified, created_at)
-    VALUES (?,?,?,?,?,?,?,1,?)`)
+      (email, password_hash, name, role, lang, phone, area, email_verified, created_at, source)
+    VALUES (?,?,?,?,?,?,?,1,?,'admin')`)
     .run(email, bcrypt.hashSync(crypto.randomBytes(24).toString('base64'), 10), name, 'customer',
       lang, phone, area, nowISO());
   return { user: db.prepare('SELECT * FROM users WHERE id = ?').get(Number(info.lastInsertRowid)), created: true };
@@ -2592,6 +2593,85 @@ router.get('/admin/finance', requireRole('admin'), (req, res) => {
       upcomingPayoutCents: upcomingPayout,
       prepaidSessionsOwed: owedSessions,
     },
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Acquisition sources: leads / customers / bookings / revenue / conversion by
+// where people came from. server/attribution.js is the single definition of
+// "source"; this endpoint only aggregates rows that were stamped there.
+// All metrics share ONE Helsinki-date window (the dashboard's d7/d30/d90/all):
+//   visitors   — visitors whose FIRST landing view falls in the window,
+//                by their first-touch source
+//   leads      — contact requests created in the window
+//   customers  — customer accounts created in the window
+//   bookings   — non-cancelled 1-on-1 bookings + confirmed group spots
+//                CREATED in the window, attributed via the customer's source
+//   revenue    — the finance model's primitives (paid invoices by issue date,
+//                paid group spots / packages by payment date), by customer
+//   conversion — customers ÷ visitors of the same source in the same window
+router.get('/admin/sources', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  const days = WINDOWS[String(req.query.w)] || null; // null = all time
+  const from = days ? helsinkiDateOffset(-(days - 1)) : '0000-00-00';
+  const rows = new Map();
+  const at = (s) => {
+    const key = s || 'unknown'; // '' = row from before source tracking
+    if (!rows.has(key)) {
+      rows.set(key, { source: key, visitors: 0, leads: 0, customers: 0, bookings: 0, revenueCents: 0 });
+    }
+    return rows.get(key);
+  };
+  for (const r of db.prepare(`
+    SELECT COALESCE((SELECT v2.source FROM visits v2
+        WHERE v2.visitor_id = v.visitor_id AND v2.source != '' ORDER BY v2.id LIMIT 1), '') AS s,
+      COUNT(*) AS n
+    FROM (SELECT visitor_id, MIN(day) AS first_day FROM visits GROUP BY visitor_id) v
+    WHERE v.first_day >= ? GROUP BY s`).all(from)) at(r.s).visitors = r.n;
+  for (const r of db.prepare(`SELECT source s, COUNT(*) n FROM contact_requests
+    WHERE substr(created_at, 1, 10) >= ? GROUP BY s`).all(from)) at(r.s).leads = r.n;
+  for (const r of db.prepare(`SELECT source s, COUNT(*) n FROM users
+    WHERE role = 'customer' AND demo = 0 AND substr(created_at, 1, 10) >= ?
+    GROUP BY s`).all(from)) at(r.s).customers = r.n;
+  for (const r of db.prepare(`SELECT s, SUM(n) n FROM (
+      SELECT u.source s, COUNT(*) n FROM bookings b
+        JOIN users u ON u.id = b.customer_id
+        WHERE b.status != 'cancelled' AND b.demo = 0 AND u.demo = 0
+          AND substr(b.created_at, 1, 10) >= ? GROUP BY s
+      UNION ALL
+      SELECT u.source s, COUNT(*) n FROM group_signups g
+        JOIN users u ON u.id = g.customer_id
+        WHERE g.status = 'confirmed' AND u.demo = 0
+          AND substr(g.created_at, 1, 10) >= ? GROUP BY s
+    ) GROUP BY s`).all(from, from)) at(r.s).bookings = r.n;
+  for (const r of db.prepare(`SELECT s, SUM(c) c FROM (
+      SELECT u.source s, i.amount_cents c FROM invoices i
+        JOIN bookings b ON b.id = i.booking_id JOIN users u ON u.id = b.customer_id
+        WHERE i.status = 'paid' AND u.demo = 0 AND substr(i.issued_at, 1, 10) >= ?
+      UNION ALL
+      SELECT u.source s, g.price_cents c FROM group_signups g
+        JOIN users u ON u.id = g.customer_id
+        WHERE g.status = 'confirmed' AND g.paid_at IS NOT NULL AND u.demo = 0
+          AND substr(g.paid_at, 1, 10) >= ?
+      UNION ALL
+      SELECT u.source s, p.price_cents c FROM packages p
+        JOIN users u ON u.id = p.customer_id
+        WHERE p.status = 'active' AND p.paid_at IS NOT NULL AND u.demo = 0
+          AND substr(p.paid_at, 1, 10) >= ?
+    ) GROUP BY s`).all(from, from, from)) at(r.s).revenueCents = r.c || 0;
+
+  const list = [...rows.values()]
+    .map((r) => ({ ...r, conversionPct: r.visitors ? Math.round(100 * r.customers / r.visitors) : null }))
+    .sort((a, b) => b.revenueCents - a.revenueCents || b.customers - a.customers || b.visitors - a.visitors);
+  res.json({
+    window: days ? String(req.query.w) : 'all',
+    from: days ? from : null,
+    rows: list,
+    totals: list.reduce((tot, r) => ({
+      visitors: tot.visitors + r.visitors, leads: tot.leads + r.leads,
+      customers: tot.customers + r.customers, bookings: tot.bookings + r.bookings,
+      revenueCents: tot.revenueCents + r.revenueCents,
+    }), { visitors: 0, leads: 0, customers: 0, bookings: 0, revenueCents: 0 }),
   });
 });
 

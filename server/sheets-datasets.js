@@ -29,6 +29,7 @@ module.exports = function datasets() {
       FROM events WHERE type LIKE 'booking_%' GROUP BY day ORDER BY day DESC`),
     // Full CRM view: contact details, home area, activity and lifetime value.
     Customers: q(`SELECT name, email, phone, area,
+        CASE WHEN source = '' THEN 'unknown' ELSE source END AS source,
         CASE email_verified WHEN 1 THEN 'yes' ELSE 'no' END AS verified, created_at,
         (SELECT COUNT(*) FROM bookings b WHERE b.customer_id = u.id AND b.status != 'cancelled') AS bookings,
         (SELECT MAX(b.date) FROM bookings b WHERE b.customer_id = u.id AND b.status = 'completed') AS last_session,
@@ -40,7 +41,8 @@ module.exports = function datasets() {
         (SELECT COALESCE(SUM(p.price_cents),0)/100.0 FROM packages p
            WHERE p.customer_id = u.id AND p.status = 'active') AS paid_packages_eur
       FROM users u WHERE role='customer' ORDER BY created_at DESC`),
-    ContactLeads: q(`SELECT contact, kind, created_at,
+    ContactLeads: q(`SELECT contact, kind,
+        CASE WHEN source = '' THEN 'unknown' ELSE source END AS source, created_at,
         CASE WHEN handled_at IS NULL THEN 'open' ELSE 'handled' END AS status
       FROM contact_requests ORDER BY id DESC`),
     GroupSessions: q(`SELECT g.code, g.date, g.hour || ':00' AS time, c.name AS coach,

@@ -19,6 +19,7 @@ const WIN_LABEL = {
       WIN = b.dataset.w;
       document.querySelectorAll('#window-pills button').forEach((x) => x.classList.toggle('on', x === b));
       renderStats();
+      loadSources(); // the sources table follows the same window
     }));
 
   document.querySelectorAll('#booking-filter button').forEach((b) =>
@@ -68,6 +69,7 @@ const WIN_LABEL = {
   await loadBookings('');
   await loadCRM();
   await loadFinance();
+  await loadSources();
   await loadGroups();
   await loadPackages();
   await loadEmails();
@@ -387,6 +389,45 @@ async function loadFinance() {
   document.getElementById('finance-outlook').innerHTML =
     `${t('admin.finance.upcoming', { n: f.outlook.upcomingSessions, sum: eur(f.outlook.upcomingPayoutCents) })}
      · ${t('admin.finance.owed', { n: f.outlook.prepaidSessionsOwed })}`;
+}
+
+// --- acquisition sources: who comes from where, and what it is worth ----------
+// Follows the dashboard's global window pills (WIN). Definitions live in the
+// /admin/sources endpoint — this only renders what it returns.
+async function loadSources() {
+  let s;
+  try { s = await API.get('/admin/sources?w=' + WIN); } catch { return; }
+  const tbl = document.getElementById('sources-table');
+  if (!tbl) return;
+  document.getElementById('sources-empty').hidden = s.rows.length > 0;
+  const name = (src) => {
+    const key = 'admin.sources.src.' + src;
+    return I18N_DICT[key] ? t(key) : src.charAt(0).toUpperCase() + src.slice(1);
+  };
+  const pct = (customers, visitors) => (visitors
+    ? t('admin.percent', { pct: Math.round(100 * customers / visitors) })
+    : '<span class="muted">—</span>');
+  tbl.innerHTML = s.rows.length ? `
+    <tr><th>${t('admin.sources.th.source')}</th><th>${t('admin.sources.th.visitors')}</th>
+      <th>${t('admin.sources.th.leads')}</th><th>${t('admin.sources.th.customers')}</th>
+      <th>${t('admin.sources.th.bookings')}</th><th>${t('admin.sources.th.revenue')}</th>
+      <th>${t('admin.sources.th.conversion')}</th></tr>` +
+    s.rows.map((r) => `
+      <tr>
+        <td><strong>${esc(name(r.source))}</strong></td>
+        <td>${r.visitors}</td>
+        <td>${r.leads}</td>
+        <td>${r.customers}</td>
+        <td>${r.bookings}</td>
+        <td><strong>${eur(r.revenueCents)}</strong></td>
+        <td>${pct(r.customers, r.visitors)}</td>
+      </tr>`).join('') + `
+      <tr style="border-top:2px solid var(--line)">
+        <td class="muted">Σ</td>
+        <td>${s.totals.visitors}</td><td>${s.totals.leads}</td><td>${s.totals.customers}</td>
+        <td>${s.totals.bookings}</td><td><strong>${eur(s.totals.revenueCents)}</strong></td>
+        <td>${pct(s.totals.customers, s.totals.visitors)}</td>
+      </tr>` : '';
 }
 
 // --- get-in-touch requests from the landing menu ------------------------------
