@@ -89,45 +89,60 @@ function phoneValue(phone) {
   // A "+" number already carries its country; otherwise these are Finnish.
   return p.startsWith('+') ? { original_phone_number: p } : { original_phone_number: p, country_code: 'FI' };
 }
-function compact(obj) {
-  const out = {};
-  for (const [k, v] of Object.entries(obj)) if (v !== undefined) out[k] = v;
-  return out;
-}
 
 // Custom People attributes we own (all prefixed pb_ to avoid clashes). Created
-// on demand by ensurePeopleSchema; written only when that succeeds.
+// on demand by ensurePeopleSchema; each carries the title/description/config
+// Attio's create-attribute endpoint requires.
 const PERSON_ATTRS = [
-  { api_slug: 'pb_source', title: 'Acquisition source', type: 'text' },
-  { api_slug: 'pb_stage', title: 'Lifecycle stage', type: 'text' },
-  { api_slug: 'pb_area', title: 'Home area', type: 'text' },
-  { api_slug: 'pb_language', title: 'Language', type: 'text' },
-  { api_slug: 'pb_customer_since', title: 'Customer since', type: 'text' },
-  { api_slug: 'pb_sessions', title: 'Sessions booked', type: 'number' },
-  { api_slug: 'pb_lifetime_eur', title: 'Lifetime value (EUR)', type: 'number' },
+  { api_slug: 'pb_source', title: 'Acquisition source', type: 'text', description: 'Where this contact first came from (utm / referrer).' },
+  { api_slug: 'pb_stage', title: 'Lifecycle stage', type: 'text', description: 'Lead, Signed up, or Customer.' },
+  { api_slug: 'pb_area', title: 'Home area', type: 'text', description: 'Helsinki, Espoo or Vantaa.' },
+  { api_slug: 'pb_language', title: 'Language', type: 'text', description: 'Preferred language (FI / EN).' },
+  { api_slug: 'pb_customer_since', title: 'Customer since', type: 'text', description: 'Date the account was created.' },
+  { api_slug: 'pb_sessions', title: 'Sessions booked', type: 'number', description: 'Confirmed 1-on-1 + group sessions.' },
+  { api_slug: 'pb_lifetime_eur', title: 'Lifetime value (EUR)', type: 'number', description: 'Total booked value in euros.' },
 ];
 
+// Resolves to a Set of the custom slugs that actually exist in the workspace
+// (created just now or already present). We only ever write fields in this set,
+// so a person upsert can never fail on an attribute that failed to create.
 let schemaPromise = null;
 function ensurePeopleSchema() {
   if (schemaPromise) return schemaPromise;
   schemaPromise = (async () => {
+    const available = new Set();
+    let have;
     try {
       const list = await req('GET', '/objects/people/attributes');
-      const have = new Set((list.data || []).map((a) => a.api_slug));
-      for (const a of PERSON_ATTRS) {
-        if (have.has(a.api_slug)) continue;
-        await req('POST', '/objects/people/attributes', {
-          data: { title: a.title, api_slug: a.api_slug, type: a.type, is_required: false, is_unique: false, is_multiselect: false },
-        });
-      }
-      return true;
+      have = new Set((list.data || []).map((a) => a.api_slug));
     } catch (e) {
-      // Missing object_configuration scope, or the endpoint is unavailable:
-      // fall back to standard fields + the description summary, which carry the
-      // same information in text form.
-      console.error('[attio] custom-field setup skipped (using standard fields only):', e.message);
-      return false;
+      // No object_configuration scope, or endpoint unavailable: fall back to
+      // standard fields + the description summary (same info, text form).
+      console.error('[attio] could not list People fields (standard fields only):', e.message);
+      return available;
     }
+    for (const a of PERSON_ATTRS) {
+      if (have.has(a.api_slug)) { available.add(a.api_slug); continue; }
+      try {
+        await req('POST', '/objects/people/attributes', {
+          data: {
+            title: a.title,
+            description: a.description,
+            api_slug: a.api_slug,
+            type: a.type,
+            is_required: false,
+            is_unique: false,
+            is_multiselect: false,
+            config: {},
+          },
+        });
+        available.add(a.api_slug);
+      } catch (e) {
+        // Skip just this field; the others (and the description summary) still work.
+        console.error(`[attio] could not create field ${a.api_slug} (skipping it):`, e.message);
+      }
+    }
+    return available;
   })();
   return schemaPromise;
 }
@@ -146,8 +161,11 @@ function personSummary(p) {
   return bits.join(' · ');
 }
 
-// Pure — exported for tests. `schemaReady` gates the custom pb_* fields.
-function buildPersonValues(p, schemaReady) {
+// Pure — exported for tests. `available` is the Set of custom slugs that exist
+// (from ensurePeopleSchema); only those are written. A bare `true`/`false` is
+// also accepted (all / none) for convenience.
+function buildPersonValues(p, available) {
+  const has = (slug) => (available instanceof Set ? available.has(slug) : Boolean(available));
   const values = {};
   const name = (p.name || '').trim();
   if (name) {
@@ -158,16 +176,17 @@ function buildPersonValues(p, schemaReady) {
   if (p.phone) values.phone_numbers = [phoneValue(p.phone)];
   const summary = personSummary(p);
   if (summary) values.description = [{ value: summary }];
-  if (schemaReady) {
-    Object.assign(values, compact({
-      pb_source: txt(p.source),
-      pb_stage: txt(p.stage),
-      pb_area: txt(p.area),
-      pb_language: txt(p.lang ? String(p.lang).toUpperCase() : ''),
-      pb_customer_since: txt(p.since),
-      pb_sessions: numv(p.sessions),
-      pb_lifetime_eur: numv(p.lifetimeEur),
-    }));
+  const customs = {
+    pb_source: txt(p.source),
+    pb_stage: txt(p.stage),
+    pb_area: txt(p.area),
+    pb_language: txt(p.lang ? String(p.lang).toUpperCase() : ''),
+    pb_customer_since: txt(p.since),
+    pb_sessions: numv(p.sessions),
+    pb_lifetime_eur: numv(p.lifetimeEur),
+  };
+  for (const [slug, val] of Object.entries(customs)) {
+    if (val !== undefined && has(slug)) values[slug] = val;
   }
   return values;
 }
@@ -182,8 +201,8 @@ function buildDealValues({ name, euros, personRecordId }) {
 // ---- Person / deal upserts -------------------------------------------------
 async function upsertPerson(p) {
   if (!p.email && !p.phone) return null;
-  const schemaReady = await ensurePeopleSchema();
-  const values = buildPersonValues(p, schemaReady);
+  const available = await ensurePeopleSchema();
+  const values = buildPersonValues(p, available);
   // Phone-only leads cannot be matched on email, so they are created (the app
   // dedupes open leads by contact, so this runs at most once per lead).
   if (!p.email) {

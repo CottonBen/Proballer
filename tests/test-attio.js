@@ -53,6 +53,16 @@ check('custom pb_sessions numeric zero written', deep(pvs.pb_sessions, [{ value:
 check('single-word name → empty last name', pvs.name[0].last_name === '');
 check('zero sessions omitted from summary text', !/session/.test(pvs.description[0].value));
 
+// A Set writes ONLY the fields that exist (a field that failed to create is skipped).
+const pvSet = attio.buildPersonValues({
+  name: 'Osku', email: 'osku@example.com', source: 'tiktok', area: 'Vantaa', lang: 'fi', stage: 'Customer', sessions: 2,
+}, new Set(['pb_source', 'pb_area']));
+check('Set: writes pb_source (in set)', deep(pvSet.pb_source, [{ value: 'tiktok' }]));
+check('Set: writes pb_area (in set)', deep(pvSet.pb_area, [{ value: 'Vantaa' }]));
+check('Set: skips pb_stage (not in set)', pvSet.pb_stage === undefined);
+check('Set: skips pb_sessions (not in set)', pvSet.pb_sessions === undefined);
+check('Set: still writes standard fields + description', !!pvSet.email_addresses && !!pvSet.description);
+
 // --- buildDealValues ---------------------------------------------------------
 const dv = attio.buildDealValues({ name: '1-on-1 · Ben · Paid [PBF-AB12CD]', euros: 40, personRecordId: 'rec_123' });
 check('deal name set', dv.name[0].value.includes('Ben'));
