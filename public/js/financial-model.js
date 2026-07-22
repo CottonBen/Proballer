@@ -117,10 +117,7 @@ function renderSliders() {
         </div>
       </div>`).join('')}
     <div style="border-top:1px dashed var(--line);padding-top:12px;margin-top:4px">
-      <label class="small muted">${t('fm.in.newCustomersPerMonth')}
-        <input type="number" id="fm-n-newCustomersPerMonth" min="0" step="1"
-          value="${a.newCustomersPerMonth}" style="width:92px;margin-left:8px"></label>
-      <label class="small muted" style="display:block;margin-top:10px" title="${esc(t('fm.tip.arpc'))}">${t('fm.in.arpc')}
+      <label class="small muted" title="${esc(t('fm.tip.arpc'))}">${t('fm.in.arpc')}
         <span style="opacity:.55;cursor:help"> ?</span>
         <input type="number" id="fm-n-arpc" min="0" step="1" value="${a.arpc}" style="width:92px;margin-left:8px"></label>
       <label class="small muted" style="display:block;margin-top:10px">${t('fm.in.coachMode')}
@@ -162,7 +159,6 @@ function renderSliders() {
     if (extra) extra();
     recalc();
   });
-  bind('#fm-n-newCustomersPerMonth', 'newCustomersPerMonth');
   bind('#fm-n-arpc', 'arpc');
   bind('#fm-n-coachPct', 'coachPct');
   bind('#fm-coachmode', 'coachMode', () => renderSliders());
@@ -188,7 +184,6 @@ function recalcNow() {
   renderWaterfall(d);
   renderBE(d);
   renderNeed();
-  renderCharts(d);
   if (S.compareWith != null) renderCompare(S.compareWith);
 }
 
@@ -521,115 +516,3 @@ function renderCompare(id) {
   </table>`;
 }
 
-// --- charts (hand-rolled SVG, same idiom as the admin dashboard) --------------
-// Hovering (or touching) a chart shows a crosshair with dots on every line
-// and a tooltip with the exact values at the cursor's x position.
-// `xValue(i)` names the x-axis point for the tooltip title.
-function renderChart(el, seriesList, { xLabels, marker = null, xValue }) {
-  const W = 560, H = 200, pad = 10;
-  let min = 0, max = 1;
-  for (const s of seriesList) for (const v of s.values) { min = Math.min(min, v); max = Math.max(max, v); }
-  if (max === min) max = min + 1;
-  const n = seriesList[0].values.length;
-  const X = (i) => pad + i * (W - 2 * pad) / (n - 1);
-  const Y = (v) => H - pad - (v - min) * (H - 2 * pad) / (max - min);
-  const pts = (vals) => vals.map((v, i) => `${X(i)},${Y(v)}`).join(' ');
-  el.innerHTML = `<div style="position:relative">
-  <svg viewBox="0 0 ${W} ${H + 30}" preserveAspectRatio="none" role="img" style="width:100%;display:block">
-    ${min < 0 ? `<line x1="${pad}" x2="${W - pad}" y1="${Y(0)}" y2="${Y(0)}" stroke="rgba(255,255,255,.25)" stroke-dasharray="3 3"/>` : ''}
-    ${marker !== null && marker >= 0 && marker < n
-      ? `<line x1="${X(marker)}" x2="${X(marker)}" y1="${pad}" y2="${H - pad}" stroke="rgba(247,161,58,.7)" stroke-dasharray="4 3"/>` : ''}
-    ${seriesList.map((s) => `<polyline points="${pts(s.values)}" fill="none" stroke="${s.color}"
-      stroke-width="2.5" stroke-linejoin="round" stroke-linecap="round"/>`).join('')}
-    <g data-hover display="none">
-      <line x1="0" x2="0" y1="${pad}" y2="${H - pad}" stroke="rgba(255,255,255,.4)"/>
-      ${seriesList.map((s) => `<circle r="3.5" fill="${s.color}" stroke="#0a0a0b" stroke-width="1.5"/>`).join('')}
-    </g>
-    <text x="${pad}" y="${H + 20}" fill="#a6a6ab" font-size="12">${xLabels[0]}</text>
-    <text x="${W - pad}" y="${H + 20}" fill="#a6a6ab" font-size="12" text-anchor="end">${xLabels[1]}</text>
-  </svg>
-  <div data-tip hidden style="position:absolute;top:8px;pointer-events:none;background:#0a0a0b;border:1px solid var(--line);
-    border-radius:8px;padding:7px 10px;font-size:.78rem;line-height:1.45;white-space:nowrap;z-index:5"></div>
-  </div>
-  <div class="small muted" style="display:flex;gap:14px;flex-wrap:wrap">
-    ${seriesList.map((s) => `<span><i style="display:inline-block;width:10px;height:10px;border-radius:2px;background:${s.color};margin-right:5px"></i>${s.label}</span>`).join('')}
-    ${marker !== null ? `<span><i style="display:inline-block;width:10px;height:2px;background:rgba(247,161,58,.9);margin-right:5px;vertical-align:middle"></i>${t('fm.chart.bemark')}</span>` : ''}
-  </div>`;
-
-  const svg = el.querySelector('svg');
-  const hover = el.querySelector('[data-hover]');
-  const guide = hover.querySelector('line');
-  const dots = [...hover.querySelectorAll('circle')];
-  const tip = el.querySelector('[data-tip]');
-
-  const show = (clientX) => {
-    const rect = svg.getBoundingClientRect();
-    const frac = Math.min(1, Math.max(0, (clientX - rect.left) / rect.width));
-    const i = Math.min(n - 1, Math.max(0, Math.round(frac * (n - 1))));
-    const x = X(i);
-    guide.setAttribute('x1', x);
-    guide.setAttribute('x2', x);
-    seriesList.forEach((s, k) => {
-      dots[k].setAttribute('cx', x);
-      dots[k].setAttribute('cy', Y(s.values[i]));
-    });
-    // SVG elements have no `hidden` IDL property — toggle the display
-    // attribute instead (assigning .hidden would be a silent no-op expando).
-    hover.removeAttribute('display');
-    tip.innerHTML = `<strong>${esc(xValue(i))}</strong><br>`
-      + seriesList.map((s) => `<span style="color:${s.color}">●</span> ${esc(s.label)}: <strong>${eurF(s.values[i])}</strong>`).join('<br>');
-    tip.hidden = false;
-    // Place the tooltip beside the cursor; flip to the left near the right edge.
-    const px = frac * rect.width;
-    if (px > rect.width * 0.62) {
-      tip.style.left = 'auto';
-      tip.style.right = `${Math.round(rect.width - px + 10)}px`;
-    } else {
-      tip.style.right = 'auto';
-      tip.style.left = `${Math.round(px + 10)}px`;
-    }
-  };
-  const hide = () => { hover.setAttribute('display', 'none'); tip.hidden = true; };
-  svg.addEventListener('pointermove', (e) => show(e.clientX));
-  svg.addEventListener('pointerdown', (e) => show(e.clientX));
-  svg.addEventListener('pointerleave', hide);
-}
-
-function renderCharts(d) {
-  const a = model();
-  const N = 41;
-
-  // 1+2: revenue vs total costs as customer count grows (break-even visible).
-  const maxC = Math.max(10, Math.ceil(Math.max(a.customers * 2,
-    (d.breakEven.customers || 0) * 1.4)));
-  const rev = [], cost = [];
-  for (let i = 0; i < N; i++) {
-    const di = FM.derive({ ...a, customers: maxC * i / (N - 1) });
-    rev.push(di.revenue);
-    cost.push(di.totalCosts);
-  }
-  const beMarker = d.breakEven.reachable && d.breakEven.customers !== null && d.breakEven.customers <= maxC
-    ? Math.round(d.breakEven.customers / maxC * (N - 1)) : null;
-  renderChart(document.getElementById('fm-chart-customers'),
-    [{ values: rev, color: 'var(--lime)', label: t('fm.kpi.revenue') },
-     { values: cost, color: '#ff6b6b', label: t('fm.kpi.costs') }],
-    { xLabels: [`0 ${t('fm.unit.customers')}`, `${maxC} ${t('fm.unit.customers')}`], marker: beMarker,
-      xValue: (i) => `${Math.round(maxC * i / (N - 1))} ${t('fm.unit.customers')}` });
-
-  // 3: net profit as price changes.
-  const maxP = Math.max(20, Math.ceil(a.price * 2));
-  const profit = [];
-  for (let i = 0; i < N; i++) profit.push(FM.derive({ ...a, arpc: 0, price: maxP * i / (N - 1) }).netProfit);
-  renderChart(document.getElementById('fm-chart-price'),
-    [{ values: profit, color: 'var(--lime)', label: t('fm.kpi.net') }],
-    { xLabels: ['0 €', `${maxP} €`], marker: null,
-      xValue: (i) => `${t('fm.in.price')}: ${eurF(maxP * i / (N - 1))}` });
-
-  // 4: 12-month projection with newCustomersPerMonth growth.
-  const proj = FM.projection(a, 12);
-  renderChart(document.getElementById('fm-chart-projection'),
-    [{ values: proj.map((m) => m.revenue), color: 'var(--lime)', label: t('fm.kpi.revenue') },
-     { values: proj.map((m) => m.netProfit), color: '#7ab8ff', label: t('fm.kpi.net') }],
-    { xLabels: [t('fm.chart.month1'), t('fm.chart.month12')], marker: null,
-      xValue: (i) => `${t('fm.chart.month')} ${i + 1} · ${Math.round(proj[i].customers)} ${t('fm.unit.customers')}` });
-}
