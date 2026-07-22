@@ -722,6 +722,7 @@ const I18N_DICT = {
   "fm.chart.projection": { fi: "12 kk ennuste (uudet asiakkaat/kk mukana)", en: "12-month projection (with new customers/month)" },
   "fm.footnote": { fi: "Bruttokate = liikevaihto miinus suorat kulut (valmentajapalkkiot ja muut muuttuvat kulut) jaettuna liikevaihdolla. Nettomarginaali = nettotulos jaettuna liikevaihdolla mallinnettujen kulujen ja veron jälkeen. Katetuotto per treeni = mitä yksi lisätreeni tuo kiinteiden kulujen kattamiseen.", en: "Gross margin = revenue remaining after direct costs (coach fees and other variable costs) divided by revenue. Net margin = net profit divided by revenue after modelled costs and tax. Contribution per session = what one extra session adds toward covering fixed costs." },
   "fm.chart.bemark": { fi: "nollapiste", en: "break-even" },
+  "fm.chart.month": { fi: "Kuukausi", en: "Month" },
   "fm.chart.month1": { fi: "kk 1", en: "mo 1" },
   "fm.chart.month12": { fi: "kk 12", en: "mo 12" },
   "admin.sources.heading": { fi: "Lähteet — mistä asiakkaat tulevat", en: "Sources — where customers come from" },
