@@ -293,6 +293,8 @@ function sendGroupBookedCopies(signupId) {
        ])}`);
     deliver({ type: 'admin_group', userId: a.id, bookingCode: su.code, to: a.email, subject, html });
   }
+  // Mirror the confirmed group spot into the CRM (no-op without ATTIO_API_KEY).
+  require('./attio').syncGroupSignup(signupId);
 }
 
 // Admin created a booking for this customer and chose "send a payment

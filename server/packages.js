@@ -82,6 +82,8 @@ function markPackagePaid(code, stripeSession) {
   const pkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(code);
   if (!pkg || pkg.status === 'active') return false;
   db.prepare("UPDATE packages SET status = 'active', paid_at = ? WHERE id = ?").run(nowISO(), pkg.id);
+  // Mirror the purchased package into the CRM (no-op without ATTIO_API_KEY).
+  require('./attio').syncPackage(pkg.id);
 
   // The wizard's "buy a package + book the first session" flow: the booking
   // was created pointing at this (then-pending) package and the coach has not

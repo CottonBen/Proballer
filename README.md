@@ -108,6 +108,40 @@ From then on the sheet gets tabs for **Bookings, Invoices, Coaches, Availability
 VisitsDaily, Funnel, Customers** — synced automatically after every booking, hourly,
 and on demand via the admin's *Sync now* button.
 
+## Connect Attio (CRM) — one-way sync
+
+The app can mirror **customers and leads** into [Attio](https://attio.com) as *People*,
+and their **bookings, group spots and packages** as *Deals* linked to that person. It is
+one-way (app → Attio) and completely optional: with no key set, none of this runs.
+
+The app stays the source of truth for bookings, invoices and payments — Attio only
+receives a copy for pipeline and relationship work. Coaches and admins are staff, so they
+are never synced.
+
+1. In Attio: **Settings → Developers → Create an access token**. Give it the scopes
+   `record_permission:read-write` and `object_configuration:read-write` (the second lets
+   the app create the custom People fields — source, stage, area, language, sessions,
+   lifetime value — automatically).
+2. Set the token as an env var (in `.env` locally, in Render's environment in production):
+   ```bash
+   ATTIO_API_KEY=<token>
+   ```
+   From then on every new lead, signup, booking and payment flows into Attio in the
+   background (fire-and-forget — a customer's booking is never blocked or slowed by Attio,
+   and any Attio error is just logged).
+3. **Seed your existing data once** (safe to re-run — people upsert by email, deals are
+   idempotent):
+   ```bash
+   ATTIO_API_KEY=<token> node scripts/attio-backfill.js --limit 1   # smoke-test one of each
+   ATTIO_API_KEY=<token> node scripts/attio-backfill.js             # then the full backfill
+   ```
+   Add `--dry-run` (no key needed) to print every payload without sending it. `Deals` uses
+   Attio's built-in object; if custom-field setup is skipped (missing scope), people still
+   sync with all their context packed into the standard *Description* field.
+
+Optionally connect the shared `proballerscoaching@gmail.com` inbox under Attio's email
+integration so conversations auto-log against the right person.
+
 ## Email invoices for real
 
 Set SMTP credentials from any provider (Brevo has a free tier; Gmail works with an

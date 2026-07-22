@@ -59,6 +59,8 @@ function announceBookingToCoach(bookingId) {
   require('./emails').sendBookingConfirmedEmail(b.id);
   require('./emails').sendCoachBookingEmail(b.id);
   require('./emails').sendAdminBookingEmail(b.id);
+  // Mirror the booking into the CRM (no-op unless ATTIO_API_KEY is set).
+  require('./attio').syncBooking(b.id);
   return true;
 }
 

@@ -18,6 +18,7 @@ const groups = require('../groups');
 const packages = require('../packages');
 const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
 const attribution = require('../attribution');
+const attio = require('../attio');
 
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
 const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
@@ -426,6 +427,7 @@ router.post('/auth/verify-signup', loginThrottle, (req, res) => {
   createSession(res, userId);
   recordEvent(req, 'signup', {});
   emails.sendWelcomeEmail(userId);
+  attio.syncPerson(userId);
   res.json({ user: { id: userId, name: pending.name, email, role: 'customer' } });
 });
 
@@ -543,12 +545,14 @@ router.post('/contact', (req, res) => {
   }
   // The same contact twice is still one lead.
   if (!db.prepare('SELECT 1 FROM contact_requests WHERE contact = ? AND handled_at IS NULL').get(contact)) {
+    const source = attribution.visitorSource(req);
     db.prepare('INSERT INTO contact_requests (contact, kind, created_at, source) VALUES (?,?,?,?)')
-      .run(contact, isEmail ? 'email' : 'phone', nowISO(), attribution.visitorSource(req));
+      .run(contact, isEmail ? 'email' : 'phone', nowISO(), source);
     for (const a of db.prepare("SELECT id FROM users WHERE role = 'admin'").all()) {
       db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
         .run(a.id, `New contact request from the website: ${contact}`, nowISO());
     }
+    attio.syncLead({ contact, kind: isEmail ? 'email' : 'phone', source });
   }
   recordEvent(req, 'contact_request', { kind: isEmail ? 'email' : 'phone' });
   res.status(201).json({ ok: true });
@@ -2352,6 +2356,7 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
       emails.sendGroupBookedCopies(su.id);
     }
     sheets.scheduleSync();
+    attio.syncPerson(customer.id);
     return res.status(201).json({
       ok: true, kind, payment, code: su.code,
       customer: { id: customer.id, name: customer.name, email: customer.email, created },
@@ -2387,6 +2392,9 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
   if (payment === 'link' && invoice.pay_token) {
     // Coach hears when the payment confirms (markInvoicePaid), like any card booking.
     emails.sendPaymentRequestEmail(invoice.number);
+    // Surface the open (unpaid) deal in Attio right away — the coach copy waits
+    // for payment, but the pipeline should show the opportunity now.
+    attio.syncBooking(bookingId);
   } else {
     // 'paid' | 'at_session' (or 'link' degraded to at-session without Stripe):
     // nothing is pending — the coach and the customer hear right away.
@@ -2408,6 +2416,7 @@ router.post('/admin/group-signups/:id/paid', requireRole('admin'), (req, res) =>
   if (!su.paid_at) {
     db.prepare('UPDATE group_signups SET paid_at = ? WHERE id = ?').run(nowISO(), su.id);
     sheets.scheduleSync();
+    attio.syncGroupSignup(su.id);
   }
   res.json({ ok: true });
 });
@@ -2931,7 +2940,12 @@ router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => 
   sendReceiptForInvoice(req.params.number, inv.at_session ? 'manual' : 'bank')
     .catch((e) => console.error('[receipt]', e.message));
   const paidInv = db.prepare('SELECT booking_id FROM invoices WHERE number = ?').get(req.params.number);
-  if (paidInv) announceBookingToCoach(paidInv.booking_id);
+  if (paidInv) {
+    announceBookingToCoach(paidInv.booking_id);
+    // Update the deal to "Paid" — announce is idempotent, so a pay-at-session
+    // booking that was announced when created is re-synced here.
+    attio.syncBooking(paidInv.booking_id);
+  }
   res.json({ ok: true });
 });
 
