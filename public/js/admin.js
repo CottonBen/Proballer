@@ -72,6 +72,7 @@ const WIN_LABEL = {
   await loadSources();
   await loadGroups();
   await loadPackages();
+  await loadDiscounts();
   await loadEmails();
 })().catch((e) => toast(I18N.server(e.message), true));
 
@@ -202,6 +203,83 @@ async function loadPackages() {
       toast(t('admin.pkg.adjusted', { n: r.remaining }));
       await loadPackages();
     } catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+}
+
+// --- discount / promo codes ---------------------------------------------------
+function renderDiscountForm() {
+  const f = document.getElementById('disc-form');
+  if (f.dataset.built) return;         // build the inputs once, then reuse
+  f.dataset.built = '1';
+  const fld = (inner) => `<label style="display:flex;flex-direction:column;gap:3px;font-size:.78rem;color:var(--muted)">${inner}</label>`;
+  f.innerHTML =
+    fld(`<span>${t('admin.disc.f.code')}</span><input id="disc-code" maxlength="32" style="text-transform:uppercase;min-width:130px">`) +
+    fld(`<span>${t('admin.disc.f.kind')}</span><select id="disc-kind">
+      <option value="percent">${t('admin.disc.kind.percent')}</option>
+      <option value="fixed">${t('admin.disc.kind.fixed')}</option></select>`) +
+    fld(`<span id="disc-amount-lbl">${t('admin.disc.f.percent')}</span><input id="disc-amount" type="number" min="1" step="1" style="width:90px">`) +
+    fld(`<span>${t('admin.disc.f.maxUses')}</span><input id="disc-maxuses" type="number" min="1" step="1" placeholder="∞" style="width:80px">`) +
+    fld(`<span>${t('admin.disc.f.expires')}</span><input id="disc-expires" type="date" style="min-width:150px">`) +
+    fld(`<span>${t('admin.disc.f.notes')}</span><input id="disc-notes" maxlength="200" style="min-width:150px">`) +
+    `<button class="btn btn-primary btn-sm" id="disc-create">${t('admin.disc.create')}</button>`;
+  const kind = f.querySelector('#disc-kind');
+  const lbl = f.querySelector('#disc-amount-lbl');
+  kind.addEventListener('change', () => {
+    lbl.textContent = t(kind.value === 'fixed' ? 'admin.disc.f.euro' : 'admin.disc.f.percent');
+  });
+  f.querySelector('#disc-create').addEventListener('click', async (e) => {
+    const amount = Number(f.querySelector('#disc-amount').value);
+    const body = {
+      code: f.querySelector('#disc-code').value,
+      kind: kind.value,
+      percent: kind.value === 'percent' ? amount : undefined,
+      amount: kind.value === 'fixed' ? amount : undefined,
+      maxUses: f.querySelector('#disc-maxuses').value || null,
+      expiresAt: f.querySelector('#disc-expires').value || '',
+      notes: f.querySelector('#disc-notes').value,
+    };
+    e.target.disabled = true;
+    try {
+      await API.post('/admin/discounts', body);
+      toast(t('admin.disc.created'));
+      for (const id of ['disc-code', 'disc-amount', 'disc-maxuses', 'disc-expires', 'disc-notes']) f.querySelector('#' + id).value = '';
+      await loadDiscounts();
+    } catch (err) { toast(I18N.server(err.message), true); }
+    e.target.disabled = false;
+  });
+}
+
+async function loadDiscounts() {
+  renderDiscountForm();
+  const rows = await API.get('/admin/discounts');
+  const tbl = document.getElementById('disc-table');
+  document.getElementById('disc-empty').hidden = rows.length > 0;
+  if (!rows.length) { tbl.innerHTML = ''; return; }
+  tbl.innerHTML = `<tr>
+      <th>${t('admin.disc.th.code')}</th><th>${t('admin.disc.th.amount')}</th>
+      <th>${t('admin.disc.th.uses')}</th><th>${t('admin.disc.th.expires')}</th>
+      <th>${t('admin.disc.th.status')}</th><th></th></tr>` +
+    rows.map((d) => `<tr>
+      <td><strong>${esc(d.code)}</strong>${d.notes ? `<br><span class="muted small">${esc(d.notes)}</span>` : ''}</td>
+      <td>${esc(d.label)}</td>
+      <td>${d.uses}${d.max_uses != null ? ` / ${d.max_uses}` : ''}</td>
+      <td class="muted">${d.expires_at ? esc(d.expires_at.slice(0, 10)) : '—'}</td>
+      <td><span class="status-tag status-${d.active ? 'confirmed' : 'cancelled'}">${t(d.active ? 'admin.disc.active' : 'admin.disc.paused')}</span></td>
+      <td style="white-space:nowrap">
+        <button class="btn btn-ghost btn-sm" data-dtoggle="${d.id}:${d.active ? 0 : 1}">${t(d.active ? 'admin.disc.pause' : 'admin.disc.resume')}</button>
+        <button class="btn btn-ghost btn-sm" data-ddel="${d.id}">${t('admin.disc.delete')}</button>
+      </td></tr>`).join('');
+  tbl.querySelectorAll('[data-dtoggle]').forEach((b) => b.addEventListener('click', async () => {
+    const [id, active] = b.dataset.dtoggle.split(':');
+    b.disabled = true;
+    try { await API.put(`/admin/discounts/${id}`, { active: Number(active) }); await loadDiscounts(); }
+    catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
+  }));
+  tbl.querySelectorAll('[data-ddel]').forEach((b) => b.addEventListener('click', async () => {
+    if (!confirm(t('admin.disc.confirmDelete'))) return;
+    b.disabled = true;
+    try { await API.del(`/admin/discounts/${b.dataset.ddel}`); await loadDiscounts(); }
+    catch (e) { b.disabled = false; toast(I18N.server(e.message), true); }
   }));
 }
 

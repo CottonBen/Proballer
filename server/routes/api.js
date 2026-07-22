@@ -2497,7 +2497,7 @@ router.post('/admin/discounts', requireRole('admin'), (req, res) => {
   if (r.error) return res.status(400).json({ error: r.error });
   res.status(201).json({ ok: true, id: r.id });
 });
-router.patch('/admin/discounts/:id', requireRole('admin'), (req, res) => {
+router.put('/admin/discounts/:id', requireRole('admin'), (req, res) => {
   const r = discounts.update(req.params.id, req.body || {});
   if (r.error) return res.status(r.error === 'Discount not found.' ? 404 : 400).json({ error: r.error });
   res.json({ ok: true });
