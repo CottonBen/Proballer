@@ -1050,7 +1050,7 @@ const I18N_DICT = {
   "admin.disc.created": { fi: "Alennuskoodi luotu.", en: "Discount code created." },
   "admin.disc.th.code": { fi: "Koodi", en: "Code" },
   "admin.disc.th.amount": { fi: "Alennus", en: "Discount" },
-  "admin.disc.th.uses": { fi: "Käytetty", en: "Used" },
+  "admin.disc.th.uses": { fi: "Käytetty / enint.", en: "Used / max" },
   "admin.disc.th.expires": { fi: "Voimassa asti", en: "Expires" },
   "admin.disc.th.status": { fi: "Tila", en: "Status" },
   "admin.disc.active": { fi: "Käytössä", en: "Active" },

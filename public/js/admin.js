@@ -262,7 +262,7 @@ async function loadDiscounts() {
     rows.map((d) => `<tr>
       <td><strong>${esc(d.code)}</strong>${d.notes ? `<br><span class="muted small">${esc(d.notes)}</span>` : ''}</td>
       <td>${esc(d.label)}</td>
-      <td>${d.uses}${d.max_uses != null ? ` / ${d.max_uses}` : ''}</td>
+      <td>${d.uses} / ${d.max_uses != null ? d.max_uses : '∞'}</td>
       <td class="muted">${d.expires_at ? esc(d.expires_at.slice(0, 10)) : '—'}</td>
       <td><span class="status-tag status-${d.active ? 'confirmed' : 'cancelled'}">${t(d.active ? 'admin.disc.active' : 'admin.disc.paused')}</span></td>
       <td style="white-space:nowrap">

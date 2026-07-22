@@ -168,13 +168,24 @@ function client() {
     check('booking with code accepted', r.status === 201, r.data);
     check('booking total is 40 € − 10 € = 30 € (3000c)', r.data.booking.totalCents === 3000, r.data.booking);
     check('booking reports the code + saving', r.data.booking.discountCode === 'WELCOME10' && r.data.booking.codeDiscountCents === 1000, r.data.booking);
-    const bk = db2.prepare("SELECT total_cents, discount_code, code_discount_cents FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1").get(custId);
+    const bk = db2.prepare("SELECT id, total_cents, discount_code, code_discount_cents FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1").get(custId);
     check('DB row stores discounted total + code', bk.total_cents === 3000 && bk.discount_code === 'WELCOME10' && bk.code_discount_cents === 1000, bk);
 
-    // WELCOME10 now used up (max_uses 1) — admin list shows uses, reuse blocked
+    // A pending, unpaid card checkout must NOT count as a use yet (the bug the
+    // admin hit: a fresh code showing 1/1 the moment checkout opened).
     r = await admin('GET', '/admin/discounts');
-    const w = r.data.find((d) => d.code === 'WELCOME10');
-    check('admin list shows WELCOME10 uses = 1', w && w.uses === 1, w);
+    let w = r.data.find((d) => d.code === 'WELCOME10');
+    check('pending unpaid booking does NOT count (still 0 used)', w && w.uses === 0, w);
+
+    // Mark the invoice paid -> now it is a genuine redemption and counts.
+    const invNum = db2.prepare('SELECT number FROM invoices WHERE booking_id = ?').get(bk.id).number;
+    r = await admin('POST', `/admin/invoices/${invNum}/paid`);
+    check('admin marks the booking paid', r.status === 200, r.data);
+    r = await admin('GET', '/admin/discounts');
+    w = r.data.find((d) => d.code === 'WELCOME10');
+    check('paid booking counts as a use (1 used)', w && w.uses === 1, w);
+
+    // WELCOME10 now used up (max_uses 1) — reuse blocked
     const date2 = helsinkiDate(3);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, date2, hour, new Date().toISOString());
     r = await cust('POST', '/bookings', { coachId, date: date2, hour, location: 'Helsinki', code: 'welcome10' });

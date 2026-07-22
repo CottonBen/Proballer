@@ -15,14 +15,21 @@ function find(code) {
   return c ? (db.prepare('SELECT * FROM discounts WHERE code = ?').get(c) || null) : null;
 }
 
-// How many times the code has actually been redeemed right now: live bookings,
-// group spots and packages that carry it (cancelled/void ones don't count).
+// How many times the code has actually been REDEEMED — a genuine, paid (or
+// pay-at-session / free) purchase. A pending, unpaid card checkout that a
+// customer started but hasn't paid does NOT count: it would otherwise show a
+// brand-new code as "1/1 used" the moment someone (or the admin, testing) opens
+// checkout, and self-heal only when the unpaid sweep runs. At this scale the
+// tiny risk of two in-flight redemptions of a last use is worth the clarity.
 function usesOf(code) {
   const c = norm(code);
   if (!c) return 0;
-  const b = db.prepare("SELECT COUNT(*) n FROM bookings WHERE discount_code = ? AND status != 'cancelled'").get(c).n;
-  const g = db.prepare("SELECT COUNT(*) n FROM group_signups WHERE discount_code = ? AND status != 'cancelled'").get(c).n;
-  const p = db.prepare("SELECT COUNT(*) n FROM packages WHERE discount_code = ? AND status != 'void'").get(c).n;
+  const b = db.prepare(`SELECT COUNT(*) n FROM bookings b
+    LEFT JOIN invoices i ON i.booking_id = b.id
+    WHERE b.discount_code = ? AND b.status != 'cancelled'
+      AND (i.status = 'paid' OR i.at_session = 1 OR b.total_cents = 0 OR i.id IS NULL)`).get(c).n;
+  const g = db.prepare("SELECT COUNT(*) n FROM group_signups WHERE discount_code = ? AND status = 'confirmed'").get(c).n;
+  const p = db.prepare("SELECT COUNT(*) n FROM packages WHERE discount_code = ? AND status = 'active'").get(c).n;
   return b + g + p;
 }
 
