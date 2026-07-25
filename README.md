@@ -142,6 +142,28 @@ are never synced.
 Optionally connect the shared `proballerscoaching@gmail.com` inbox under Attio's email
 integration so conversations auto-log against the right person.
 
+## Daily brief (`GET /api/brief`)
+
+A read-only endpoint that returns the day's key numbers — sessions today, revenue today +
+month-to-date, the next 7 days, new signups/leads, and things needing attention (unpaid
+invoices, open leads, packages down to their last session). It's **off by default** and
+turns on only when you set a secret:
+
+```bash
+BRIEF_TOKEN=<long random value>   # node -e "console.log(require('node:crypto').randomBytes(24).toString('hex'))"
+```
+
+Then a scheduler (or you) can fetch it without logging in:
+
+- `GET /api/brief?token=<value>` → JSON
+- `GET /api/brief?token=<value>&format=html` → a styled HTML dashboard
+- `GET /api/brief?token=<value>&send=1` → also emails the brief to the admin inbox (via SMTP)
+
+Without the token the endpoint returns 404; a wrong token returns 401. Requests are lightly
+rate-limited. "Today" is always the Helsinki business day, regardless of when the brief is
+fetched. A daily 20:30 (London) run is wired up as a scheduled routine that hits this
+endpoint with `send=1` and renders the dashboard.
+
 ## Email invoices for real
 
 Set SMTP credentials from any provider (Brevo has a free tier; Gmail works with an

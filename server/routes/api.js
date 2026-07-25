@@ -17,6 +17,7 @@ const emails = require('../emails');
 const groups = require('../groups');
 const packages = require('../packages');
 const discounts = require('../discounts');
+const brief = require('../brief');
 const { ensureChat, postChatMessage, markChatRead, announceBookingToCoach } = require('../notify');
 const attribution = require('../attribution');
 const attio = require('../attio');
@@ -36,6 +37,28 @@ function coachPhotoUrl(photosJson) {
 
 const router = express.Router();
 const WINDOWS = { d7: 7, d30: 30, d90: 90 };
+
+// Daily brief (read-only). Token-gated via BRIEF_TOKEN so a scheduler can fetch
+// it without logging in; the endpoint is OFF entirely when the token isn't set.
+// ?send=1 also emails the brief to the admins; ?format=html returns the HTML.
+router.get('/brief', async (req, res) => {
+  const token = process.env.BRIEF_TOKEN || '';
+  if (!token) return res.status(404).json({ error: 'Not found.' });
+  const given = req.get('X-Brief-Token') || String(req.query.token || '');
+  if (given !== token) return res.status(401).json({ error: 'Not allowed.' });
+  autoCompleteBookings(); // tick over just-finished sessions so "today" is current
+  const data = brief.buildBrief();
+  let emailed = null;
+  if (String(req.query.send) === '1') {
+    try { emailed = await brief.sendBriefEmail(); }
+    catch (e) { console.error('[brief]', e.message); emailed = { error: e.message }; }
+  }
+  if (String(req.query.format) === 'html') {
+    res.set('Content-Type', 'text/html; charset=utf-8');
+    return res.send(brief.renderBriefHTML(data));
+  }
+  res.json({ ...data, emailed });
+});
 
 const parseJSON = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
 const coachPublic = (c) => ({
