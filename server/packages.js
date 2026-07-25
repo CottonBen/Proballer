@@ -19,8 +19,11 @@ const genCode = (prefix) => prefix + '-' + crypto.randomBytes(3).toString('hex')
 const packageOptions = () => config.packages.filter((p) => p.sessions > 1);
 const findOption = (id) => packageOptions().find((p) => p.id === id);
 
-// What one session of this package is worth, for coach-payout purposes.
-const perSessionCents = (pkg) => Math.round(pkg.price_cents / pkg.sessions_total);
+// What one session of this package is worth, for coach-payout purposes. Uses
+// the pre-discount (list) price — a promo code lowers what the CUSTOMER paid,
+// but the coach is still paid the full per-session value (owner's call), and
+// consistently across the first and later sessions of a discounted package.
+const perSessionCents = (pkg) => Math.round((pkg.price_cents + (pkg.code_discount_cents || 0)) / pkg.sessions_total);
 
 function usedSessions(packageId) {
   return db.prepare(`SELECT COUNT(*) n FROM bookings
@@ -61,19 +64,17 @@ function customerPackageSummary(customerId) {
   };
 }
 
-// A new pending purchase, held until pay_by like an unpaid booking.
-// opts (all optional): { priceCents } overrides the package price (a promo code
-// applied by the caller), plus { discountCode, codeDiscountCents } for the receipt.
-function createPackagePurchase(customerId, optionId, opts = {}) {
+// A new pending purchase, held until pay_by like an unpaid booking. A promo
+// code (if any) is applied by the caller afterwards via UPDATE, so this stays
+// discount-agnostic — discount_code / code_discount_cents default to '' / 0.
+function createPackagePurchase(customerId, optionId) {
   const opt = findOption(optionId);
   if (!opt) return null;
-  const priceCents = opts.priceCents != null ? opts.priceCents : opt.price * 100;
   const info = db.prepare(`INSERT INTO packages
-    (code, customer_id, sessions_total, price_cents, status, pay_by, discount_code, code_discount_cents, created_at)
-    VALUES (?,?,?,?, 'pending', ?, ?, ?, ?)`)
-    .run(genCode('PKG'), customerId, opt.sessions, priceCents,
-      new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(),
-      opts.discountCode || '', opts.codeDiscountCents || 0, nowISO());
+    (code, customer_id, sessions_total, price_cents, status, pay_by, created_at)
+    VALUES (?,?,?,?, 'pending', ?, ?)`)
+    .run(genCode('PKG'), customerId, opt.sessions, opt.price * 100,
+      new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(), nowISO());
   return db.prepare('SELECT * FROM packages WHERE id = ?').get(Number(info.lastInsertRowid));
 }
 

@@ -2492,9 +2492,24 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
 // ---------------------------------------------------------------------------
 // Discount / promo codes.
 // ---------------------------------------------------------------------------
+// Lenient per-IP throttle on code validation to blunt automated code-guessing
+// (auth is already required). Generous enough that a customer mistyping a code
+// a few times — or a few people behind one IP — is never blocked.
+const validateHits = new Map();
+function throttleValidate(req, res, next) {
+  const now = Date.now();
+  const e = validateHits.get(req.ip) || { count: 0, resetAt: now + 5 * 60000 };
+  if (now > e.resetAt) { e.count = 0; e.resetAt = now + 5 * 60000; }
+  if (e.count >= 40) return res.status(429).json({ error: 'Too many attempts. Try again in a few minutes.' });
+  e.count++;
+  validateHits.set(req.ip, e);
+  if (validateHits.size > 5000) validateHits.clear(); // crude memory bound
+  next();
+}
+
 // Live check for the booking wizard: given the price the customer is about to
 // pay (baseCents), returns what a code would take off — or why it can't be used.
-router.post('/discounts/validate', requireRole('customer', 'admin'), (req, res) => {
+router.post('/discounts/validate', requireRole('customer', 'admin'), throttleValidate, (req, res) => {
   const baseCents = Math.max(0, Math.round(Number(req.body?.baseCents) || 0));
   const code = String(req.body?.code || '');
   if (!discounts.norm(code)) return res.json({ valid: false });

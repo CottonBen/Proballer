@@ -77,9 +77,17 @@ check('re-activated code valid again', !D.validate('PAUSED').error);
 // label + expiry normalisation
 check('percent label', D.label(pct) === '20 %');
 check('fixed label', D.label(fix) === '10,00 €');
-check('date-only expiry -> end of day ISO', D.normExpiry('2026-07-31') === '2026-07-31T23:59:59.999Z');
+check('date-only expiry -> end of Helsinki day, summer/UTC+3', D.normExpiry('2026-07-31') === '2026-07-31T20:59:59.999Z');
+check('date-only expiry -> end of Helsinki day, winter/UTC+2', D.normExpiry('2026-01-15') === '2026-01-15T21:59:59.999Z');
 check('blank expiry -> null', D.normExpiry('') === null);
 check('garbage expiry -> false', D.normExpiry('not-a-date') === false);
+
+// Package coach-payout basis (finding #1): a promo code on a package must NOT
+// dock the coach — per-session value uses the pre-discount (list) price, the
+// same for the first and later sessions of a discounted package.
+const P = require('../server/packages');
+check('perSessionCents uses list price when a code was applied', P.perSessionCents({ price_cents: 9120, code_discount_cents: 2280, sessions_total: 3 }) === 3800);
+check('perSessionCents unchanged with no code', P.perSessionCents({ price_cents: 11400, sessions_total: 3 }) === 3800);
 check('list reports derived uses', (D.list().find((d) => d.code === 'OFF3') || {}).uses === 2);
 
 db.close?.();

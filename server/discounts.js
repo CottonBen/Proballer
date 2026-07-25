@@ -7,6 +7,7 @@
 'use strict';
 
 const { db, nowISO } = require('./db');
+const config = require('../config');
 
 function norm(code) { return String(code || '').trim().toUpperCase(); }
 
@@ -21,16 +22,34 @@ function find(code) {
 // brand-new code as "1/1 used" the moment someone (or the admin, testing) opens
 // checkout, and self-heal only when the unpaid sweep runs. At this scale the
 // tiny risk of two in-flight redemptions of a last use is worth the clarity.
+// What makes a purchase a genuine, counted redemption (see the note above).
+// Shared by the single-code count and the batch count so they can't diverge.
+const REDEEMED = {
+  bookings: "b.status != 'cancelled' AND (i.status = 'paid' OR i.at_session = 1 OR b.total_cents = 0 OR i.id IS NULL)",
+  groups: "status = 'confirmed'",
+  packages: "status = 'active'",
+};
+
 function usesOf(code) {
   const c = norm(code);
   if (!c) return 0;
-  const b = db.prepare(`SELECT COUNT(*) n FROM bookings b
-    LEFT JOIN invoices i ON i.booking_id = b.id
-    WHERE b.discount_code = ? AND b.status != 'cancelled'
-      AND (i.status = 'paid' OR i.at_session = 1 OR b.total_cents = 0 OR i.id IS NULL)`).get(c).n;
-  const g = db.prepare("SELECT COUNT(*) n FROM group_signups WHERE discount_code = ? AND status = 'confirmed'").get(c).n;
-  const p = db.prepare("SELECT COUNT(*) n FROM packages WHERE discount_code = ? AND status = 'active'").get(c).n;
+  const b = db.prepare(`SELECT COUNT(*) n FROM bookings b LEFT JOIN invoices i ON i.booking_id = b.id
+    WHERE b.discount_code = ? AND ${REDEEMED.bookings}`).get(c).n;
+  const g = db.prepare(`SELECT COUNT(*) n FROM group_signups WHERE discount_code = ? AND ${REDEEMED.groups}`).get(c).n;
+  const p = db.prepare(`SELECT COUNT(*) n FROM packages WHERE discount_code = ? AND ${REDEEMED.packages}`).get(c).n;
   return b + g + p;
+}
+
+// Redeemed-count for EVERY code in one pass per table (3 queries total, not
+// 3×N) — used to render the admin list.
+function usesByCode() {
+  const m = new Map();
+  const add = (rows) => { for (const r of rows) m.set(r.discount_code, (m.get(r.discount_code) || 0) + r.n); };
+  add(db.prepare(`SELECT b.discount_code, COUNT(*) n FROM bookings b LEFT JOIN invoices i ON i.booking_id = b.id
+    WHERE b.discount_code != '' AND ${REDEEMED.bookings} GROUP BY b.discount_code`).all());
+  add(db.prepare(`SELECT discount_code, COUNT(*) n FROM group_signups WHERE discount_code != '' AND ${REDEEMED.groups} GROUP BY discount_code`).all());
+  add(db.prepare(`SELECT discount_code, COUNT(*) n FROM packages WHERE discount_code != '' AND ${REDEEMED.packages} GROUP BY discount_code`).all());
+  return m;
 }
 
 // Currently redeemable? Returns { discount } or { error }.
@@ -69,20 +88,41 @@ function label(d) {
     : (d.amount_cents / 100).toFixed(2).replace('.', ',') + ' €';
 }
 
-// Accepts 'YYYY-MM-DD' (end of that day) or a full ISO string; '' / null clears.
-// Returns an ISO string, null, or false when the input is unparseable.
+// Accepts 'YYYY-MM-DD' (end of that day in the business timezone) or a full ISO
+// string; '' / null clears. Returns an ISO (UTC) string, null, or false when the
+// input is unparseable.
 function normExpiry(v) {
   const s = String(v == null ? '' : v).trim();
   if (!s) return null;
-  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return `${s}T23:59:59.999Z`;
+  if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return helsinkiDayEndISO(s);
   const t = Date.parse(s);
   return Number.isNaN(t) ? false : new Date(t).toISOString();
 }
 
+// UTC instant of 23:59:59.999 on calendar day `YYYY-MM-DD` in the business
+// timezone — so "expires 31.7." stops at midnight Helsinki, not ~03:00 the next
+// day (which a naive end-of-day-in-UTC would give). DST-correct: the offset is
+// read for that specific date (at noon, a whole-minute value clear of the ~03:00
+// DST-transition hour and of any millisecond rounding).
+function helsinkiDayEndISO(dateStr) {
+  const noon = new Date(`${dateStr}T12:00:00Z`);
+  const parts = new Intl.DateTimeFormat('en-US', {
+    timeZone: config.timezone, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit',
+    hour: '2-digit', minute: '2-digit', second: '2-digit',
+  }).formatToParts(noon).reduce((a, p) => (a[p.type] = p.value, a), {});
+  const hour = parts.hour === '24' ? 0 : Number(parts.hour);
+  const asHki = Date.UTC(Number(parts.year), Number(parts.month) - 1, Number(parts.day), hour, Number(parts.minute), Number(parts.second));
+  const offsetMs = asHki - noon.getTime();               // ms the zone is ahead of UTC
+  const localEnd = new Date(`${dateStr}T23:59:59.999Z`).getTime();
+  return new Date(localEnd - offsetMs).toISOString();
+}
+
 // ---- Admin management ------------------------------------------------------
 function list() {
+  const uses = usesByCode();
   return db.prepare('SELECT * FROM discounts ORDER BY active DESC, id DESC').all()
-    .map((d) => ({ ...d, uses: usesOf(d.code), label: label(d) }));
+    .map((d) => ({ ...d, uses: uses.get(d.code) || 0, label: label(d) }));
 }
 
 function create(f) {
