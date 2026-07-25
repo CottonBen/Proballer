@@ -58,7 +58,7 @@ async function stripeRequest(method, path, params) {
 // used by the login-free payment links (/api/pay/:token), whose payers may
 // have no way to open /my-bookings.
 function createCheckoutSession({ metadata, successParam, amountCents, description, customerEmail, origin, lang,
-  successUrl, cancelUrl }) {
+  successUrl, cancelUrl, images }) {
   return stripeRequest('POST', '/checkout/sessions', {
     mode: 'payment',
     locale: lang === 'fi' ? 'fi' : 'en',
@@ -73,7 +73,10 @@ function createCheckoutSession({ metadata, successParam, amountCents, descriptio
       price_data: {
         currency: 'eur',
         unit_amount: amountCents,
-        product_data: { name: description },
+        // `images` (optional) shows a picture on the left of the Checkout page —
+        // the coach's photo for 1-on-1s, the logo otherwise. Stripe needs a
+        // public PNG/JPG URL and silently ignores any it can't fetch.
+        product_data: images && images.length ? { name: description, images } : { name: description },
       },
     }],
     metadata,

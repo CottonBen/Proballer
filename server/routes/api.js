@@ -24,6 +24,16 @@ const attio = require('../attio');
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
 const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
 
+// Product image shown on the Stripe Checkout page. Absolute URLs off the public
+// site so Stripe can fetch them (it ignores any it can't reach — e.g. localhost
+// in dev). Logo = the app icon PNG (Stripe doesn't accept the SVG logo).
+const CHECKOUT_LOGO = `${config.siteUrl}/assets/apple-touch-icon.png`;
+function coachPhotoUrl(photosJson) {
+  const first = parseJSON(photosJson, [])[0];
+  if (!first) return CHECKOUT_LOGO;
+  return /^https?:\/\//.test(first) ? first : `${config.siteUrl}${first}`;
+}
+
 const router = express.Router();
 const WINDOWS = { d7: 7, d30: 30, d90: 90 };
 
@@ -845,6 +855,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
         description: `${config.siteName} — ${coach.name} ${date} ${String(hour).padStart(2, '0')}:00 (${invoice.number})`,
         customerEmail: req.user.email,
         origin,
+        images: [coachPhotoUrl(coach.photos)],
         lang: langPref || db.prepare('SELECT lang FROM users WHERE id = ?').get(req.user.id).lang,
       });
       db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, invoice.id);
@@ -934,7 +945,7 @@ router.post('/invoices/:number/pay', requireRole('customer', 'admin'), async (re
     return res.status(409).json({ error: 'This invoice is voided (its booking was cancelled) — it cannot be marked paid.' });
   }
   if (!inv.amount_cents) return res.status(400).json({ error: 'Nothing to pay.' });
-  const booking = db.prepare(`SELECT b.date, b.hour, c.name AS coach
+  const booking = db.prepare(`SELECT b.date, b.hour, c.name AS coach, c.photos AS coachPhotos
     FROM bookings b JOIN coaches c ON c.id = b.coach_id WHERE b.id = ?`).get(inv.booking_id);
   const me = db.prepare('SELECT lang FROM users WHERE id = ?').get(req.user.id);
   const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
@@ -948,6 +959,7 @@ router.post('/invoices/:number/pay', requireRole('customer', 'admin'), async (re
       description: `${config.siteName} — ${booking.coach} ${booking.date} ${String(booking.hour).padStart(2, '0')}:00 (${inv.number})`,
       customerEmail: inv.customer_email,
       origin,
+      images: [coachPhotoUrl(booking.coachPhotos)],
       lang: me && me.lang,
     });
     db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, inv.id);
@@ -1070,6 +1082,7 @@ async function groupCheckout(req, su, gs, urls = {}) {
     amountCents: su.price_cents,
     description: `${config.siteName} — Group training ${gs.date} ${String(gs.hour).padStart(2, '0')}:00 (${su.code})`,
     customerEmail: me.email,
+    images: [CHECKOUT_LOGO],
     origin,
     lang: me.lang,
     successUrl: urls.successUrl,
@@ -1216,7 +1229,7 @@ router.get('/pay/:token', async (req, res) => {
       return payPage(res, t.lang, { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 410 });
     }
     try {
-      const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(t.booking.coach_id);
+      const coach = db.prepare('SELECT name, photos FROM coaches WHERE id = ?').get(t.booking.coach_id);
       // Never leave two live sessions for one invoice (double charge / lost payment).
       await stripe.expireSession(t.inv.stripe_session_id);
       const session = await stripe.createCheckoutSession({
@@ -1224,6 +1237,7 @@ router.get('/pay/:token', async (req, res) => {
         amountCents: t.inv.amount_cents,
         description: `${config.siteName} — ${coach.name} ${t.booking.date} ${String(t.booking.hour).padStart(2, '0')}:00 (${t.inv.number})`,
         customerEmail: t.inv.customer_email,
+        images: [coachPhotoUrl(coach.photos)],
         origin, lang: t.lang, ...urls,
       });
       db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, t.inv.id);
@@ -1348,6 +1362,7 @@ async function packageCheckout(req, pkg) {
     description: `${config.siteName} — ${pkg.sessions_total} session package (${pkg.code})`,
     customerEmail: me.email,
     origin,
+    images: [CHECKOUT_LOGO],
     lang: me.lang,
   });
   db.prepare('UPDATE packages SET stripe_session_id = ? WHERE id = ?').run(session.id, pkg.id);
