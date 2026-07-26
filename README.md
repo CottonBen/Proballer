@@ -161,8 +161,15 @@ Then a scheduler (or you) can fetch it without logging in:
 
 Without the token the endpoint returns 404; a wrong token returns 401. Requests are lightly
 rate-limited. "Today" is always the Helsinki business day, regardless of when the brief is
-fetched. A daily 20:30 (London) run is wired up as a scheduled routine that hits this
-endpoint with `send=1` and renders the dashboard.
+fetched.
+
+**Delivery:** the always-on app emails the brief to the admins **daily at 20:30 Europe/London**
+by itself (an internal scheduler — DST-aware, so it stays 20:30 local through BST and GMT; it
+only runs when SMTP is configured, or set `BRIEF_DAILY=1` to force it). The email body *is* the
+dashboard. A logged-in admin can also open the dashboard on demand at **`/api/admin/brief`**
+(session-authed, no token). The token-gated `/api/brief` above stays available for any external
+puller. (Note: a scheduled *cloud* agent can't be used to fetch it — that sandbox blocks
+outbound requests to the site — which is why the app sends it itself.)
 
 ## Email invoices for real
 

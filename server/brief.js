@@ -128,4 +128,41 @@ async function sendBriefEmail() {
   return { recipients: to.length };
 }
 
-module.exports = { buildBrief, renderBriefHTML, sendBriefEmail };
+// ---- Daily brief email scheduler -------------------------------------------
+// The app is always-on (Render web service), so it emails the brief itself at
+// 20:30 Europe/London — no external cron needed (a scheduled cloud agent can't
+// reach the site). Europe/London here is DST-aware, so it stays 20:30 local
+// through BST and GMT. Restart-safe with no double-send: the meta key
+// 'brief_last_sent' records the London date the brief last went out.
+const BRIEF_TZ = 'Europe/London';
+const BRIEF_MINUTE = 20 * 60 + 30; // 20:30 local
+
+function localNow(tz) {
+  const p = new Intl.DateTimeFormat('en-CA', {
+    timeZone: tz, hour12: false,
+    year: 'numeric', month: '2-digit', day: '2-digit', hour: '2-digit', minute: '2-digit',
+  }).formatToParts(new Date()).reduce((a, x) => (a[x.type] = x.value, a), {});
+  return { date: `${p.year}-${p.month}-${p.day}`, minutes: Number(p.hour === '24' ? 0 : p.hour) * 60 + Number(p.minute) };
+}
+
+let schedulerStarted = false;
+function startDailyBrief() {
+  if (schedulerStarted) return;
+  schedulerStarted = true;
+  const tick = () => {
+    try {
+      const { date, minutes } = localNow(BRIEF_TZ);
+      if (minutes < BRIEF_MINUTE) return;                 // not yet 20:30 London
+      const last = db.prepare("SELECT value FROM meta WHERE key = 'brief_last_sent'").get();
+      if (last && last.value === date) return;            // already sent for this London day
+      // Mark first, then send: a slow send can't be double-fired by the next tick.
+      db.prepare("INSERT OR REPLACE INTO meta (key, value) VALUES ('brief_last_sent', ?)").run(date);
+      sendBriefEmail().catch((e) => console.error('[brief] daily send:', e.message));
+    } catch (e) { console.error('[brief] scheduler:', e.message); }
+  };
+  const iv = setInterval(tick, 5 * 60 * 1000);
+  if (iv.unref) iv.unref();
+  tick(); // also check just after boot (covers a restart shortly after 20:30)
+}
+
+module.exports = { buildBrief, renderBriefHTML, sendBriefEmail, startDailyBrief };

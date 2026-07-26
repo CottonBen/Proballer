@@ -83,6 +83,21 @@ async function get(p) {
     const briefLogs = db.prepare("SELECT COUNT(*) n FROM email_log WHERE type='brief'").get().n;
     check('a brief email was logged', briefLogs >= 1, briefLogs);
 
+    // --- on-demand in-app dashboard (/api/admin/brief, admin-authed) ---
+    check('admin brief requires auth', (await get('/api/admin/brief')).status === 401);
+    let cookie = '';
+    const login = await fetch(BASE + '/api/auth/login', {
+      method: 'POST', headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ email: 'admin@test.local', password: 'TestAdmin123!' }),
+    });
+    for (const line of login.headers.getSetCookie ? login.headers.getSetCookie() : []) {
+      const m = /^([^=]+)=([^;]*)/.exec(line); if (m) cookie += `${m[1]}=${m[2]}; `;
+    }
+    check('admin logs in', login.status === 200, login.status);
+    const dash = await fetch(BASE + '/api/admin/brief', { headers: { Cookie: cookie } });
+    const dashBody = await dash.text();
+    check('admin brief returns the HTML dashboard', dash.status === 200 && /<html/i.test(dashBody) && /kooste/i.test(dashBody), dash.status);
+
     db.close?.();
     console.log(`\n${passed} passed, ${failed} failed`);
     server.kill('SIGKILL');

@@ -165,6 +165,13 @@ const runEmails = () => {
 setTimeout(runEmails, 15000); // shortly after boot (catches up if the host slept over noon)
 setInterval(runEmails, 5 * 60000);
 
+// Daily business brief, emailed to the admins at 20:30 Europe/London. Only when
+// SMTP can actually deliver (so tests/dev without SMTP stay silent); set
+// BRIEF_DAILY=1 to force it on anyway.
+if (require('./mailer').smtpConfigured() || process.env.BRIEF_DAILY === '1') {
+  require('./brief').startDailyBrief();
+}
+
 const PORT = Number(process.env.PORT || 3000);
 app.listen(PORT, () => {
   console.log(`${config.siteName} running on http://localhost:${PORT}`);

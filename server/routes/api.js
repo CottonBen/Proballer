@@ -60,6 +60,14 @@ router.get('/brief', async (req, res) => {
   res.json({ ...data, emailed });
 });
 
+// The same brief on demand for a logged-in admin (no token needed) — the in-app
+// dashboard, opened as a full HTML page.
+router.get('/admin/brief', requireRole('admin'), (req, res) => {
+  autoCompleteBookings();
+  res.set('Content-Type', 'text/html; charset=utf-8');
+  res.send(brief.renderBriefHTML(brief.buildBrief()));
+});
+
 const parseJSON = (s, fallback) => { try { return JSON.parse(s); } catch { return fallback; } };
 const coachPublic = (c) => ({
   id: c.id, name: c.name, slug: c.slug, bio: c.bio, bio_en: c.bio_en || '',
