@@ -1043,6 +1043,11 @@ const I18N_DICT = {
   "admin.disc.f.percent": { fi: "Alennus-%", en: "Percent off" },
   "admin.disc.f.euro": { fi: "Alennus €", en: "Euros off" },
   "admin.disc.f.maxUses": { fi: "Käyttökertoja", en: "Max uses" },
+  "admin.disc.f.maxPerCustomer": { fi: "Käyttökertoja / asiakas", en: "Max uses per customer" },
+  "admin.disc.perCust.unlimited": { fi: "Rajoittamaton", en: "Unlimited" },
+  "admin.disc.perCust.custom": { fi: "Muu määrä…", en: "Custom number…" },
+  "admin.disc.maxPerCustomer.help": { fi: "Käyttökertoja / asiakas määrää, kuinka monta kertaa yksittäinen asiakas voi käyttää tätä alennuskoodia. Valitse 1, jos koodi on tarkoitettu vain ensimmäiseen varaukseen. Oletus: rajoittamaton.", en: "Maximum uses per customer controls how many times each individual customer can use this discount code. Set to 1 for a first-booking-only promotion. Default: unlimited." },
+  "admin.disc.perCustomerTag": { fi: "enint. {n} / asiakas", en: "max {n} / customer" },
   "admin.disc.f.expires": { fi: "Voimassa asti", en: "Expires" },
   "admin.disc.f.notes": { fi: "Muistiinpano", en: "Note" },
   "admin.disc.kind.percent": { fi: "Prosentti (%)", en: "Percentage (%)" },
@@ -1164,6 +1169,13 @@ const I18N_DICT = {
 // Keyed by the EXACT English string the server sends; translated only in FI
 // mode. Patterns (RegExp -> template) handle messages with embedded values.
 const I18N_SERVER_EXACT = {
+  // Discount / promo code validation (server/discounts.js). Shown to customers
+  // in the booking wizard and to the admin in the discount panel.
+  "You have already used this discount code.": "Olet jo käyttänyt tämän alennuskoodin.",
+  "That discount code is not valid.": "Alennuskoodi ei kelpaa.",
+  "That discount code is no longer active.": "Alennuskoodi ei ole enää käytössä.",
+  "That discount code has expired.": "Alennuskoodi on vanhentunut.",
+  "That discount code has been fully used.": "Alennuskoodi on jo käytetty loppuun.",
   "Unsupported image — use JPG, PNG or WebP.": "Kuvamuotoa ei tueta — käytä JPG-, PNG- tai WebP-kuvaa.",
   "That image looks empty.": "Kuva näyttää tyhjältä.",
   "Each image must be under 6 MB.": "Jokaisen kuvan on oltava alle 6 Mt.",

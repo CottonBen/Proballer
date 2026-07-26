@@ -803,7 +803,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   const promoInput = String(req.body?.code || '');
   if (promoInput && !credit && !fundingPkg) {
     if (newPkg) {
-      const ap = discounts.apply(newPkg.price_cents, promoInput);
+      const ap = discounts.apply(newPkg.price_cents, promoInput, req.user.id);
       if (ap.error) {
         db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
         return fail(ap.error);
@@ -814,7 +814,7 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
         newPkg.price_cents = ap.finalCents;
       }
     } else {
-      const ap = discounts.apply(price - discount, promoInput);
+      const ap = discounts.apply(price - discount, promoInput, req.user.id);
       if (ap.error) return fail(ap.error);
       promoCode = ap.code;
       promoOffCents = ap.discountCents;
@@ -1072,7 +1072,7 @@ router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) 
   }
   // Validate any promo code BEFORE creating the session, so a bad code never
   // leaves an orphaned empty group session behind.
-  const gap = discounts.apply(config.groupTraining.pricePerPlayer * 100, String(req.body?.code || ''));
+  const gap = discounts.apply(config.groupTraining.pricePerPlayer * 100, String(req.body?.code || ''), req.user.id);
   if (gap.error) return res.status(400).json({ error: gap.error });
   const info = db.prepare(`INSERT INTO group_sessions
     (code, coach_id, date, hour, location, capacity, price_cents, status, age_group, created_by, created_at)
@@ -1140,7 +1140,7 @@ router.post('/groups/:code/join', requireRole('customer', 'admin'), async (req, 
   if (gs.age_group && gs.age_group !== ageGroup) {
     return res.status(409).json({ error: 'This group session is for a different age group.' });
   }
-  const gap = discounts.apply(gs.price_cents, String(req.body?.code || ''));
+  const gap = discounts.apply(gs.price_cents, String(req.body?.code || ''), req.user.id);
   if (gap.error) return res.status(400).json({ error: gap.error });
   const made = groups.createSignup(gs, req.user.id,
     { priceCents: gap.finalCents, discountCode: gap.code, codeDiscountCents: gap.discountCents });
@@ -1407,7 +1407,7 @@ router.post('/packages/buy', requireRole('customer', 'admin'), async (req, res) 
   if (!requireVerified(req, res)) return;
   const pkg = packages.createPackagePurchase(req.user.id, String(req.body?.package || ''));
   if (!pkg) return res.status(400).json({ error: 'Unknown package.' });
-  const ap = discounts.apply(pkg.price_cents, String(req.body?.code || ''));
+  const ap = discounts.apply(pkg.price_cents, String(req.body?.code || ''), req.user.id);
   if (ap.error) {
     db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(pkg.id, 'pending');
     return res.status(400).json({ error: ap.error });
@@ -2438,6 +2438,14 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
     if (created) db.prepare('DELETE FROM users WHERE id = ?').run(customer.id);
   };
 
+  // The code cleared the global checks above; now that we know WHO the booking
+  // is for, enforce its per-customer cap too (a "1 per customer" code the chosen
+  // customer already redeemed is refused, same as in the customer flow).
+  if (adminAp.code) {
+    const perCustomer = discounts.validate(adminAp.code, customer.id);
+    if (perCustomer.error) { discardNewAccount(); return res.status(400).json({ error: perCustomer.error }); }
+  }
+
   if (kind === 'group') {
     // createSignup re-checks open/past/capacity and one-spot-per-player.
     const made = groups.createSignup(gs, customer.id,
@@ -2544,7 +2552,10 @@ router.post('/discounts/validate', requireRole('customer', 'admin'), throttleVal
   const baseCents = Math.max(0, Math.round(Number(req.body?.baseCents) || 0));
   const code = String(req.body?.code || '');
   if (!discounts.norm(code)) return res.json({ valid: false });
-  const ap = discounts.apply(baseCents, code);
+  // A customer's live preview reflects THEIR per-customer allowance; an admin
+  // previewing in a wizard has no customer context yet, so it stays generic.
+  const forCustomer = req.user.role === 'customer' ? req.user.id : null;
+  const ap = discounts.apply(baseCents, code, forCustomer);
   if (ap.error) return res.json({ valid: false, error: ap.error });
   res.json({
     valid: true, code: ap.code, label: discounts.label(ap.discount),

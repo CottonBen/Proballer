@@ -445,6 +445,10 @@ for (const stmt of [
   'ALTER TABLE group_signups ADD COLUMN code_discount_cents INTEGER NOT NULL DEFAULT 0',
   "ALTER TABLE packages ADD COLUMN discount_code TEXT NOT NULL DEFAULT ''",
   'ALTER TABLE packages ADD COLUMN code_discount_cents INTEGER NOT NULL DEFAULT 0',
+  // Per-customer redemption cap (server/discounts.js): how many times ONE
+  // customer may redeem this code. NULL = unlimited (every pre-existing code).
+  // Set to 1 for a "first booking only" promotion.
+  'ALTER TABLE discounts ADD COLUMN max_per_customer INTEGER',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

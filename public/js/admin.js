@@ -219,22 +219,40 @@ function renderDiscountForm() {
       <option value="fixed">${t('admin.disc.kind.fixed')}</option></select>`) +
     fld(`<span id="disc-amount-lbl">${t('admin.disc.f.percent')}</span><input id="disc-amount" type="number" min="1" step="1" style="width:90px">`) +
     fld(`<span>${t('admin.disc.f.maxUses')}</span><input id="disc-maxuses" type="number" min="1" step="1" placeholder="∞" style="width:80px">`) +
+    fld(`<span>${t('admin.disc.f.maxPerCustomer')}</span>
+      <select id="disc-percust" style="min-width:150px">
+        <option value="">${t('admin.disc.perCust.unlimited')}</option>
+        <option value="1">1</option><option value="2">2</option>
+        <option value="3">3</option><option value="5">5</option>
+        <option value="custom">${t('admin.disc.perCust.custom')}</option></select>
+      <input id="disc-percust-n" type="number" min="1" step="1" hidden placeholder="1" style="width:80px;margin-top:4px">`) +
     fld(`<span>${t('admin.disc.f.expires')}</span><input id="disc-expires" type="date" style="min-width:150px">`) +
     fld(`<span>${t('admin.disc.f.notes')}</span><input id="disc-notes" maxlength="200" style="min-width:150px">`) +
-    `<button class="btn btn-primary btn-sm" id="disc-create">${t('admin.disc.create')}</button>`;
+    `<button class="btn btn-primary btn-sm" id="disc-create">${t('admin.disc.create')}</button>` +
+    `<p class="muted small" style="flex-basis:100%;margin:4px 0 0">${t('admin.disc.maxPerCustomer.help')}</p>`;
   const kind = f.querySelector('#disc-kind');
   const lbl = f.querySelector('#disc-amount-lbl');
   kind.addEventListener('change', () => {
     lbl.textContent = t(kind.value === 'fixed' ? 'admin.disc.f.euro' : 'admin.disc.f.percent');
   });
+  // "Custom number…" reveals a free-entry box; any preset hides it again.
+  const percust = f.querySelector('#disc-percust');
+  const percustN = f.querySelector('#disc-percust-n');
+  percust.addEventListener('change', () => {
+    percustN.hidden = percust.value !== 'custom';
+    if (!percustN.hidden) percustN.focus();
+  });
   f.querySelector('#disc-create').addEventListener('click', async (e) => {
     const amount = Number(f.querySelector('#disc-amount').value);
+    // '' (Unlimited) -> null; a preset -> that number; 'custom' -> the box value.
+    const pc = percust.value === 'custom' ? (percustN.value || null) : (percust.value || null);
     const body = {
       code: f.querySelector('#disc-code').value,
       kind: kind.value,
       percent: kind.value === 'percent' ? amount : undefined,
       amount: kind.value === 'fixed' ? amount : undefined,
       maxUses: f.querySelector('#disc-maxuses').value || null,
+      maxPerCustomer: pc,
       expiresAt: f.querySelector('#disc-expires').value || '',
       notes: f.querySelector('#disc-notes').value,
     };
@@ -242,7 +260,8 @@ function renderDiscountForm() {
     try {
       await API.post('/admin/discounts', body);
       toast(t('admin.disc.created'));
-      for (const id of ['disc-code', 'disc-amount', 'disc-maxuses', 'disc-expires', 'disc-notes']) f.querySelector('#' + id).value = '';
+      for (const id of ['disc-code', 'disc-amount', 'disc-maxuses', 'disc-percust-n', 'disc-expires', 'disc-notes']) f.querySelector('#' + id).value = '';
+      percust.value = ''; percustN.hidden = true;
       await loadDiscounts();
     } catch (err) { toast(I18N.server(err.message), true); }
     e.target.disabled = false;
@@ -260,7 +279,7 @@ async function loadDiscounts() {
       <th>${t('admin.disc.th.uses')}</th><th>${t('admin.disc.th.expires')}</th>
       <th>${t('admin.disc.th.status')}</th><th></th></tr>` +
     rows.map((d) => `<tr>
-      <td><strong>${esc(d.code)}</strong>${d.notes ? `<br><span class="muted small">${esc(d.notes)}</span>` : ''}</td>
+      <td><strong>${esc(d.code)}</strong>${d.max_per_customer != null ? `<br><span class="muted small">${t('admin.disc.perCustomerTag', { n: d.max_per_customer })}</span>` : ''}${d.notes ? `<br><span class="muted small">${esc(d.notes)}</span>` : ''}</td>
       <td>${esc(d.label)}</td>
       <td>${d.uses} / ${d.max_uses != null ? d.max_uses : '∞'}</td>
       <td class="muted">${d.expires_at ? esc(d.expires_at.slice(0, 10)) : '—'}</td>

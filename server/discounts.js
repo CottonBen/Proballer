@@ -40,6 +40,27 @@ function usesOf(code) {
   return b + g + p;
 }
 
+// How many times ONE customer has genuinely REDEEMED a code — the same
+// "counts as a use" rule as usesOf, narrowed to this customer's own purchases.
+// Powers the per-customer cap (max_per_customer). The identity is the customer
+// ACCOUNT (users.id): bookings, group spots and packages all hang off
+// customer_id, and a customer is one person/account — there is no finer
+// "player" entity to key on. Pending/unpaid/cancelled purchases don't count,
+// so an abandoned checkout never burns a customer's allowance (it frees the
+// moment the unpaid sweep cancels it), exactly like the global count.
+function usesByCustomer(code, customerId) {
+  const c = norm(code);
+  const cid = Number(customerId);
+  if (!c || !Number.isInteger(cid) || cid <= 0) return 0;
+  const b = db.prepare(`SELECT COUNT(*) n FROM bookings b LEFT JOIN invoices i ON i.booking_id = b.id
+    WHERE b.discount_code = ? AND b.customer_id = ? AND ${REDEEMED.bookings}`).get(c, cid).n;
+  const g = db.prepare(`SELECT COUNT(*) n FROM group_signups
+    WHERE discount_code = ? AND customer_id = ? AND ${REDEEMED.groups}`).get(c, cid).n;
+  const p = db.prepare(`SELECT COUNT(*) n FROM packages
+    WHERE discount_code = ? AND customer_id = ? AND ${REDEEMED.packages}`).get(c, cid).n;
+  return b + g + p;
+}
+
 // Redeemed-count for EVERY code in one pass per table (3 queries total, not
 // 3×N) — used to render the admin list.
 function usesByCode() {
@@ -52,13 +73,18 @@ function usesByCode() {
   return m;
 }
 
-// Currently redeemable? Returns { discount } or { error }.
-function validate(code) {
+// Currently redeemable? Returns { discount } or { error }. Pass customerId to
+// also enforce the per-customer cap (max_per_customer) — omit it (or pass a
+// falsy value) for a generic, customer-agnostic check.
+function validate(code, customerId) {
   const d = find(code);
   if (!d) return { error: 'That discount code is not valid.' };
   if (!d.active) return { error: 'That discount code is no longer active.' };
   if (d.expires_at && d.expires_at <= nowISO()) return { error: 'That discount code has expired.' };
   if (d.max_uses != null && usesOf(d.code) >= d.max_uses) return { error: 'That discount code has been fully used.' };
+  if (d.max_per_customer != null && customerId && usesByCustomer(d.code, customerId) >= d.max_per_customer) {
+    return { error: 'You have already used this discount code.' };
+  }
   return { discount: d };
 }
 
@@ -71,11 +97,12 @@ function computeCents(d, baseCents) {
 }
 
 // Validate a code and apply it to a base charge. Empty code = clean no-op.
+// Pass customerId so the per-customer cap is enforced for THIS buyer.
 // Returns { code, discountCents, finalCents, discount } or { error }.
-function apply(baseCents, code) {
+function apply(baseCents, code, customerId) {
   const c = norm(code);
   if (!c) return { code: '', discountCents: 0, finalCents: baseCents };
-  const v = validate(c);
+  const v = validate(c, customerId);
   if (v.error) return { error: v.error };
   const discountCents = computeCents(v.discount, baseCents);
   return { code: c, discountCents, finalCents: Math.max(0, baseCents - discountCents), discount: v.discount };
@@ -138,13 +165,16 @@ function create(f) {
   if (kind === 'fixed' && !(amountCents > 0)) return { error: 'Amount must be more than 0 €.' };
   const maxUses = f.maxUses == null || f.maxUses === '' ? null : Math.max(1, Math.round(Number(f.maxUses)));
   if (maxUses != null && !Number.isFinite(maxUses)) return { error: 'Max uses must be a whole number.' };
+  const maxPerCustomer = f.maxPerCustomer == null || f.maxPerCustomer === ''
+    ? null : Math.max(1, Math.round(Number(f.maxPerCustomer)));
+  if (maxPerCustomer != null && !Number.isFinite(maxPerCustomer)) return { error: 'Max uses per customer must be a whole number.' };
   const expiresAt = normExpiry(f.expiresAt);
   if (expiresAt === false) return { error: 'That expiry date is not valid.' };
   try {
     const info = db.prepare(`INSERT INTO discounts
-      (code, kind, percent, amount_cents, max_uses, expires_at, active, notes, created_at)
-      VALUES (?,?,?,?,?,?,1,?,?)`)
-      .run(code, kind, percent, amountCents, maxUses, expiresAt, String(f.notes || '').slice(0, 200), nowISO());
+      (code, kind, percent, amount_cents, max_uses, max_per_customer, expires_at, active, notes, created_at)
+      VALUES (?,?,?,?,?,?,?,1,?,?)`)
+      .run(code, kind, percent, amountCents, maxUses, maxPerCustomer, expiresAt, String(f.notes || '').slice(0, 200), nowISO());
     return { id: Number(info.lastInsertRowid) };
   } catch (e) {
     if (String(e.message).includes('UNIQUE')) return { error: 'A discount with that code already exists.' };
@@ -161,14 +191,16 @@ function update(id, f) {
   const active = f.active == null ? d.active : (f.active ? 1 : 0);
   const maxUses = f.maxUses === undefined ? d.max_uses
     : (f.maxUses == null || f.maxUses === '' ? null : Math.max(1, Math.round(Number(f.maxUses))));
+  const maxPerCustomer = f.maxPerCustomer === undefined ? d.max_per_customer
+    : (f.maxPerCustomer == null || f.maxPerCustomer === '' ? null : Math.max(1, Math.round(Number(f.maxPerCustomer))));
   let expiresAt = d.expires_at;
   if (f.expiresAt !== undefined) {
     expiresAt = normExpiry(f.expiresAt);
     if (expiresAt === false) return { error: 'That expiry date is not valid.' };
   }
   const notes = f.notes === undefined ? d.notes : String(f.notes || '').slice(0, 200);
-  db.prepare('UPDATE discounts SET active = ?, max_uses = ?, expires_at = ?, notes = ? WHERE id = ?')
-    .run(active, maxUses, expiresAt, notes, d.id);
+  db.prepare('UPDATE discounts SET active = ?, max_uses = ?, max_per_customer = ?, expires_at = ?, notes = ? WHERE id = ?')
+    .run(active, maxUses, maxPerCustomer, expiresAt, notes, d.id);
   return { ok: true };
 }
 
@@ -178,6 +210,6 @@ function remove(id) {
 }
 
 module.exports = {
-  norm, find, usesOf, validate, computeCents, apply, label, normExpiry,
+  norm, find, usesOf, usesByCustomer, validate, computeCents, apply, label, normExpiry,
   list, create, update, remove,
 };

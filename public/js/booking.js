@@ -333,7 +333,7 @@ async function renderReview() {
       try {
         const r = await API.post('/discounts/validate', { code, baseCents: payNowCents });
         if (r.valid) { W.codeInfo = r; renderReview(); }
-        else { W.codeInfo = null; if (msg) msg.innerHTML = `<span class="form-error">${esc(r.error || t('booking.promo.invalid'))}</span>`; }
+        else { W.codeInfo = null; if (msg) msg.innerHTML = `<span class="form-error">${esc(r.error ? I18N.server(r.error) : t('booking.promo.invalid'))}</span>`; }
       } catch { W.codeInfo = null; if (msg) msg.innerHTML = `<span class="form-error">${esc(t('booking.promo.invalid'))}</span>`; }
     };
     body().querySelector('#promo-apply').addEventListener('click', applyPromo);
@@ -367,7 +367,7 @@ async function renderReview() {
       // before showing the error on it.
       if (cardFlow) await renderReview();
       else { btn.disabled = false; btn.textContent = confirmLabel; }
-      body().querySelector('#confirm-error').textContent = err.message;
+      body().querySelector('#confirm-error').textContent = I18N.server(err.message);
       if (err.status === 409) { // slot taken — refresh slots and go back to the picker
         const data = await API.get(`/coaches/${W.coach.id}/slots`).catch(() => null);
         if (data) { W.slots = data.slots; }

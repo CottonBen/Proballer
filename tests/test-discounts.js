@@ -90,6 +90,43 @@ check('perSessionCents uses list price when a code was applied', P.perSessionCen
 check('perSessionCents unchanged with no code', P.perSessionCents({ price_cents: 11400, sessions_total: 3 }) === 3800);
 check('list reports derived uses', (D.list().find((d) => d.code === 'OFF3') || {}).uses === 2);
 
+// ---- Per-customer cap (max_per_customer): "first booking only" -------------
+db.prepare("INSERT INTO users (email, password_hash, name, role, created_at) VALUES ('u2@x.co','x','U2','customer',?)").run(nowISO());
+const uid2 = db.prepare("SELECT id FROM users WHERE email='u2@x.co'").get().id;
+function addBookingFor(code, status, customerId) {
+  bseq++;
+  db.prepare(`INSERT INTO bookings (code, customer_id, coach_id, date, hour, location, position, focus,
+    price_cents, discount_cents, total_cents, status, discount_code, created_at)
+    VALUES (?,?,?,?,?,?,'','',4000,0,3200,?,?,?)`)
+    .run('BC' + bseq, customerId, cid, '2026-09-01', 8 + (bseq % 12), 'Helsinki', status, code, nowISO());
+}
+D.create({ code: 'FIRST1', kind: 'percent', percent: 15, maxPerCustomer: 1 });
+check('create stores max_per_customer = 1', D.find('FIRST1').max_per_customer === 1);
+check('unlimited when the field is omitted', D.find('SUMMER20').max_per_customer === null);
+check('FIRST1 valid for customer A at 0 uses', !D.validate('FIRST1', uid).error);
+check('validate with no customer context stays generic (no per-customer block)', !D.validate('FIRST1').error);
+addBookingFor('FIRST1', 'confirmed', uid);
+check('usesByCustomer counts A once', D.usesByCustomer('FIRST1', uid) === 1);
+check('usesByCustomer is 0 for a customer who never used it', D.usesByCustomer('FIRST1', uid2) === 0);
+check('FIRST1 now blocked for A', /already used/.test(D.validate('FIRST1', uid).error || ''));
+check('FIRST1 still valid for a DIFFERENT customer B', !D.validate('FIRST1', uid2).error);
+addBookingFor('FIRST1', 'cancelled', uid);
+check('a cancelled booking does not add to the per-customer count', D.usesByCustomer('FIRST1', uid) === 1);
+check('apply() enforces the cap for A', !!D.apply(4000, 'FIRST1', uid).error);
+check('apply() still discounts for B (15% of 40 € = 6 €)', D.apply(4000, 'FIRST1', uid2).discountCents === 600);
+
+D.create({ code: 'TWICE', kind: 'percent', percent: 10, maxPerCustomer: 2 });
+addBookingFor('TWICE', 'confirmed', uid);
+check('cap 2: still valid for A after 1 use', !D.validate('TWICE', uid).error);
+addBookingFor('TWICE', 'confirmed', uid);
+check('cap 2: blocked for A after 2 uses', /already used/.test(D.validate('TWICE', uid).error || ''));
+const twiceId = D.find('TWICE').id;
+D.update(twiceId, { maxPerCustomer: null });
+check('update() can clear the cap back to unlimited', D.find('TWICE').max_per_customer === null && !D.validate('TWICE', uid).error);
+D.update(twiceId, { maxPerCustomer: 3 });
+check('update() can set a new cap', D.find('TWICE').max_per_customer === 3);
+check('update() leaves the cap untouched when the field is omitted', (D.update(twiceId, { notes: 'x' }), D.find('TWICE').max_per_customer === 3));
+
 db.close?.();
 fs.rmSync(UDATA, { recursive: true, force: true });
 
@@ -209,6 +246,34 @@ function client() {
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, date3, hour, new Date().toISOString());
     r = await cust('POST', '/bookings', { coachId, date: date3, hour, location: 'Helsinki', code: 'OLD' });
     check('expired code rejected at booking', r.status === 400 && /expired/.test(r.data.error || ''), r.data);
+
+    // --- Per-customer cap end-to-end: "first booking only" -------------------
+    r = await admin('POST', '/admin/discounts', { code: 'firstonly', kind: 'percent', percent: 20, maxPerCustomer: 1 });
+    check('admin creates a 1-per-customer code', r.status === 201, r.data);
+    r = await admin('GET', '/admin/discounts');
+    check('per-customer cap stored + listed', (r.data.find((d) => d.code === 'FIRSTONLY') || {}).max_per_customer === 1, r.data);
+
+    const dA = helsinkiDate(6);
+    db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, dA, 11, new Date().toISOString());
+    r = await cust('POST', '/bookings', { coachId, date: dA, hour: 11, location: 'Helsinki', code: 'firstonly' });
+    check('customer A books with the 1-per-customer code', r.status === 201 && r.data.booking.discountCode === 'FIRSTONLY', r.data);
+    const bkA = db2.prepare("SELECT id FROM bookings WHERE customer_id=? AND discount_code='FIRSTONLY' ORDER BY id DESC LIMIT 1").get(custId);
+    // Unpaid it does not count yet — mark it paid so it becomes A's one redemption.
+    const invA = db2.prepare('SELECT number FROM invoices WHERE booking_id = ?').get(bkA.id).number;
+    await admin('POST', `/admin/invoices/${invA}/paid`);
+
+    const dA2 = helsinkiDate(7);
+    db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, dA2, 11, new Date().toISOString());
+    r = await cust('POST', '/bookings', { coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
+    check('same customer is blocked from reusing a 1-per-customer code', r.status === 400 && /already used/.test(r.data.error || ''), r.data);
+
+    // A DIFFERENT customer can still redeem the same code (per-customer, not global).
+    const cust2 = client();
+    await cust2('POST', '/auth/signup', { name: 'Toinen', email: 'p2@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    const v2 = db2.prepare("SELECT code FROM pending_signups WHERE email='p2@test.local'").get().code;
+    await cust2('POST', '/auth/verify-signup', { email: 'p2@test.local', code: v2 });
+    r = await cust2('POST', '/bookings', { coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
+    check('a different customer can still use the code', r.status === 201 && r.data.booking.discountCode === 'FIRSTONLY', r.data);
 
     db2.close?.();
     console.log(`\n${passed} passed, ${failed} failed`);
