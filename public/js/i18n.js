@@ -564,6 +564,7 @@ const I18N_DICT = {
   "admin.groups.markpaid.confirm": { fi: "Merkitäänkö pelaajan {name} paikka maksetuksi?", en: "Mark {name}'s spot as paid?" },
   "admin.groups.markpaid.done": { fi: "Paikka merkitty maksetuksi.", en: "Spot marked as paid." },
   "admin.finance.model": { fi: "Avaa talousmalli →", en: "Open the financial model →" },
+  "admin.brief.open": { fi: "Päivän kooste ↗", en: "Daily brief ↗" },
   "fm.title": { fi: "Talousmalli — Proballers Coaching", en: "Financial model — Proballers Coaching" },
   "fm.heading": { fi: "Talousmalli", en: "Financial model" },
   "fm.subtitle": { fi: "Skenaariotyökalu hinnoittelun, kulujen ja tavoitteiden mallintamiseen. Tämä on suunnittelutyökalu — ei kirjanpitoa.", en: "A scenario tool for modelling pricing, costs and targets. This is a planning tool — not accounting." },

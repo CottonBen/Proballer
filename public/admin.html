@@ -28,11 +28,15 @@
         <h1 style="font-size:2.4rem" data-i18n="admin.heading">Komentokeskus</h1>
         <p class="muted" id="gen-time" data-i18n="admin.subtitle">Koko liiketoiminta, reaaliajassa.</p>
       </div>
-      <div class="window-pills" id="window-pills">
-        <button data-w="d7" data-i18n="admin.window.d7">7 päivää</button>
-        <button data-w="d30" class="on" data-i18n="admin.window.d30">30 päivää</button>
-        <button data-w="d90" data-i18n="admin.window.d90">90 päivää</button>
-        <button data-w="all" data-i18n="admin.window.all">Koko aika</button>
+      <div style="display:flex;gap:10px;align-items:center;flex-wrap:wrap">
+        <a class="btn btn-ghost btn-sm" href="/api/admin/brief" target="_blank" rel="noopener"
+           data-i18n="admin.brief.open">Päivän kooste ↗</a>
+        <div class="window-pills" id="window-pills">
+          <button data-w="d7" data-i18n="admin.window.d7">7 päivää</button>
+          <button data-w="d30" class="on" data-i18n="admin.window.d30">30 päivää</button>
+          <button data-w="d90" data-i18n="admin.window.d90">90 päivää</button>
+          <button data-w="all" data-i18n="admin.window.all">Koko aika</button>
+        </div>
       </div>
     </div>
 
