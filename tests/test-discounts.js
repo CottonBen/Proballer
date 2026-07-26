@@ -275,6 +275,45 @@ function client() {
     r = await cust2('POST', '/bookings', { coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
     check('a different customer can still use the code', r.status === 201 && r.data.booking.discountCode === 'FIRSTONLY', r.data);
 
+    // --- Cancellation credit only for GENUINELY PAID bookings ----------------
+    // A €0 booking (100%-off code) is stamped 'paid' as a zero receipt; cancelling
+    // it must NOT mint a goodwill free session — that's only owed when real money
+    // was paid. The genuinely-paid path must keep granting one.
+    await admin('POST', '/admin/discounts', { code: 'free100', kind: 'percent', percent: 100 });
+
+    // (a) genuinely PAID booking cancelled -> one goodwill credit (unchanged path).
+    const paidCust = client();
+    await paidCust('POST', '/auth/signup', { name: 'Maksaja', email: 'paid@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    const pv = db2.prepare("SELECT code FROM pending_signups WHERE email='paid@test.local'").get().code;
+    const paidCustId = (await paidCust('POST', '/auth/verify-signup', { email: 'paid@test.local', code: pv })).data.user.id;
+    const pd = helsinkiDate(8);
+    db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, pd, 12, new Date().toISOString());
+    await paidCust('POST', '/bookings', { coachId, date: pd, hour: 12, location: 'Helsinki' });
+    const paidBid = db2.prepare('SELECT id FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1').get(paidCustId).id;
+    const paidInvNum = db2.prepare('SELECT number FROM invoices WHERE booking_id=?').get(paidBid).number;
+    await admin('POST', `/admin/invoices/${paidInvNum}/paid`);
+    await admin('POST', `/admin/bookings/${paidBid}/status`, { status: 'cancelled' });
+    check('cancelling a genuinely PAID booking grants a goodwill credit',
+      db2.prepare('SELECT COUNT(*) n FROM credits WHERE customer_id=?').get(paidCustId).n === 1,
+      db2.prepare('SELECT COUNT(*) n FROM credits WHERE customer_id=?').get(paidCustId).n);
+
+    // (b) €0 (100%-off) booking cancelled -> NO credit (the bug fix).
+    const freeCust = client();
+    await freeCust('POST', '/auth/signup', { name: 'Ilmainen', email: 'free@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    const fv = db2.prepare("SELECT code FROM pending_signups WHERE email='free@test.local'").get().code;
+    const freeCustId = (await freeCust('POST', '/auth/verify-signup', { email: 'free@test.local', code: fv })).data.user.id;
+    const fd = helsinkiDate(9);
+    db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, fd, 12, new Date().toISOString());
+    r = await freeCust('POST', '/bookings', { coachId, date: fd, hour: 12, location: 'Helsinki', code: 'free100' });
+    check('100%-off booking is €0 and not credit-funded', r.data.booking.totalCents === 0 && r.data.booking.creditApplied === false, r.data.booking);
+    const freeBid = db2.prepare('SELECT id FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1').get(freeCustId).id;
+    check('its invoice is a €0 "paid" receipt (no money moved)',
+      (db2.prepare('SELECT amount_cents FROM invoices WHERE booking_id=?').get(freeBid) || {}).amount_cents === 0);
+    await admin('POST', `/admin/bookings/${freeBid}/status`, { status: 'cancelled' });
+    check('cancelling a €0 (unpaid) booking mints NO free session',
+      db2.prepare('SELECT COUNT(*) n FROM credits WHERE customer_id=?').get(freeCustId).n === 0,
+      db2.prepare('SELECT COUNT(*) n FROM credits WHERE customer_id=?').get(freeCustId).n);
+
     db2.close?.();
     console.log(`\n${passed} passed, ${failed} failed`);
     server.kill('SIGKILL');

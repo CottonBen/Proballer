@@ -168,15 +168,19 @@ function slotHasEnded(date, hour) {
 
 // Cancelling a booking on the business side: void the invoice (remembering
 // whether it was paid), settle the free-session credit, and tell the customer.
-// Credit rules keep value conserved:
+// Credit rules keep value conserved — a goodwill free session is owed ONLY when
+// the customer actually paid real money for the one being cancelled:
 //  - a PAID booking cancelled -> grant ONE new goodwill credit (deduped by code)
 //  - a FREE (credit-funded) booking cancelled -> return the credit that paid for
 //    it to "unused" instead of minting a second one (no free-session farming)
 //  - an UNPAID booking cancelled -> no credit: with the 72 h payment window a
 //    booking sits unpaid for days, and the customer hasn't lost any money.
+//  - a €0 booking (100%-off code, or otherwise free) cancelled -> no credit:
+//    its invoice is stamped 'paid' as a zero receipt, but no money changed
+//    hands, so `amount_cents > 0` is what makes "paid" mean "paid for".
 function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
   const wasPaid = Boolean(db.prepare(
-    "SELECT 1 FROM invoices WHERE booking_id = ? AND status = 'paid'").get(booking.id));
+    "SELECT 1 FROM invoices WHERE booking_id = ? AND status = 'paid' AND amount_cents > 0").get(booking.id));
   db.prepare("UPDATE bookings SET status = 'cancelled', completed_at = NULL WHERE id = ?").run(booking.id);
   // Remember the pre-void invoice status so reactivation can restore paid vs sent.
   db.prepare("UPDATE invoices SET prev_status = status, status = 'void' WHERE booking_id = ? AND status != 'void'")
