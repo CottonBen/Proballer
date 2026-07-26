@@ -305,6 +305,7 @@ async function paintGroups() {
 const slotKey = (date, hour) => `${date}|${hour}`;
 
 async function enterAvailEdit() {
+  if (!S.site) S.site = await API.get('/config'); // hour bounds come from config
   const now = new Date();
   const from = iso(now.getFullYear(), now.getMonth(), now.getDate());
   const toD = new Date(now.getFullYear(), now.getMonth(), now.getDate() + 59);
@@ -323,23 +324,29 @@ function exitAvailEdit() {
   renderCalendar();
 }
 
+// Business day bounds from config (dayStartHour/dayEndHour), with a safe
+// fallback if the config fetch somehow hasn't landed. Chips run start..end-1.
+const dayHours = () => (S.site && S.site.hours) || { start: 8, end: 22 };
+
 // In edit mode a day's dot means "has open (or about-to-open) hours".
 function dayHasOpen(ds) {
-  for (let h = 8; h < 20; h++) {
+  const hrs = dayHours();
+  for (let h = hrs.start; h < hrs.end; h++) {
     const k = slotKey(ds, h);
     if ((S.cal.avail.has(k) && !S.cal.pending.removes.has(k)) || S.cal.pending.adds.has(k)) return true;
   }
   return false;
 }
 
-// Hour chips (8–20) for the selected day: tap toggles open/closed; booked and
+// Hour chips (8–22) for the selected day: tap toggles open/closed; booked and
 // past hours are locked. Hours mirror config.dayStartHour/dayEndHour.
 function availDayHTML(ds) {
   const now = new Date();
   const today = iso(now.getFullYear(), now.getMonth(), now.getDate());
   const beyond = S.cal.horizon && ds > S.cal.horizon;
+  const hrs = dayHours();
   let chips = '';
-  for (let h = 8; h < 20; h++) {
+  for (let h = hrs.start; h < hrs.end; h++) {
     const k = slotKey(ds, h);
     const past = ds < today || (ds === today && h <= now.getHours());
     const cls = ['av-hr'];

@@ -28,9 +28,9 @@ module.exports = {
   // regardless of which country the server is deployed in.
   timezone: 'Europe/Helsinki',
 
-  // Training day runs 08:00–20:00 → last bookable hour starts at 19:00.
+  // Training day runs 08:00–22:00 → last bookable hour starts at 21:00.
   dayStartHour: 8,
-  dayEndHour: 20,
+  dayEndHour: 22,
 
   locations: ['Helsinki', 'Espoo', 'Vantaa'],
 

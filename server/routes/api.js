@@ -2159,7 +2159,7 @@ router.get('/admin/coaches/:id/calendar', requireRole('admin'), (req, res) => {
 });
 
 // The admin can edit any coach's availability (same rules as the coach's own
-// editor: only future slots within 8-20, booked slots can't be closed).
+// editor: only future slots within 8-22, booked slots can't be closed).
 router.put('/admin/coaches/:id/availability', requireRole('admin'), (req, res) => {
   const coach = db.prepare('SELECT id FROM coaches WHERE id = ?').get(Number(req.params.id));
   if (!coach) return res.status(404).json({ error: 'Coach not found.' });

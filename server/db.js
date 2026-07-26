@@ -48,7 +48,7 @@ CREATE TABLE IF NOT EXISTS availability (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   coach_id INTEGER NOT NULL REFERENCES coaches(id),
   date TEXT NOT NULL,          -- YYYY-MM-DD (Europe/Helsinki)
-  hour INTEGER NOT NULL,       -- start hour, 8..19 (slot runs hour:00-hour+1:00)
+  hour INTEGER NOT NULL,       -- start hour, 8..21 (slot runs hour:00-hour+1:00)
   demo INTEGER NOT NULL DEFAULT 0,
   created_at TEXT NOT NULL,
   UNIQUE (coach_id, date, hour)
