@@ -34,6 +34,22 @@ function destroySession(req, res) {
   res.append('Set-Cookie', `${SESSION_COOKIE}=; Path=/; HttpOnly; SameSite=Lax; Max-Age=0`);
 }
 
+// "Last live on the site" tracking: the middleware below runs on EVERY request
+// (including static assets and polling), so we stamp users.last_seen_at at most
+// once every few minutes per account via this in-memory throttle — the same
+// pattern as loginThrottle. A DB write on every request would be pure waste.
+const lastSeenWrite = new Map();               // userId -> ms of last stamp
+const LAST_SEEN_THROTTLE_MS = 5 * 60000;
+function markSeen(userId) {
+  const nowMs = Date.now();
+  if (nowMs - (lastSeenWrite.get(userId) || 0) < LAST_SEEN_THROTTLE_MS) return;
+  lastSeenWrite.set(userId, nowMs);
+  if (lastSeenWrite.size > 10000) lastSeenWrite.clear();   // crude memory bound
+  // Non-critical + on the hot path: never let it break a request.
+  try { db.prepare('UPDATE users SET last_seen_at = ? WHERE id = ?').run(nowISO(), userId); }
+  catch { /* ignore */ }
+}
+
 // Attaches req.user = {id,email,name,role} (or null) and req.sessionToken to
 // every request.
 function sessionMiddleware(req, res, next) {
@@ -45,7 +61,7 @@ function sessionMiddleware(req, res, next) {
       SELECT u.id, u.email, u.name, u.role FROM sessions s
       JOIN users u ON u.id = s.user_id
       WHERE s.token = ? AND s.expires_at > ?`).get(token, nowISO());
-    if (row) { req.user = row; req.sessionToken = token; }
+    if (row) { req.user = row; req.sessionToken = token; markSeen(row.id); }
   }
   next();
 }

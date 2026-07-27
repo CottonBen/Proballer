@@ -1331,6 +1331,23 @@ async function loadCRM() {
   renderContactRequests();
 }
 
+// "Last seen on the site" as a short relative label (recent = normal weight,
+// week+ or never = muted). The exact timestamp is on the cell's title tooltip.
+function lastSeenLabel(iso) {
+  if (!iso) return '<span class="muted">—</span>';
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return '<span class="muted">—</span>';
+  const secs = Math.max(0, Math.round((Date.now() - then) / 1000));
+  if (secs < 90) return t('time.justnow');
+  const mins = Math.round(secs / 60);
+  if (mins < 60) return t('time.minsago', { n: mins });
+  const hours = Math.round(mins / 60);
+  if (hours < 24) return t('time.hoursago', { n: hours });
+  const days = Math.round(hours / 24);
+  if (days < 7) return t('time.daysago', { n: days });
+  return `<span class="muted">${esc(fmtDate(iso.slice(0, 10)))}</span>`;
+}
+
 function renderCRM() {
   if (!CRM) return;
   document.getElementById('crm-stats').innerHTML = [
@@ -1344,7 +1361,7 @@ function renderCRM() {
   const ct = document.getElementById('crm-customers');
   document.getElementById('crm-empty').hidden = CRM.customers.length > 0;
   ct.innerHTML = CRM.customers.length ? `
-    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.table.email')}</th><th>${t('admin.crm.leads.phone')}</th><th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.bookings')}</th>
+    <tr><th>${t('admin.table.customer')}</th><th>${t('admin.crm.table.email')}</th><th>${t('admin.crm.leads.phone')}</th><th>${t('admin.crm.table.signedup')}</th><th>${t('admin.crm.table.lastseen')}</th><th>${t('admin.crm.table.bookings')}</th>
       <th>${t('admin.crm.table.dnc')}</th><th>${t('admin.crm.table.paid')}</th><th>${t('admin.crm.table.outstanding')}</th>
       <th>${t('admin.crm.table.credits')}</th><th>${t('admin.crm.table.lastsession')}</th><th></th></tr>` +
     CRM.customers.map((c) => `
@@ -1353,6 +1370,7 @@ function renderCRM() {
         <td><a href="mailto:${esc(c.email)}">${esc(c.email)}</a></td>
         <td>${c.phone ? `<a href="tel:${esc(c.phone.replace(/[^0-9+]/g, ''))}">${esc(c.phone)}</a>` : '<span class="muted">—</span>'}</td>
         <td>${esc(c.signed_up)}</td>
+        <td title="${c.last_seen ? esc(new Date(c.last_seen).toLocaleString()) : ''}">${lastSeenLabel(c.last_seen)}</td>
         <td><strong>${c.bookings}</strong></td>
         <td>${c.completed || 0} / ${c.upcoming || 0} / ${c.cancelled || 0}</td>
         <td>${eur(c.paid_cents)}</td>

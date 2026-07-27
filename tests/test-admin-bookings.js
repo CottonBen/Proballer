@@ -127,6 +127,8 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     r = await cust('POST', '/auth/verify-signup', { email: 'vanha@test.local', code: code0 });
     check('existing customer account ready', r.status === 200, r.data);
     const custId = r.data.user.id;
+    // An authenticated request by the customer records "last seen on the site".
+    await cust('GET', '/me');
 
     r = await admin('GET', '/config');
     check('config exposes adminPayLinkHours', r.data.adminPayLinkHours === 72, r.data.adminPayLinkHours);
@@ -445,6 +447,8 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     r = await admin('GET', '/admin/crm');
     check('CRM sees the admin-created accounts',
       r.data.customers.some((c) => c.email === 'uusi@test.local'), r.data.customers.length);
+    const vanha = r.data.customers.find((c) => c.email === 'vanha@test.local');
+    check('CRM records "last seen" for a customer who has been active', vanha && !!vanha.last_seen, vanha);
   } catch (err) {
     failed++;
     console.log('FAIL  suite crashed —', err.message);

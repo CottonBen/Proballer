@@ -449,6 +449,10 @@ for (const stmt of [
   // customer may redeem this code. NULL = unlimited (every pre-existing code).
   // Set to 1 for a "first booking only" promotion.
   'ALTER TABLE discounts ADD COLUMN max_per_customer INTEGER',
+  // Last time this account was active on the site (any authenticated request),
+  // stamped by server/auth.js and shown in the admin CRM. NULL until the
+  // account's first request after this column was added.
+  'ALTER TABLE users ADD COLUMN last_seen_at TEXT',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists */ }
 }

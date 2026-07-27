@@ -2686,6 +2686,7 @@ router.get('/admin/crm', requireRole('admin'), (req, res) => {
   autoCompleteBookings();
   const customers = db.prepare(`
     SELECT u.id, u.name, u.email, u.phone, u.lead_called_at, substr(u.created_at, 1, 10) AS signed_up,
+      u.last_seen_at AS last_seen,
       COUNT(b.id) AS bookings,
       substr(MAX(b.created_at), 1, 10) AS last_booking_made,
       SUM(CASE WHEN b.status = 'completed' THEN 1 ELSE 0 END) AS completed,
