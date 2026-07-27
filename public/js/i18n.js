@@ -324,9 +324,6 @@ const I18N_DICT = {
   "app.greeting": { fi: "Hei, {name} 👋", en: "Hey, {name} 👋" },
   "app.loading": { fi: "Ladataan…", en: "Loading…" },
   "app.error": { fi: "Tietojen lataus epäonnistui. Vedä alas päivittääksesi.", en: "Couldn’t load your data. Pull down to retry." },
-  "app.notcoach.title": { fi: "Vain valmentajille", en: "Coaches only" },
-  "app.notcoach.body": { fi: "Tämä sovellus on Proballers-valmentajille. Kirjaudu sisään valmentajatunnuksillasi.", en: "This app is for Proballers coaches. Sign in with your coach account." },
-  "app.notcoach.login": { fi: "Kirjaudu sisään", en: "Log in" },
   // nav
   "app.nav.home": { fi: "Koti", en: "Home" },
   "app.nav.sessions": { fi: "Treenit", en: "Sessions" },

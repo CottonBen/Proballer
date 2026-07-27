@@ -124,7 +124,7 @@ const page = (file) => (req, res) => {
 };
 app.get('/login', page('login.html'));
 app.get('/coach', page('coach.html'));
-app.get('/app', page('app.html'));   // mobile coach app (coach/admin-gated client-side)
+app.get('/app', page('app.html'));   // mobile app for any signed-in user; not signed in -> /login
 app.get('/chats', page('chats.html'));
 app.get('/admin', page('admin.html'));
 app.get('/my-bookings', page('my-bookings.html'));

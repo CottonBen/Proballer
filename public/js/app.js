@@ -1012,15 +1012,6 @@ function fmtDateTime(isoStr) {
 // ---------------------------------------------------------------------------
 // Boot
 // ---------------------------------------------------------------------------
-function showGate() {
-  document.getElementById('tabbar').hidden = true;
-  view().innerHTML = `<div class="screen" style="text-align:center;padding-top:60px">
-    <div class="pf-avatar" style="margin:0 auto 20px"><img src="/assets/logo.svg?v=2" alt="" style="object-fit:contain;padding:16px"></div>
-    <h1 class="app-h1">${t('app.notcoach.title')}</h1>
-    <p class="app-msg">${t('app.notcoach.body')}</p>
-    <a class="btn btn-primary" href="/login?next=${encodeURIComponent('/app')}">${t('app.notcoach.login')}</a>
-  </div>`;
-}
 
 (async function init() {
   try {
@@ -1029,11 +1020,16 @@ function showGate() {
   // Coaches use the app as themselves; an admin WITHOUT a coach profile (the
   // shared owner login) gets the read-only overview mode: coach activity
   // summary, every booking in the calendar, and every chat.
-  if (!S.me.user) { showGate(); return; }
+  // The app serves coaches, the owner/admin, and players alike — anyone signed
+  // in. Not signed in: go straight to login (which returns here afterwards),
+  // no "coaches only" splash. replace() so Back doesn't bounce off this redirect.
+  if (!S.me.user) { location.replace('/login?next=' + encodeURIComponent('/app')); return; }
   S.isAdmin = S.me.user.role === 'admin' && !S.me.coachProfile;
   // Players use the app too: their sessions + the chats with their coaches.
   S.isPlayer = S.me.user.role === 'customer';
-  if (!S.me.coachProfile && !S.isAdmin && !S.isPlayer) { showGate(); return; }
+  // Every real account is a coach, admin, or player; a signed-in account with no
+  // recognised role shouldn't happen — send it home rather than loop to login.
+  if (!S.me.coachProfile && !S.isAdmin && !S.isPlayer) { location.replace('/'); return; }
 
   try {
     await loadAll();
