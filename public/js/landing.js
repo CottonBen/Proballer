@@ -516,7 +516,7 @@ function showGate(cb) {
         ${mode === 'signup' ? `
         <label class="f"><span>${t('login.form.area')}</span>
           <select name="area" required class="input" style="width:100%">
-            ${(SITE ? SITE.locations : ['Helsinki', 'Espoo', 'Vantaa']).map((c) => `<option>${esc(c)}</option>`).join('')}
+            ${(SITE ? SITE.locations : ['Helsinki', 'Espoo', 'Vantaa', 'Kirkkonummi']).map((c) => `<option>${esc(c)}</option>`).join('')}
           </select></label>
         <label class="f"><span>${t('login.form.phone')}</span>
           <input type="tel" name="phone" autocomplete="tel" placeholder="+358 40 123 4567"></label>` : ''}

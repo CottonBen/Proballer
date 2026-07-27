@@ -51,8 +51,8 @@ const I18N_DICT = {
     fi: 'Proballers Coaching — henkilökohtaista jalkapallovalmennusta nuorille pelaajille',
     en: 'Proballers Coaching — 1-on-1 football coaching for young players' },
   'landing.meta.description': {
-    fi: 'Henkilökohtaista jalkapallovalmennusta nuorille pelaajille Helsingissä, Espoossa ja Vantaalla. Varaa henkilökohtainen treeni valmentajan kanssa, joka on itse pelannut.',
-    en: 'Personal football coaching for young players in Helsinki, Espoo and Vantaa. Book a 1-on-1 session with a coach who has played the game.' },
+    fi: 'Henkilökohtaista jalkapallovalmennusta nuorille pelaajille Helsingissä, Espoossa, Vantaalla ja Kirkkonummella. Varaa henkilökohtainen treeni valmentajan kanssa, joka on itse pelannut.',
+    en: 'Personal football coaching for young players in Helsinki, Espoo, Vantaa and Kirkkonummi. Book a 1-on-1 session with a coach who has played the game.' },
   'landing.coaches.title':   { fi: 'Tutustu valmentajiin', en: 'Meet the coaches' },
   'landing.coaches.lead': {
     fi: 'Jokainen valmentaja ylläpitää omaa kalenteriaan. Valitse valmentaja, valitse vapaa aika ja rakenna treeni pelipaikkasi ja kehitystavoitteidesi ympärille.',
@@ -87,8 +87,8 @@ const I18N_DICT = {
   'landing.about.kicker':    { fi: 'Meistä', en: 'About us' },
   'landing.about.title':     { fi: 'Pelaajien rakentama,<br>seuraavalle sukupolvelle', en: 'Built by players,<br>for the next generation' },
   'landing.about.body1': {
-    fi: 'Olemme suomalainen valmennuskollektiivi nuorille jalkapalloilijoille, jotka haluavat enemmän kuin kaksi joukkueharjoitusta viikossa. Valmentajamme ovat kasvaneet suomalaisissa akatemioissa ja pelaavat tai ovat pelanneet kilpatasolla — he muistavat tarkalleen, mitä kehittyminen vaatii, koska he elävät sitä itse. Jokainen treeni on 1-on-1 ja suunnitellaan pelipaikkasi, tavoitteidesi ja tahtisi mukaan kentillä Helsingissä, Espoossa ja Vantaalla.',
-    en: 'We are a Finnish coaching collective for young footballers who want more than two team trainings a week. Our coaches have come up through Finnish academies and play or have played competitively — they remember exactly what it takes, because they are living it. Every session is 1-on-1, planned around your position, your goals and your pace, on pitches in Helsinki, Espoo and Vantaa.' },
+    fi: 'Olemme suomalainen valmennuskollektiivi nuorille jalkapalloilijoille, jotka haluavat enemmän kuin kaksi joukkueharjoitusta viikossa. Valmentajamme ovat kasvaneet suomalaisissa akatemioissa ja pelaavat tai ovat pelanneet kilpatasolla — he muistavat tarkalleen, mitä kehittyminen vaatii, koska he elävät sitä itse. Jokainen treeni on 1-on-1 ja suunnitellaan pelipaikkasi, tavoitteidesi ja tahtisi mukaan kentillä Helsingissä, Espoossa, Vantaalla ja Kirkkonummella.',
+    en: 'We are a Finnish coaching collective for young footballers who want more than two team trainings a week. Our coaches have come up through Finnish academies and play or have played competitively — they remember exactly what it takes, because they are living it. Every session is 1-on-1, planned around your position, your goals and your pace, on pitches in Helsinki, Espoo, Vantaa and Kirkkonummi.' },
   'landing.about.body2': {
     fi: 'Yksi tunti täydellä huomiolla vie pidemmälle kuin kymmenen jonossa seisten. Se on koko idea.',
     en: 'One hour with full attention on you beats ten where you wait in line. That is the whole idea.' },
@@ -225,7 +225,7 @@ const I18N_DICT = {
   "common.brand.header": { fi: "Proballers Coaching", en: "Proballers Coaching" },
   "profile.loading": { fi: "Ladataan valmentajaa…", en: "Loading coach…" },
   "common.footer.brand": { fi: "Proballers Coaching", en: "Proballers Coaching" },
-  "common.footer.cities": { fi: "Helsinki · Espoo · Vantaa", en: "Helsinki · Espoo · Vantaa" },
+  "common.footer.cities": { fi: "Helsinki · Espoo · Vantaa · Kirkkonummi", en: "Helsinki · Espoo · Vantaa · Kirkkonummi" },
   "common.footer.tagline": { fi: "Henkilökohtaista valmennusta nuorille jalkapalloilijoille.", en: "1-on-1 coaching for young footballers." },
   "booking.wizard.arialabel": { fi: "Varaa treeni", en: "Book a session" },
   "profile.price.persession": { fi: "/ treeni", en: "/ session" },
@@ -1310,6 +1310,7 @@ const I18N_SERVER_EXACT = {
   "Helsinki": "Helsinki",
   "Espoo": "Espoo",
   "Vantaa": "Vantaa",
+  "Kirkkonummi": "Kirkkonummi",
 
   // --- focus ids as stored on bookings (displayed via I18N.server) ---
   "conditioning": "kunto",

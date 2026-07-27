@@ -405,7 +405,7 @@ for (const stmt of [
   'ALTER TABLE bookings ADD COLUMN package_id INTEGER REFERENCES packages(id)',
   // One-shot flag: the day-before reminder email went out.
   'ALTER TABLE bookings ADD COLUMN reminder_email_sent INTEGER NOT NULL DEFAULT 0',
-  // Customer's home area (Helsinki/Espoo/Vantaa), asked at signup.
+  // Customer's home area (Helsinki/Espoo/Vantaa/Kirkkonummi), asked at signup.
   "ALTER TABLE users ADD COLUMN area TEXT NOT NULL DEFAULT ''",
   // Email verification: accounts confirm their address with a 6-digit code
   // before they can book/pay. Pre-existing accounts count as verified.

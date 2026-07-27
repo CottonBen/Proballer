@@ -491,8 +491,13 @@ function pitchTagLine(p) {
   return tags.join(' · ');
 }
 
+// Bookable cities, from config — same source as the booking wizard, so adding
+// a city there adds it here too.
+const cityList = () => (S.site && S.site.locations) || ['Helsinki', 'Espoo', 'Vantaa', 'Kirkkonummi'];
+
 async function renderPitches() {
   if (S.isPlayer) { location.hash = '#home'; return; }
+  if (!S.site) S.site = await API.get('/config').catch(() => null); // city list
   const sessions = pitchSessions();
   const isAdmin = S.me.user.role === 'admin';
   // Coaches need an upcoming session to plan a pitch for; an admin can always
@@ -526,7 +531,7 @@ async function renderPitches() {
         ${esc(fmtDate(b.date))} ${fmtTime(b.hour)} · ${esc(b.customer)} · ${esc(I18N.server(b.location))}</option>`).join('')}
     </select>` : `
     <select id="pitch-city" class="input" style="width:100%;margin-bottom:10px">
-      ${['Helsinki', 'Espoo', 'Vantaa'].map((c) => `<option value="${c}" ${c === sess.location ? 'selected' : ''}>${c}</option>`).join('')}
+      ${cityList().map((c) => `<option value="${esc(c)}" ${c === sess.location ? 'selected' : ''}>${esc(c)}</option>`).join('')}
     </select>`}
     <input id="pitch-q" class="input" type="search" value="${esc(S.pitch.q)}"
       placeholder="${esc(t('app.pitches.search_ph'))}" style="width:100%;margin-bottom:8px">

@@ -14,7 +14,10 @@
 const { db, nowISO } = require('./db');
 
 const LIPAS = 'https://api.lipas.fi/v2/sports-sites';
-const CITY_CODES = { Helsinki: 91, Espoo: 49, Vantaa: 92 };
+// Statistics Finland municipality codes, which LIPAS uses for `city-codes`.
+// Every city in config.locations needs an entry, or the coach app's Pitches
+// tab 400s ("Unknown city.") for sessions held there.
+const CITY_CODES = { Helsinki: 91, Espoo: 49, Vantaa: 92, Kirkkonummi: 257 };
 // 1340 ball field, 1350 football stadium, 2230 indoor football hall.
 const TYPE_CODES = '1340,1350,2230';
 const CACHE_TTL_MS = 7 * 24 * 3600000;

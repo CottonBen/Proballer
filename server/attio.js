@@ -96,7 +96,7 @@ function phoneValue(phone) {
 const PERSON_ATTRS = [
   { api_slug: 'pb_source', title: 'Acquisition source', type: 'text', description: 'Where this contact first came from (utm / referrer).' },
   { api_slug: 'pb_stage', title: 'Lifecycle stage', type: 'text', description: 'Lead, Signed up, or Customer.' },
-  { api_slug: 'pb_area', title: 'Home area', type: 'text', description: 'Helsinki, Espoo or Vantaa.' },
+  { api_slug: 'pb_area', title: 'Home area', type: 'text', description: 'Helsinki, Espoo, Vantaa or Kirkkonummi.' },
   { api_slug: 'pb_language', title: 'Language', type: 'text', description: 'Preferred language (FI / EN).' },
   { api_slug: 'pb_customer_since', title: 'Customer since', type: 'text', description: 'Date the account was created.' },
   { api_slug: 'pb_sessions', title: 'Sessions booked', type: 'number', description: 'Confirmed 1-on-1 + group sessions.' },

@@ -14,8 +14,8 @@ Fully self-contained: Node.js + built-in SQLite, no external services required t
     completed sessions per window, booking conversion (tried vs. managed), revenue, invoices,
     per-coach performance, live view of every coach's calendar, bookings management,
     CSV exports and Google Sheets sync.
-  - **Coach** → `/coach`: weekly availability calendar (8:00–20:00, default *not* available,
-    click + **Save changes**), filters for cities (Helsinki/Espoo/Vantaa) and positions
+  - **Coach** → `/coach`: weekly availability calendar (8:00–22:00, default *not* available,
+    click + **Save changes**), filters for cities (Helsinki/Espoo/Vantaa/Kirkkonummi) and positions
     (goalkeepers/defenders/midfielders/attackers, multi-select) with a **Save filters** button,
     and their session list.
   - **Customer** → `/my-bookings`: their sessions and invoices.

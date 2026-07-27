@@ -32,7 +32,7 @@ module.exports = {
   dayStartHour: 8,
   dayEndHour: 22,
 
-  locations: ['Helsinki', 'Espoo', 'Vantaa'],
+  locations: ['Helsinki', 'Espoo', 'Vantaa', 'Kirkkonummi'],
 
   positions: ['goalkeepers', 'defenders', 'midfielders', 'attackers'],
 
@@ -67,7 +67,7 @@ module.exports = {
     dueDays: 7,
     numberPrefix: 'PBF',
     businessLine1: 'Proballers Coaching',
-    businessLine2: 'Helsinki · Espoo · Vantaa',
+    businessLine2: 'Helsinki · Espoo · Vantaa · Kirkkonummi',
     replyEmail: 'proballerscoaching@gmail.com',
   },
 
