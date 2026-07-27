@@ -322,6 +322,16 @@ body.gated { overflow: hidden; }
 /* ---------- coach grid ---------- */
 .section { padding: 88px 0; }
 .section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 34px; }
+/* Coach search filters (area + date), above the roster grid. Wraps to one
+   control per line on a phone; inputs inherit the shared field styling. */
+.coach-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 0 2px 20px; }
+.coach-filters label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
+.coach-filters select, .coach-filters input[type="date"] { min-width: 170px; }
+.coach-filters .filter-count { margin-left: auto; font-size: 0.82rem; color: var(--muted); align-self: center; }
+@media (max-width: 560px) {
+  .coach-filters label { flex: 1 1 100%; }
+  .coach-filters .filter-count { margin-left: 0; flex-basis: 100%; }
+}
 .coach-grid { grid-template-columns: repeat(auto-fill, minmax(300px, 1fr)); }
 .coach-card { overflow: hidden; padding: 0; display: flex; flex-direction: column; transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.3, 1), box-shadow 0.3s, border-color 0.3s; }
 .coach-card:hover { transform: translateY(-5px); box-shadow: 0 24px 60px rgba(0,0,0,0.55); border-color: rgba(255, 255, 255, 0.3); }

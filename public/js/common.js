@@ -124,7 +124,11 @@ document.addEventListener('DOMContentLoaded', () => initPasswordToggles());
 // Reveal-on-scroll animation for elements with .reveal. Elements that enter
 // together get a slight stagger (60 ms steps); the delay is cleared once the
 // reveal finishes so it never slows down hover transitions afterwards.
-function initReveal() {
+// Scroll-reveal for `.reveal` elements. Pass a root to observe content that was
+// rendered LATER (e.g. the coach grid after a filter change) — those elements
+// were not in the DOM when this ran at page load, and without a second pass
+// they would stay at opacity 0 forever.
+function initReveal(root = document) {
   const io = new IntersectionObserver((entries) => {
     entries.filter((e) => e.isIntersecting).forEach((e, i) => {
       const el = e.target;
@@ -134,7 +138,7 @@ function initReveal() {
       io.unobserve(el);
     });
   }, { threshold: 0.12 });
-  document.querySelectorAll('.reveal').forEach((el) => io.observe(el));
+  root.querySelectorAll('.reveal').forEach((el) => io.observe(el));
 }
 
 // The sticky header lifts off the page (darker, shadowed) once you scroll.

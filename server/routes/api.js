@@ -309,7 +309,31 @@ router.get('/coaches', (req, res) => {
   const ratings = new Map(db.prepare(
     'SELECT coach_id, COUNT(*) n, AVG(rating) avg FROM reviews GROUP BY coach_id')
     .all().map(r => [r.coach_id, { avg: r.n ? Math.round(r.avg * 10) / 10 : null, count: r.n }]));
-  res.json(rows.map(c => ({ ...coachPublic(c), rating: ratings.get(c.id) || { avg: null, count: 0 } })));
+  // Dates each coach still has a bookable hour on, so the landing page can
+  // filter the roster by date without asking for every coach's slots. Same
+  // rules as GET /coaches/:id/slots (future, unbooked, inside the horizon and
+  // past the minimum lead time) so the filter can never offer a coach a date
+  // the wizard then shows as empty.
+  const { date, hour } = helsinkiNow();
+  const to = helsinkiDateOffset(config.bookingHorizonDays);
+  const free = db.prepare(`
+    SELECT a.coach_id, a.date, a.hour FROM availability a
+    WHERE a.date <= ? AND (a.date > ? OR (a.date = ? AND a.hour > ?))
+      AND NOT EXISTS (SELECT 1 FROM bookings b
+        WHERE b.coach_id = a.coach_id AND b.date = a.date AND b.hour = a.hour
+          AND b.status != 'cancelled')
+    ORDER BY a.date, a.hour`).all(to, date, date, hour);
+  const dates = new Map();
+  for (const r of free) {
+    if (slotTooSoon(r.date, r.hour)) continue;
+    if (!dates.has(r.coach_id)) dates.set(r.coach_id, new Set());
+    dates.get(r.coach_id).add(r.date);
+  }
+  res.json(rows.map(c => ({
+    ...coachPublic(c),
+    rating: ratings.get(c.id) || { avg: null, count: 0 },
+    availableDates: [...(dates.get(c.id) || [])],
+  })));
 });
 
 // Public reviews for one coach, newest first.

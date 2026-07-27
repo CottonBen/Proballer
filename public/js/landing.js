@@ -412,11 +412,69 @@ function startQuickBook() {
   stepCity();
 }
 
-// --- coaches grid -----------------------------------------------------------
+// --- coaches grid + search filters ------------------------------------------
+// Narrow the roster before booking: by area (a city the coach trains in) and by
+// a date they still have a free hour on. Both default to "any", so the grid
+// looks exactly as before until someone picks something.
+const coachFilter = { city: '', date: '' };
+
+const coachMatchesFilter = (c) =>
+  (!coachFilter.city || (c.locations || []).includes(coachFilter.city))
+  && (!coachFilter.date || (c.availableDates || []).includes(coachFilter.date));
+
+// Built once; the options come from live config so a new city needs no edit.
+function buildCoachFilters() {
+  const box = document.getElementById('coach-filters');
+  if (!box || box.dataset.built) return;
+  box.dataset.built = '1';
+  const today = new Date();
+  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const last = new Date(today);
+  last.setDate(last.getDate() + ((SITE && SITE.bookingHorizonDays) || 60));
+  const cities = (SITE && SITE.locations) || [];
+  box.innerHTML = `
+    <label>${t('landing.filter.area')}
+      <select id="filter-city">
+        <option value="">${t('landing.filter.anyarea')}</option>
+        ${cities.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
+      </select></label>
+    <label>${t('landing.filter.date')}
+      <input type="date" id="filter-date" min="${iso(today)}" max="${iso(last)}"></label>
+    <button class="btn btn-ghost btn-sm" id="filter-clear" hidden>${t('landing.filter.clear')}</button>
+    <span class="filter-count" id="filter-count"></span>`;
+  box.querySelector('#filter-city').addEventListener('change', (e) => {
+    coachFilter.city = e.target.value; buildCoachGrid();
+  });
+  box.querySelector('#filter-date').addEventListener('change', (e) => {
+    coachFilter.date = e.target.value; buildCoachGrid();
+  });
+  box.querySelector('#filter-clear').addEventListener('click', () => {
+    coachFilter.city = ''; coachFilter.date = '';
+    box.querySelector('#filter-city').value = '';
+    box.querySelector('#filter-date').value = '';
+    buildCoachGrid();
+  });
+}
+
 function buildCoachGrid() {
+  buildCoachFilters();
   const grid = document.getElementById('coach-grid');
   grid.innerHTML = '';
-  for (const c of COACHES) {
+  const shown = COACHES.filter(coachMatchesFilter);
+  const filtering = Boolean(coachFilter.city || coachFilter.date);
+
+  // Count + "no matches" note, so an empty grid always explains itself.
+  const countEl = document.getElementById('filter-count');
+  if (countEl) countEl.textContent = filtering ? t('landing.filter.count', { n: shown.length }) : '';
+  const clearBtn = document.getElementById('filter-clear');
+  if (clearBtn) clearBtn.hidden = !filtering;
+  const emptyEl = document.getElementById('coach-empty');
+  if (emptyEl) {
+    emptyEl.hidden = shown.length > 0;
+    emptyEl.textContent = shown.length ? '' : t('landing.filter.none');
+  }
+
+  for (const c of shown) {
     const card = document.createElement('article');
     card.className = 'card coach-card reveal';
     const reviewsToggle = c.rating && c.rating.count
@@ -448,6 +506,9 @@ function buildCoachGrid() {
     });
     grid.appendChild(card);
   }
+  // These cards were just created, so the page-load reveal observer has never
+  // seen them — without this pass a filtered result stays invisible (opacity 0).
+  initReveal(grid);
 }
 
 // Lazily fetch + toggle a coach's reviews panel on the landing grid.
