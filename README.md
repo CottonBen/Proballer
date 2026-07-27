@@ -7,7 +7,8 @@ Fully self-contained: Node.js + built-in SQLite, no external services required t
 
 - **Public site** — hero carousel that rotates coaches every 5 seconds, coach cards,
   and a booking wizard: pick a free time → your position → session focus → city → confirm.
-  A launch sale (50 % off, configurable) is applied automatically.
+  Sessions are a flat €40 (prices in [config.js](config.js); an optional automatic
+  sale can be re-enabled via `pricing.salePercent`).
 - **Three login roles**, one login page (`/login`):
   - **Admin** → `/admin`: visitors (7/30/90 days/all time), booked-but-not-completed count,
     completed sessions per window, booking conversion (tried vs. managed), revenue, invoices,

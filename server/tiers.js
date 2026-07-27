@@ -23,7 +23,13 @@ function tierForSessionIndex(n) {
 // have paid at the time — captured here for snapshotting.
 function payoutBasisForRow(b) {
   if (b.credit_applied) {
-    return Math.round(b.price_cents * (100 - config.pricing.salePercent) / 100);
+    // A free (goodwill) session pays the coach on the standard price a client
+    // pays for that session type NOW — not the 0 the customer was charged. Based
+    // on the current config price (not the row's stored price_cents, which on
+    // pre-flatten rows still holds the old 80 €), so it stays correct across a
+    // price change. On-pitch and online are the same price today.
+    const full = (b.is_online ? config.pricing.onlineSessionPrice : config.pricing.sessionPrice) * 100;
+    return Math.round(full * (100 - config.pricing.salePercent) / 100);
   }
   return b.total_cents;
 }
@@ -36,7 +42,7 @@ const currentMonth = () => monthOf(helsinkiNow().date);
 // has that month, plus one (so it's the Nth session you complete that month).
 function snapshotPendingPayouts() {
   const pending = db.prepare(`
-    SELECT id, coach_id, date, price_cents, total_cents, credit_applied
+    SELECT id, coach_id, date, price_cents, total_cents, credit_applied, is_online
     FROM bookings
     WHERE status = 'completed' AND earn_cents IS NULL
     ORDER BY coach_id, date, hour, id`).all();

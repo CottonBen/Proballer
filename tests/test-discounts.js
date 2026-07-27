@@ -236,9 +236,12 @@ function client() {
     r = await cust('POST', '/bookings', { coachId, date: date2, hour, location: 'Helsinki', code: 'welcome10' });
     check('second use of a max-1 code is rejected', r.status === 400 && /fully used/.test(r.data.error || ''), r.data);
 
-    // booking still works with no code
+    // booking still works with no code — and the price is a flat 40 € with NO
+    // automatic sale (price == total, zero sale discount).
     r = await cust('POST', '/bookings', { coachId, date: date2, hour, location: 'Helsinki' });
-    check('booking without a code still works (40 € sale price)', r.status === 201 && r.data.booking.totalCents === 4000, r.data.booking);
+    check('plain booking is a flat 40 € — no sale discount',
+      r.status === 201 && r.data.booking.totalCents === 4000
+      && r.data.booking.priceCents === 4000 && r.data.booking.discountCents === 0, r.data.booking);
 
     // expired code rejected end-to-end
     await admin('POST', '/admin/discounts', { code: 'OLD', kind: 'percent', percent: 10, expiresAt: '2020-01-01' });
