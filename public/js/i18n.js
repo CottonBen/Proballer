@@ -97,11 +97,10 @@ const I18N_DICT = {
   // Coach search filters above the roster grid
   'landing.filter.area':     { fi: 'Alue', en: 'Area' },
   'landing.filter.anyarea':  { fi: 'Kaikki alueet', en: 'All areas' },
-  'landing.filter.date':     { fi: 'Päivä', en: 'Date' },
   'landing.filter.clear':    { fi: 'Tyhjennä', en: 'Clear' },
   'landing.filter.count':    { fi: '{n} valmentajaa', en: '{n} coaches' },
-  'landing.filter.none':     { fi: 'Yksikään valmentaja ei vastaa hakuasi. Kokeile toista päivää tai aluetta.',
-                               en: 'No coaches match your search. Try another date or area.' },
+  'landing.filter.none':     { fi: 'Yksikään valmentaja ei treenaa vielä tällä alueella. Kokeile toista aluetta.',
+                               en: 'No coaches train in that area yet. Try another area.' },
   'landing.readreviews':     { fi: 'Lue arvostelut', en: 'Read reviews' },
   'landing.hidereviews':     { fi: 'Piilota arvostelut', en: 'Hide reviews' },
   'landing.loadingreviews':  { fi: 'Ladataan arvosteluja…', en: 'Loading reviews…' },

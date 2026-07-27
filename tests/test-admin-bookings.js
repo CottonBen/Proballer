@@ -450,18 +450,12 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     const vanha = r.data.customers.find((c) => c.email === 'vanha@test.local');
     check('CRM records "last seen" for a customer who has been active', vanha && !!vanha.last_seen, vanha);
 
-    // The landing page's date filter narrows the roster using availableDates,
-    // so it must agree exactly with the slots the booking wizard then shows —
-    // otherwise a coach is offered on a date that turns out to have no times.
+    // The landing page's area filter narrows the roster by coach.locations,
+    // so the public list must keep exposing it.
     r = await admin('GET', '/coaches');
     const listed = r.data.find((c) => c.id === coachId);
-    check('public /coaches exposes availableDates for the filter',
-      listed && Array.isArray(listed.availableDates), listed && Object.keys(listed));
-    const slots = (await admin('GET', `/coaches/${coachId}/slots`)).data.slots || [];
-    const fromSlots = [...new Set(slots.map((s) => s.date))].sort();
-    check('availableDates matches the dates the wizard offers',
-      JSON.stringify([...listed.availableDates].sort()) === JSON.stringify(fromSlots),
-      { availableDates: [...listed.availableDates].sort(), fromSlots });
+    check('public /coaches exposes locations for the area filter',
+      listed && Array.isArray(listed.locations) && listed.locations.length > 0, listed && listed.locations);
   } catch (err) {
     failed++;
     console.log('FAIL  suite crashed —', err.message);

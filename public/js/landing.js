@@ -413,24 +413,18 @@ function startQuickBook() {
 }
 
 // --- coaches grid + search filters ------------------------------------------
-// Narrow the roster before booking: by area (a city the coach trains in) and by
-// a date they still have a free hour on. Both default to "any", so the grid
-// looks exactly as before until someone picks something.
-const coachFilter = { city: '', date: '' };
+// Narrow the roster before booking: by area (a city the coach trains in).
+// Defaults to "any", so the grid looks exactly as before until a city is picked.
+const coachFilter = { city: '' };
 
 const coachMatchesFilter = (c) =>
-  (!coachFilter.city || (c.locations || []).includes(coachFilter.city))
-  && (!coachFilter.date || (c.availableDates || []).includes(coachFilter.date));
+  !coachFilter.city || (c.locations || []).includes(coachFilter.city);
 
 // Built once; the options come from live config so a new city needs no edit.
 function buildCoachFilters() {
   const box = document.getElementById('coach-filters');
   if (!box || box.dataset.built) return;
   box.dataset.built = '1';
-  const today = new Date();
-  const iso = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
-  const last = new Date(today);
-  last.setDate(last.getDate() + ((SITE && SITE.bookingHorizonDays) || 60));
   const cities = (SITE && SITE.locations) || [];
   box.innerHTML = `
     <label>${t('landing.filter.area')}
@@ -438,20 +432,14 @@ function buildCoachFilters() {
         <option value="">${t('landing.filter.anyarea')}</option>
         ${cities.map((c) => `<option value="${esc(c)}">${esc(c)}</option>`).join('')}
       </select></label>
-    <label>${t('landing.filter.date')}
-      <input type="date" id="filter-date" min="${iso(today)}" max="${iso(last)}"></label>
     <button class="btn btn-ghost btn-sm" id="filter-clear" hidden>${t('landing.filter.clear')}</button>
     <span class="filter-count" id="filter-count"></span>`;
   box.querySelector('#filter-city').addEventListener('change', (e) => {
     coachFilter.city = e.target.value; buildCoachGrid();
   });
-  box.querySelector('#filter-date').addEventListener('change', (e) => {
-    coachFilter.date = e.target.value; buildCoachGrid();
-  });
   box.querySelector('#filter-clear').addEventListener('click', () => {
-    coachFilter.city = ''; coachFilter.date = '';
+    coachFilter.city = '';
     box.querySelector('#filter-city').value = '';
-    box.querySelector('#filter-date').value = '';
     buildCoachGrid();
   });
 }
@@ -461,7 +449,7 @@ function buildCoachGrid() {
   const grid = document.getElementById('coach-grid');
   grid.innerHTML = '';
   const shown = COACHES.filter(coachMatchesFilter);
-  const filtering = Boolean(coachFilter.city || coachFilter.date);
+  const filtering = Boolean(coachFilter.city);
 
   // Count + "no matches" note, so an empty grid always explains itself.
   const countEl = document.getElementById('filter-count');
