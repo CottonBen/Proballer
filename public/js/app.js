@@ -1,7 +1,8 @@
-// Proballers coach app (/app) — a mobile-first overview for coaches.
+// Proballers app (/app) — a mobile-first overview for coaches, players and the
+// admin (the view adapts to the signed-in role).
 // Single-page, hash-routed (#home #sessions #calendar #alerts #profile).
-// Reads the SAME live data as the main site via the existing /coach/* and
-// /my-notifications API — a coach signs in with their normal account.
+// Reads the SAME live data as the main site via the existing /coach/*, /my-*
+// and /admin/* APIs — everyone signs in with their normal account.
 'use strict';
 
 const S = {

@@ -1,4 +1,4 @@
-/* Proballers coach app (/app) — mobile-first coach overview.
+/* Proballers app (/app) — mobile-first overview for coaches, players and admin.
    Reuses the design tokens from styles.css (:root --bg, --lime, …) so it
    stays visually part of the same product; adds a phone-framed shell,
    bottom tab bar, and app-specific cards. */

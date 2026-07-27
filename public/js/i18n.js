@@ -319,7 +319,7 @@ const I18N_DICT = {
   "coachdash.reviews.empty": { fi: "Ei vielä arvosteluja — ne ilmestyvät tähän, kun asiakkaasi jättävät ensimmäisen.", en: "No reviews yet — they’ll appear here once your clients leave one." },
 
   // --- coach mobile app (/app) ---
-  "app.title": { fi: "Valmentajasovellus — Proballers Coaching", en: "Coach app — Proballers Coaching" },
+  "app.title": { fi: "Proballers-sovellus", en: "Proballers app" },
   "app.brand": { fi: "PROBALLERS", en: "PROBALLERS" },
   "app.greeting": { fi: "Hei, {name} 👋", en: "Hey, {name} 👋" },
   "app.loading": { fi: "Ladataan…", en: "Loading…" },
@@ -836,7 +836,7 @@ const I18N_DICT = {
   "admin.editor.login.created": { fi: "Tunnukset luotu.", en: "Login created." },
   "admin.editor.login.updated": { fi: "Tunnukset päivitetty.", en: "Login updated." },
 
-  // --- coach app: pitches tab (LIPAS directory) -------------------------------
+  // --- app: pitches tab (LIPAS directory) -------------------------------------
   "app.nav.pitches": { fi: "Kentät", en: "Pitches" },
   "app.pitches.title": { fi: "Kentät", en: "Pitches" },
   "app.pitches.for_session": { fi: "Treeni", en: "Session" },
@@ -983,7 +983,7 @@ const I18N_DICT = {
   "pay.success.pkg_title": { fi: "Paketti maksettu!", en: "Package paid!" },
   "pay.success.pkg_body": { fi: "Treenipakettisi on käytössä — treenit odottavat varaamista. Vahvistus on lähetetty sähköpostiisi.", en: "Your session package is active — your sessions are ready to book. A confirmation email is on its way." },
 
-  // --- coach app: group sessions ---------------------------------------------
+  // --- app: group sessions ---------------------------------------------------
   "app.groups.title": { fi: "Ryhmätreenit", en: "Group sessions" },
   "app.groups.new": { fi: "+ Uusi ryhmätreeni", en: "+ New group session" },
   "app.groups.date": { fi: "Päivä", en: "Date" },
