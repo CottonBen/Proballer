@@ -275,6 +275,21 @@ function migrate(db, nowISO) {
     db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('spotlight_v1', ?)").run(nowISO());
   }
 
+  // One-time: move Ben and Kalle to the BACK of the coach list on databases
+  // that already have them at display_order 10/20 (they used to lead it).
+  // Owner's call: they run the business and only coach to fill gaps, so they
+  // must never be promoted ahead of the real coaching roster — not in the
+  // coaches grid, not in a coach dropdown, not in the hero. Also clears any
+  // stale spotlight number so they can't drift back into the carousel.
+  // Marker-guarded, so a later manual reorder in the admin is never undone.
+  if (!db.prepare("SELECT 1 FROM meta WHERE key = 'staff_last_v1'").get()) {
+    db.prepare(`UPDATE coaches SET display_order = 900, featured = 0, spotlight_order = NULL
+      WHERE slug = 'ben-cotton'`).run();
+    db.prepare(`UPDATE coaches SET display_order = 910, featured = 0, spotlight_order = NULL
+      WHERE slug = 'kalle-sundman'`).run();
+    db.prepare("INSERT OR IGNORE INTO meta (key, value) VALUES ('staff_last_v1', ?)").run(nowISO());
+  }
+
   // One-time: give coaches without reviews a set of sample reviews — but ONLY
   // in demo/dev environments. A production site (DEMO_DATA=0) must never grow
   // fabricated reviews. INTENTIONAL: the marker is set even when seeding is
@@ -338,10 +353,15 @@ function seed({ demo = true, reset = false } = {}) {
       JSON.stringify(['/assets/kalle-1.jpg', '/assets/kalle-2.jpg', '/assets/kalle-3.jpg']),
       JSON.stringify(['Helsinki', 'Espoo']),
       JSON.stringify(['midfielders', 'attackers']),
-      0, 20, 0, now); // featured=0: Ben & Kalle stay out of the hero spotlight
+      // featured=0 keeps them out of the hero spotlight; display_order 910 puts
+      // them LAST in the coaches grid and in every coach dropdown. Owner's call:
+      // Ben and Kalle run the business and only coach to fill gaps, so they are
+      // never promoted ahead of the real coaching roster.
+      0, 910, 0, now);
 
-    // Ben — first face of the site. His coach profile lives on the owner's
-    // own (admin) account, so one login covers both roles.
+    // Ben — runs the business; his coach profile lives on the owner's own
+    // (admin) account, so one login covers both roles. Like Kalle he sits at
+    // the BACK of the coach list (see display_order below).
     const benId = getUser.get(adminEmail).id;
     insCoach.run(benId, 'Ben Cotton', 'ben-cotton',
       BIO_I18N.find(b => b.slug === 'ben-cotton').fi,
@@ -349,7 +369,7 @@ function seed({ demo = true, reset = false } = {}) {
       JSON.stringify(['/assets/ben-1.jpg', '/assets/ben-2.jpg']),
       JSON.stringify(['Helsinki', 'Espoo', 'Vantaa']),
       JSON.stringify(['attackers', 'defenders']),
-      0, 10, 0, now); // featured=0: Ben & Kalle stay out of the hero spotlight
+      0, 900, 0, now); // out of the spotlight (featured=0) and last in the list
   }
 
   // Post-launch coaches (e.g. Otto Ukkonen). migrate() handles existing DBs;
