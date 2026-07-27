@@ -144,7 +144,7 @@ function renderAdminHome() {
             <div class="sess-meta">${esc(cap(fmtDate(r.date)))} · ${fmtTime(r.hour)}<br>
               ${t('app.admin.made', { time: esc(fmtDateTime(r.created_at)) })}</div>
           </div>
-          <span class="pill ${esc(r.status)}">${esc(t('common.status.' + r.status))}</span>
+          <span class="pill ${esc(bookingStatusKey(r))}">${esc(t('common.status.' + bookingStatusKey(r)))}</span>
         </div>
       </div>`).join('') : emptyState('list', t('app.admin.norecent'))}
   </div>`;
@@ -937,7 +937,7 @@ function sessionCard(b) {
         ${pitchLine}
         ${b.notes ? `<div class="sess-meta" style="margin-top:6px;padding:6px 10px;background:rgba(255,255,255,0.04);border-left:2px solid var(--lime);border-radius:6px">📝 ${esc(b.notes)}</div>` : ''}
       </div>
-      <span class="pill ${b.status}">${esc(t('common.status.' + b.status))}</span>
+      <span class="pill ${esc(bookingStatusKey(b))}">${esc(t('common.status.' + bookingStatusKey(b)))}</span>
     </div>
     ${earn}${actions}
   </div>`;

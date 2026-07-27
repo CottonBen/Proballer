@@ -243,6 +243,18 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
       bRow.status === 'confirmed' && bRow.coach_notified === 0, bRow);
     check('per-session value on the booking (114/3 = 38 €)', bRow.total_cents === 3800, bRow.total_cents);
 
+    // A package booking carries NO invoice, so the only way the UI can tell it
+    // is still unpaid is package_status. Both booking feeds must expose it, or
+    // an abandoned package checkout silently displays as "confirmed".
+    r = await G('GET', '/my-bookings');
+    let uiRow = r.data.find((x) => x.code === B1);
+    check('customer feed exposes package_status while the package is unpaid',
+      uiRow && uiRow.invoice_status == null && uiRow.package_status === 'pending', uiRow);
+    r = await admin('GET', '/admin/bookings');
+    uiRow = r.data.find((x) => x.code === B1);
+    check('admin feed exposes package_status while the package is unpaid',
+      uiRow && uiRow.invoice_status == null && uiRow.package_status === 'pending', uiRow);
+
     await sendWebhook({ package: PKG1 }, 'pi_pkg1');
     bRow = db.prepare('SELECT * FROM bookings WHERE code = ?').get(B1);
     check('payment activates package + announces booking', bRow.coach_notified === 1, bRow);

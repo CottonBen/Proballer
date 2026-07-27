@@ -2604,11 +2604,13 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
     SELECT b.id, b.code, b.date, b.hour, b.location, b.position, b.focus, b.is_online,
            b.total_cents, b.status, b.created_at, b.notes, b.pitch_name,
            c.name AS coach, u.name AS customer, u.email AS customer_email,
-           i.number AS invoice_number, i.status AS invoice_status, i.at_session AS invoice_at_session
+           i.number AS invoice_number, i.status AS invoice_status, i.at_session AS invoice_at_session,
+           p.status AS package_status
     FROM bookings b
     JOIN coaches c ON c.id = b.coach_id
     JOIN users u ON u.id = b.customer_id
     LEFT JOIN invoices i ON i.booking_id = b.id
+    LEFT JOIN packages p ON p.id = b.package_id
     ${status ? 'WHERE b.status = ?' : ''}
     ORDER BY b.date DESC, b.hour DESC LIMIT 300`).all(...(status ? [status] : []));
   res.json(rows);

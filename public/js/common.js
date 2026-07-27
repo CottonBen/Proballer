@@ -186,14 +186,28 @@ function fmtDate(iso) {
   return `${t('common.weekdays').split(',')[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
 }
 
-// Which status label a booking should SHOW. A booking whose invoice is still
-// unpaid reads as "pending payment" rather than "confirmed" — the slot is held
-// but the money has not arrived. Used by both the admin table and the
-// customer's own bookings page so the two can never disagree.
+// Which status label a booking should SHOW. A booking the customer has not paid
+// for reads "pending payment" rather than "confirmed" — the slot is held, but
+// the money has not arrived. Shared by the admin table, the customer's own
+// bookings page and the app so they can never disagree.
+//
+// There are TWO ways a booking can be unpaid, and both must count:
+//  - a normal booking whose invoice is still 'sent' (card checkout not
+//    completed, or pay-at-session where the cash is collected on the pitch);
+//  - a booking funded by a package the customer bought in the same step but
+//    has NOT paid for yet (package still 'pending'). Those deliberately have
+//    NO invoice at all — the package purchase is the payment — so the invoice
+//    test alone would wrongly call the biggest unpaid amount "confirmed".
+//
 // DISPLAY ONLY: the row stays 'confirmed' in the database — that is what holds
 // the coach's slot and drives the unpaid-booking sweep.
-// Bookings funded by a package or a free credit, and paid ones, have no unpaid
-// invoice and so read as 'confirmed' exactly as before.
+// Paid bookings, free-credit sessions and ones funded by an already-active
+// package read as 'confirmed', exactly as before. Feeds that carry no payment
+// columns at all (e.g. the coach's own session list) fall back to the raw
+// status untouched.
 function bookingStatusKey(b) {
-  return b.status === 'confirmed' && b.invoice_status === 'sent' ? 'pending' : b.status;
+  if (b.status !== 'confirmed') return b.status;
+  const unpaidInvoice = b.invoice_status === 'sent';
+  const unpaidPackage = b.package_status === 'pending';
+  return unpaidInvoice || unpaidPackage ? 'pending' : 'confirmed';
 }
