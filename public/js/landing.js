@@ -150,51 +150,66 @@ async function buildGroups() {
   const sessionCards = GROUPS.sessions.map((g) => {
     const full = g.spotsLeft < 1;
     return `
-    <article class="card reveal" style="display:flex;flex-direction:column;gap:10px">
-      <div style="display:flex;align-items:center;gap:12px">
-        ${g.coachPhoto ? `<img src="${esc(g.coachPhoto)}" alt="" style="width:52px;height:52px;border-radius:50%;object-fit:cover">` : ''}
+    <article class="card group-card reveal">
+      <div class="group-card-head">
+        ${g.coachPhoto ? `<img src="${esc(g.coachPhoto)}" alt="" loading="lazy">` : ''}
         <div>
-          <strong style="display:block">${esc(fmtDate(g.date))} ${hourFmt(g.hour)}</strong>
-          <span class="muted small">${esc(g.coach)} · ${esc(I18N.server(g.location))}</span>
+          <span class="group-when">${esc(fmtDate(g.date))} ${hourFmt(g.hour)}</span>
+          <span class="group-who">${esc(g.coach)} · ${esc(I18N.server(g.location))}</span>
         </div>
       </div>
-      <div style="display:flex;gap:6px;flex-wrap:wrap">
+      <div class="group-tags">
         ${g.ageGroup ? `<span class="chip">${esc(ageLabel(g.ageGroup))}</span>`
-          : `<select class="input" data-agepick style="padding:4px 8px;font-size:.8rem">
-              ${gt.ageGroups.map((a) => `<option value="${a}">${esc(ageLabel(a))}</option>`).join('')}</select>`}
+          : `<label class="muted small" style="display:flex;flex-direction:column;gap:3px">${t('landing.groups.age')}
+              <select class="input" data-agepick style="padding:4px 8px;font-size:.8rem">
+                ${gt.ageGroups.map((a) => `<option value="${a}">${esc(ageLabel(a))}</option>`).join('')}</select></label>`}
         <span class="chip ${full ? 'gray' : ''}">${full
           ? t('landing.groups.full')
           : t('landing.groups.spots', { left: g.spotsLeft, cap: g.capacity })}</span>
       </div>
-      <div style="margin-top:auto">
-        <button class="btn btn-primary btn-sm" data-join="${esc(g.code)}" data-age="${esc(g.ageGroup)}"
-          ${full ? 'disabled' : ''} style="width:100%">${t('landing.groups.join')}</button>
-      </div>
+      <button class="btn btn-primary btn-sm" data-join="${esc(g.code)}" data-age="${esc(g.ageGroup)}"
+        ${full ? 'disabled' : ''}>${t('landing.groups.join')}</button>
     </article>`;
   }).join('');
 
-  // The "start a new group" card: coach → time → city → age group.
-  let startCard = '';
+  // "Start a new group": coach → time → city → age group. Its own panel below
+  // the cards, with a visible label on every field.
+  let startPanel = '';
   if (GROUPS.startable.length) {
-    startCard = `
-    <article class="card reveal" style="display:flex;flex-direction:column;gap:8px;border-style:dashed">
-      <strong>${t('landing.groups.start_title')}</strong>
-      <span class="muted small">${t('landing.groups.start_sub')}</span>
-      <select class="input" id="gs-coach">
-        ${GROUPS.startable.map((c, i) => `<option value="${i}">${esc(c.coach)}</option>`).join('')}
-      </select>
-      <select class="input" id="gs-slot"></select>
-      <select class="input" id="gs-city"></select>
-      <select class="input" id="gs-age">
-        <option value="" disabled selected>${esc(t('landing.groups.pick_age'))}</option>
-        ${gt.ageGroups.map((a) => `<option value="${a}">${esc(ageLabel(a))}</option>`).join('')}
-      </select>
-      <button class="btn btn-primary btn-sm" id="gs-start" style="margin-top:auto">
-        ${t('landing.groups.start_cta', { price: eur(gt.pricePerPlayer * 100) })}</button>
-    </article>`;
+    startPanel = `
+    <div class="card group-start reveal">
+      <div class="group-start-head">
+        <strong>${t('landing.groups.start_title')}</strong>
+        <span class="muted small">${t('landing.groups.start_sub')}</span>
+      </div>
+      <div class="group-fields">
+        <label for="gs-coach">${t('landing.groups.f.coach')}
+          <select class="input" id="gs-coach">
+            ${GROUPS.startable.map((c, i) => `<option value="${i}">${esc(c.coach)}</option>`).join('')}
+          </select></label>
+        <label for="gs-slot">${t('landing.groups.f.time')}
+          <select class="input" id="gs-slot"></select></label>
+        <label for="gs-city">${t('landing.groups.f.city')}
+          <select class="input" id="gs-city"></select></label>
+        <label for="gs-age">${t('landing.groups.f.age')}
+          <select class="input" id="gs-age">
+            <option value="" disabled selected>${esc(t('landing.groups.pick_age'))}</option>
+            ${gt.ageGroups.map((a) => `<option value="${a}">${esc(ageLabel(a))}</option>`).join('')}
+          </select></label>
+      </div>
+      <div class="group-start-go">
+        <button class="btn btn-primary btn-sm" id="gs-start">
+          ${t('landing.groups.start_cta', { price: eur(gt.pricePerPlayer * 100) })}</button>
+      </div>
+    </div>`;
   }
 
-  document.getElementById('group-grid').innerHTML = sessionCards + startCard;
+  document.getElementById('group-grid').innerHTML = sessionCards;
+  document.getElementById('group-start').innerHTML = startPanel;
+  // buildGroups() re-runs after joining or starting a group, so these are fresh
+  // `.reveal` nodes the page-load observer never saw — reveal them explicitly or
+  // they render at opacity 0.
+  initReveal(document.getElementById('groups'));
 
   document.getElementById('group-grid').querySelectorAll('[data-join]').forEach((btn) =>
     btn.addEventListener('click', () => {

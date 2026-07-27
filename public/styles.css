@@ -322,6 +322,33 @@ body.gated { overflow: hidden; }
 /* ---------- coach grid ---------- */
 .section { padding: 88px 0; }
 .section-head { display: flex; align-items: end; justify-content: space-between; gap: 20px; margin-bottom: 34px; }
+/* --- Group training -------------------------------------------------------- */
+/* Session card: time is the headline, coach/place secondary, spots on the right,
+   one primary action pinned to the bottom so cards of different heights line up. */
+.group-card { display: flex; flex-direction: column; gap: 14px; }
+.group-card-head { display: flex; align-items: center; gap: 12px; }
+.group-card-head img { width: 48px; height: 48px; border-radius: 50%; object-fit: cover; flex-shrink: 0; }
+.group-when { display: block; font-weight: 700; font-size: 1.02rem; }
+.group-who { color: var(--muted); font-size: 0.85rem; }
+.group-tags { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
+.group-card .btn { margin-top: auto; width: 100%; }
+
+/* "Start a new group": its own panel under the cards, so four inputs never form
+   a tall tower inside one narrow grid column. Every field carries a visible
+   label — the four bare selects here used to be unreadable. */
+.group-start { margin-top: 18px; }
+.group-start-head { margin-bottom: 14px; }
+.group-start-head strong { display: block; font-size: 1.05rem; margin-bottom: 4px; }
+/* 4 / 2 / 1 columns rather than auto-fit: the four fields then always divide
+   evenly instead of leaving one orphan on a row at in-between widths. */
+.group-fields { display: grid; gap: 12px; grid-template-columns: repeat(4, 1fr); align-items: end; }
+@media (max-width: 900px) { .group-fields { grid-template-columns: repeat(2, 1fr); } }
+@media (max-width: 460px) { .group-fields { grid-template-columns: 1fr; } }
+.group-fields label { display: flex; flex-direction: column; gap: 4px; font-size: 0.78rem; color: var(--muted); }
+.group-fields select { width: 100%; }
+.group-start-go { margin-top: 14px; display: flex; justify-content: flex-end; }
+@media (max-width: 560px) { .group-start-go .btn { width: 100%; } }
+
 /* Coach area filter above the roster grid. Wraps to one control per line on a
    phone; the select inherits the shared field styling. */
 .coach-filters { display: flex; flex-wrap: wrap; gap: 12px; align-items: flex-end; margin: 0 2px 20px; }

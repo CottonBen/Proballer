@@ -1132,6 +1132,12 @@ const I18N_DICT = {
   "landing.groups.pick_slot": { fi: "Valitse aika", en: "Pick a time" },
   "landing.groups.pick_age": { fi: "Valitse ikäryhmä", en: "Pick the age group" },
   "landing.groups.pick_city": { fi: "Kaupunki", en: "City" },
+  // Visible field labels on the "start a new group" panel + the card age picker
+  "landing.groups.f.coach": { fi: "Valmentaja", en: "Coach" },
+  "landing.groups.f.time":  { fi: "Aika", en: "Time" },
+  "landing.groups.f.city":  { fi: "Kaupunki", en: "City" },
+  "landing.groups.f.age":   { fi: "Ikäryhmä", en: "Age group" },
+  "landing.groups.age":     { fi: "Ikäryhmä", en: "Age group" },
   "landing.groups.start_cta": { fi: "Aloita ryhmä — {price}", en: "Start the group — {price}" },
   "landing.groups.none_start": { fi: "Ei vapaita aloitusaikoja juuri nyt.", en: "No free starting times right now." },
 
