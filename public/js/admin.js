@@ -879,6 +879,16 @@ async function openCoachCalendar(id) {
 }
 
 // --- bookings table -----------------------------------------------------------
+// A booking the customer hasn't paid for yet is not really "confirmed" for the
+// business — the money hasn't arrived. Show those as "pending payment" instead.
+// DISPLAY ONLY: the row stays 'confirmed' in the database (that is what holds
+// the slot and drives the sweeps). Package-funded bookings (no invoice), free
+// credit sessions and paid ones all have no unpaid invoice, so they read as
+// confirmed as before.
+function bookingStatusKey(b) {
+  return b.status === 'confirmed' && b.invoice_status === 'sent' ? 'pending' : b.status;
+}
+
 async function loadBookings(status) {
   const rows = await API.get('/admin/bookings' + (status ? `?status=${status}` : ''));
   const tbl = document.getElementById('bookings-table');
@@ -899,7 +909,8 @@ async function loadBookings(status) {
           return `${esc(what)} · ${b.is_online ? t('mybookings.table.online') : esc(b.location)}`;
         })()}</td>
         <td>${eur(b.total_cents)}</td>
-        <td><span class="status-tag status-${esc(b.status)}">${esc(t('common.status.' + b.status))}</span></td>
+        <td>${(() => { const k = bookingStatusKey(b);
+          return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`; })()}</td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>
              <span class="muted small">${esc(t('admin.invoicestatus.' + b.invoice_status))}${

@@ -459,6 +459,8 @@ table.data td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); 
 table.data tr:hover td { background: rgba(255,255,255,0.025); }
 .status-tag { padding: 3px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
 .status-confirmed { background: rgba(96,165,250,0.15); color: #7fb5fb; }
+/* Booked but not paid yet — amber, matching the "outstanding money" colour. */
+.status-pending { background: rgba(247,161,58,0.15); color: #f7a13a; }
 .status-completed { background: rgba(74,222,128,0.15); color: var(--ok); }
 .status-cancelled { background: rgba(255,107,107,0.13); color: var(--danger); }
 

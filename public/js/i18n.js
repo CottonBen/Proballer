@@ -201,6 +201,7 @@ const I18N_DICT = {
   "mybookings.table.invoice": { fi: "Lasku", en: "Invoice" },
   "mybookings.table.online": { fi: "Etänä", en: "Online" },
   "common.status.confirmed": { fi: "vahvistettu", en: "confirmed" },
+  "common.status.pending": { fi: "odottaa maksua", en: "pending payment" },
   "common.status.completed": { fi: "pidetty", en: "completed" },
   "common.status.cancelled": { fi: "peruttu", en: "cancelled" },
   "common.position.goalkeeper": { fi: "maalivahti", en: "goalkeeper" },
