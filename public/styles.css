@@ -457,7 +457,9 @@ table.data th {
 }
 table.data td { padding: 10px; border-bottom: 1px solid rgba(255,255,255,0.05); }
 table.data tr:hover td { background: rgba(255,255,255,0.025); }
-.status-tag { padding: 3px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
+/* inline-block + nowrap so a two-word label ("odottaa maksua") stays one pill
+   instead of wrapping and splitting its rounded background across two lines. */
+.status-tag { display: inline-block; white-space: nowrap; padding: 3px 10px; border-radius: 99px; font-size: 0.75rem; font-weight: 700; }
 .status-confirmed { background: rgba(96,165,250,0.15); color: #7fb5fb; }
 /* Booked but not paid yet — amber, matching the "outstanding money" colour. */
 .status-pending { background: rgba(247,161,58,0.15); color: #f7a13a; }

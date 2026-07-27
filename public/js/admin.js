@@ -879,16 +879,6 @@ async function openCoachCalendar(id) {
 }
 
 // --- bookings table -----------------------------------------------------------
-// A booking the customer hasn't paid for yet is not really "confirmed" for the
-// business — the money hasn't arrived. Show those as "pending payment" instead.
-// DISPLAY ONLY: the row stays 'confirmed' in the database (that is what holds
-// the slot and drives the sweeps). Package-funded bookings (no invoice), free
-// credit sessions and paid ones all have no unpaid invoice, so they read as
-// confirmed as before.
-function bookingStatusKey(b) {
-  return b.status === 'confirmed' && b.invoice_status === 'sent' ? 'pending' : b.status;
-}
-
 async function loadBookings(status) {
   const rows = await API.get('/admin/bookings' + (status ? `?status=${status}` : ''));
   const tbl = document.getElementById('bookings-table');

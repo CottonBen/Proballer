@@ -96,7 +96,8 @@
         <td>${b.is_online ? t('mybookings.table.online') : esc(b.location)}${
           b.pitch_name ? `<br><span class="small muted">📍 ${esc(b.pitch_name)}</span>` : ''}</td>
         <td>${eur(b.total_cents)}</td>
-        <td><span class="status-tag status-${esc(b.status)}">${esc(t('common.status.' + b.status))}</span></td>
+        <td>${(() => { const k = bookingStatusKey(b);
+          return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`; })()}</td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>${
               stripeOn && b.invoice_status === 'sent' && b.total_cents > 0

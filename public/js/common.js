@@ -185,3 +185,15 @@ function fmtDate(iso) {
   const d = new Date(iso + 'T12:00:00Z');
   return `${t('common.weekdays').split(',')[d.getUTCDay()]} ${d.getUTCDate()}.${d.getUTCMonth() + 1}.`;
 }
+
+// Which status label a booking should SHOW. A booking whose invoice is still
+// unpaid reads as "pending payment" rather than "confirmed" — the slot is held
+// but the money has not arrived. Used by both the admin table and the
+// customer's own bookings page so the two can never disagree.
+// DISPLAY ONLY: the row stays 'confirmed' in the database — that is what holds
+// the coach's slot and drives the unpaid-booking sweep.
+// Bookings funded by a package or a free credit, and paid ones, have no unpaid
+// invoice and so read as 'confirmed' exactly as before.
+function bookingStatusKey(b) {
+  return b.status === 'confirmed' && b.invoice_status === 'sent' ? 'pending' : b.status;
+}
