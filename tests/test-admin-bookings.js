@@ -1,9 +1,8 @@
 // E2E checks for ADMIN-CREATED bookings: customer pick/create, 1-on-1 + group,
 // the three payment modes (email pay link / already paid / pay at session),
 // the login-free /api/pay/:token endpoints, and the sweep interplay.
-// Scratch server on :3463 with SMTP disabled and a dummy Stripe key —
-// Checkout creation fails (that path is exercised for its error page) but
-// payments confirm through the signed webhook, like production.
+// Scratch server on :3463 with SMTP disabled and the MobilePay webhook on, so
+// payments confirm through the signed webhook exactly like production.
 'use strict';
 
 const { spawn } = require('node:child_process');

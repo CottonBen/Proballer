@@ -402,20 +402,13 @@ const I18N_DICT = {
   "booking.step.notes.hint": { fi: "Viesti välitetään valmentajallesi keskusteluun, joka avautuu varauksen yhteydessä.", en: "This is passed to your coach in the chat that opens with your booking." },
   "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
 
-  // --- card payments (Stripe) ---
+  // --- payments (MobilePay: invoiced, paid from the customer's own app) ---
   "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
   "booking.success.redirecting_title": { fi: "Siirrytään maksuun", en: "Moving to payment" },
   "booking.success.redirecting": { fi: "Ohjaamme sinut turvalliseen korttimaksuun.", en: "We are taking you to secure card payment." },
   "booking.success.paybtn": { fi: "Siirry maksuun", en: "Move to payment" },
   "booking.review.start_payment": { fi: "Aloita maksu", en: "Start payment" },
-  "pay.success.title": { fi: "Varaus onnistui!", en: "Booking successful!" },
-  "pay.success.body": { fi: "Maksu on vastaanotettu ja treenisi on vahvistettu. Saat vahvistuksen ja kuitin sähköpostiisi, ja valmentaja saa tiedon varauksesta heti.", en: "Payment received and your session is confirmed. A confirmation and receipt are on their way to your email, and your coach has been notified." },
-  "pay.success.cta": { fi: "Näytä varaukseni", en: "Show my bookings" },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
-  "pay.refund_pending": { fi: "Maksusi ehti perille vasta varauksen peruunnuttua, eikä varausta voitu enää palauttaa. Palautamme maksun sinulle — otamme yhteyttä.", en: "Your payment arrived after the booking had already been cancelled and it could not be restored. We will refund the payment and be in touch." },
-  "pay.received": { fi: "Maksu vastaanotettu — kiitos! Lasku on merkitty maksetuksi.", en: "Payment received — thank you! The invoice is marked paid." },
-  "pay.pending": { fi: "Maksu käsitellään — lasku päivittyy hetken kuluttua.", en: "Payment is processing — the invoice updates shortly." },
-  "pay.cancelled": { fi: "Maksua ei suoritettu.", en: "The payment was not completed." },
 
   // --- MobilePay: the customer pays from their own app, we match by reference ---
   "pay.mp.how": { fi: "Näin maksat", en: "How to pay" },
@@ -999,9 +992,7 @@ const I18N_DICT = {
 
   // --- pay-return success variants -------------------------------------------
   "pay.success.group_title": { fi: "Paikka varattu!", en: "Spot booked!" },
-  "pay.success.group_body": { fi: "Ryhmätreenipaikkasi on vahvistettu — nähdään kentällä! Vahvistus on lähetetty sähköpostiisi.", en: "Your group training spot is confirmed — see you on the pitch! A confirmation email is on its way." },
-  "pay.success.pkg_title": { fi: "Paketti maksettu!", en: "Package paid!" },
-  "pay.success.pkg_body": { fi: "Treenipakettisi on käytössä — treenit odottavat varaamista. Vahvistus on lähetetty sähköpostiisi.", en: "Your session package is active — your sessions are ready to book. A confirmation email is on its way." },
+  "pay.success.pkg_title": { fi: "Paketti käytössä!", en: "Package active!" },
 
   // --- app: group sessions ---------------------------------------------------
   "app.groups.title": { fi: "Ryhmätreenit", en: "Group sessions" },
@@ -1383,13 +1374,13 @@ const I18N_SERVER_PATTERNS = [
   // Coach: the released booking came back once the late payment landed.
   [/^Booking (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 is confirmed again — the payment arrived just after the release\.$/,
     (m) => `Varaus ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 on jälleen vahvistettu — maksu saapui heti vapautuksen jälkeen.`],
-  // Admin: money arrived for a booking that can't come back -> manual Stripe refund.
-  [/^Payment received for invoice (\S+) AFTER its booking (\S+) was released and the slot re-booked — please refund the payment in Stripe\.$/,
-    (m) => `Maksu laskusta ${m[1]} saapui vasta sen jälkeen, kun varaus ${m[2]} oli vapautettu ja aika ehditty varata uudelleen — palauta maksu Stripessä.`],
-  [/^Payment received for invoice (\S+), but its booking (\S+) was cancelled — the booking stays cancelled; please refund the payment in Stripe\.$/,
-    (m) => `Maksu laskusta ${m[1]} saapui, mutta sen varaus ${m[2]} on peruttu — varaus pysyy peruttuna; palauta maksu Stripessä.`],
-  [/^Payment received for invoice (\S+), but that invoice no longer exists \(was the customer account deleted\?\) — please refund the payment in Stripe\.$/,
-    (m) => `Maksu laskusta ${m[1]} saapui, mutta laskua ei enää ole (poistettiinko asiakastili?) — palauta maksu Stripessä.`],
+  // Admin: money arrived for a booking that can't come back -> refund by hand.
+  [/^Payment received for invoice (\S+) AFTER its booking (\S+) was released and the slot re-booked — please refund the payment in MobilePay\.$/,
+    (m) => `Maksu laskusta ${m[1]} saapui vasta sen jälkeen, kun varaus ${m[2]} oli vapautettu ja aika ehditty varata uudelleen — palauta maksu MobilePaylla.`],
+  [/^Payment received for invoice (\S+), but its booking (\S+) was cancelled — the booking stays cancelled; please refund the payment in MobilePay\.$/,
+    (m) => `Maksu laskusta ${m[1]} saapui, mutta sen varaus ${m[2]} on peruttu — varaus pysyy peruttuna; palauta maksu MobilePaylla.`],
+  [/^Payment received for invoice (\S+), but that invoice no longer exists \(was the customer account deleted\?\) — please refund the payment in MobilePay\.$/,
+    (m) => `Maksu laskusta ${m[1]} saapui, mutta laskua ei enää ole (poistettiinko asiakastili?) — palauta maksu MobilePaylla.`],
   // Coach alert: a player bought a spot in their group session.
   [/^New group signup: (.+) joined your group session (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 \((\d+)\/(\d+)\)\.$/,
     (m) => `Uusi ryhmäilmoittautuminen: ${m[1]} liittyi ryhmätreeniisi ${m[2]} ${fiDate(m[3])} klo ${m[4]}.00 (${m[5]}/${m[6]}).`],
@@ -1399,11 +1390,21 @@ const I18N_SERVER_PATTERNS = [
   // Coach alert: the admin cancelled their group session.
   [/^Your group session (\S+) on (\d{4}-\d{2}-\d{2}) at (\d{1,2}):00 was cancelled by the admin\.$/,
     (m) => `Ryhmätreenisi ${m[1]} ${fiDate(m[2])} klo ${m[3]}.00 peruttiin ylläpidon toimesta.`],
-  // Admin alerts: a group payment that needs a manual refund in Stripe.
-  [/^Payment received for group spot (\S+), but the session (\S*) is (no longer available|full) — please refund the payment in Stripe\.$/,
-    (m) => `Maksu ryhmäpaikasta ${m[1]} saapui, mutta treeni ${m[2]} ${m[3] === 'full' ? 'on täynnä' : 'ei ole enää saatavilla'} — palauta maksu Stripessä.`],
-  [/^Group spot (\S+) was cancelled but could not be refunded automatically — please refund the payment in Stripe\.$/,
-    (m) => `Ryhmäpaikka ${m[1]} peruttiin, mutta maksua ei voitu palauttaa automaattisesti — palauta maksu Stripessä.`],
+  // Admin alerts: a group payment that has to be refunded by hand (MobilePay
+  // cannot reverse a payment we received).
+  [/^Payment received for group spot (\S+), but the session (\S*) is (no longer available|full) — please refund the payment in MobilePay\.$/,
+    (m) => `Maksu ryhmäpaikasta ${m[1]} saapui, mutta treeni ${m[2]} ${m[3] === 'full' ? 'on täynnä' : 'ei ole enää saatavilla'} — palauta maksu MobilePaylla.`],
+  [/^Group spot (\S+) was cancelled after it was paid \((.+)\) — please refund the player in MobilePay\.$/,
+    (m) => `Ryhmäpaikka ${m[1]} peruttiin maksun jälkeen (${m[2]}) — palauta maksu pelaajalle MobilePaylla.`],
+  // Admin alerts from the MobilePay webhook (server/payments.js).
+  [/^MobilePay reported (\S+) for (\S+) — the payment did not go through\. The purchase stays unpaid and will be released at its deadline\.$/,
+    (m) => `MobilePay ilmoitti tilan ${m[1]} kohteelle ${m[2]} — maksu ei mennyt läpi. Varaus pysyy maksamattomana ja vapautuu määräaikanaan.`],
+  [/^MobilePay reported (\S+) for (\S+), which is already marked PAID — check whether that payment was reversed or refunded, and correct it by hand if so\.$/,
+    (m) => `MobilePay ilmoitti tilan ${m[1]} kohteelle ${m[2]}, joka on jo merkitty maksetuksi — tarkista peruuntuiko tai palautettiinko maksu, ja korjaa tarvittaessa käsin.`],
+  [/^A MobilePay payment arrived with a reference we could not match \("(.+)"\) — please check MobilePay and mark the right booking paid, or refund it\.$/,
+    (m) => `MobilePay-maksu saapui viitteellä, jota ei tunnistettu ("${m[1]}") — tarkista MobilePaysta ja merkitse oikea varaus maksetuksi tai palauta maksu.`],
+  [/^A MobilePay payment arrived with a reference we could not match \(no reference given\) — please check MobilePay and mark the right booking paid, or refund it\.$/,
+    () => 'MobilePay-maksu saapui ilman viitettä — tarkista MobilePaysta ja merkitse oikea varaus maksetuksi tai palauta maksu.'],
 ];
 
 const I18N = (() => {

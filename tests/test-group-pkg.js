@@ -1,7 +1,7 @@
 // E2E checks for group training + prepaid session packages. Scratch server on
-// :3462 with SMTP disabled and a dummy Stripe key: Checkout creation fails
-// (payUrl null) but payments are confirmed through the signed webhook, exactly
-// like production's server-to-server path.
+// :3462 with SMTP disabled and the MobilePay webhook enabled: spots and
+// packages are created PENDING, and payments are confirmed through the signed
+// webhook, exactly like production's server-to-server path.
 'use strict';
 
 const { spawn } = require('node:child_process');

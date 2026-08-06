@@ -248,21 +248,3 @@ async function loadReviewsSection() {
   }));
 }
 
-// The "booking successful" screen shown when the customer lands back from a
-// completed Stripe payment. Full-screen (reuses the gate styling); the button
-// reveals the bookings list underneath.
-function showPaySuccess(titleKey = 'pay.success.title', bodyKey = 'pay.success.body') {
-  const el = document.createElement('div');
-  el.className = 'gate';
-  el.innerHTML = `
-    <div class="gate-card" style="text-align:center">
-      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"
-        stroke-linejoin="round" aria-hidden="true" style="width:64px;height:64px;margin:6px auto 12px;display:block">
-        <circle cx="12" cy="12" r="10"/><path d="m8.5 12.5 2.5 2.5 5-6"/></svg>
-      <h2 style="margin:0 0 8px">${t(titleKey)}</h2>
-      <p class="muted" style="margin:0 0 22px">${t(bodyKey)}</p>
-      <button class="btn btn-primary" style="font-size:1.05rem;padding:14px 32px">${t('pay.success.cta')}</button>
-    </div>`;
-  document.body.appendChild(el);
-  el.querySelector('button').addEventListener('click', () => el.remove());
-}
