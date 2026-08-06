@@ -10,7 +10,7 @@ const { createSession, destroySession, requireRole, loginThrottle } = require('.
 const { createInvoiceForBooking, sendReceiptForInvoice, OUTBOX } = require('../invoice');
 const sheets = require('../sheets');
 const tiers = require('../tiers');
-const stripe = require('../stripe');
+const payments = require('../payments');
 const i18n = require('../i18n');
 const pitches = require('../pitches');
 const emails = require('../emails');
@@ -25,14 +25,38 @@ const attio = require('../attio');
 // Language preference sent by the client ('fi' | 'en'); anything else -> null.
 const readLang = (body) => (body?.lang === 'en' || body?.lang === 'fi') ? body.lang : null;
 
-// Product image shown on the Stripe Checkout page. Absolute URLs off the public
-// site so Stripe can fetch them (it ignores any it can't reach — e.g. localhost
-// in dev). Logo = the app icon PNG (Stripe doesn't accept the SVG logo).
-const CHECKOUT_LOGO = `${config.siteUrl}/assets/apple-touch-icon.png`;
-function coachPhotoUrl(photosJson) {
-  const first = parseJSON(photosJson, [])[0];
-  if (!first) return CHECKOUT_LOGO;
-  return /^https?:\/\//.test(first) ? first : `${config.siteUrl}${first}`;
+// Billing details captured with a booking, so the customer can be invoiced
+// separately (nobody pays at checkout). Everything falls back to what the
+// account already knows, so a booking is never blocked on a missing address —
+// name and email always resolve, the rest is filled in when the customer
+// gives it and is remembered on the account for next time.
+function readBilling(body, user) {
+  const s = (v, max = 120) => String(v == null ? '' : v).trim().slice(0, max);
+  const b = (body && typeof body.billing === 'object' && body.billing) || {};
+  const saved = db.prepare(`SELECT name, email, phone, area,
+      billing_address, billing_postcode, billing_city FROM users WHERE id = ?`).get(user.id) || {};
+  return {
+    name: s(b.name) || saved.name || user.name || '',
+    email: s(b.email) || saved.email || user.email || '',
+    phone: s(b.phone, 40) || saved.phone || '',
+    address: s(b.address) || saved.billing_address || '',
+    postcode: s(b.postcode, 20) || saved.billing_postcode || '',
+    city: s(b.city) || saved.billing_city || saved.area || '',
+    notes: s(b.notes, 300),
+  };
+}
+
+// Remember the address on the account so the billing form comes back
+// pre-filled. Only ever fills blanks in / overwrites with something non-empty.
+function rememberBilling(userId, billing) {
+  db.prepare(`UPDATE users SET
+      phone = CASE WHEN ? <> '' THEN ? ELSE phone END,
+      billing_address = CASE WHEN ? <> '' THEN ? ELSE billing_address END,
+      billing_postcode = CASE WHEN ? <> '' THEN ? ELSE billing_postcode END,
+      billing_city = CASE WHEN ? <> '' THEN ? ELSE billing_city END
+    WHERE id = ?`)
+    .run(billing.phone, billing.phone, billing.address, billing.address,
+      billing.postcode, billing.postcode, billing.city, billing.city, userId);
 }
 
 const router = express.Router();
@@ -265,14 +289,14 @@ function reactivateBooking(booking) {
   // Restore the invoice to whatever it was before the void (paid stays paid).
   db.prepare("UPDATE invoices SET status = COALESCE(prev_status, 'sent'), prev_status = NULL WHERE booking_id = ? AND status = 'void'")
     .run(booking.id);
-  // A reactivated card invoice gets a FRESH payment window — its old deadline
+  // A reactivated unpaid invoice gets a FRESH payment window — its old deadline
   // has usually passed, and without this the unpaid-booking sweep would
   // release the booking again on the very next request. MAX() so a deadline
   // still in the future (e.g. an admin pay-link's 72 h window after a quick
-  // cancel/reactivate) is never SHORTENED to the at-booking window.
+  // cancel/reactivate) is never SHORTENED.
   db.prepare(`UPDATE invoices SET pay_by = MAX(pay_by, ?), pay_reminder_sent = 0
     WHERE booking_id = ? AND status = 'sent' AND pay_by IS NOT NULL`)
-    .run(new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(), booking.id);
+    .run(new Date(Date.now() + (config.payment.holdHours || 72) * 3600000).toISOString(), booking.id);
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
     .run(booking.customer_id,
@@ -298,9 +322,16 @@ router.get('/config', (req, res) => {
     bookingHorizonDays: config.bookingHorizonDays,
     adminPayLinkHours: config.adminPayLinkHours,
     emailDelivery: require('../mailer').smtpConfigured(),
-    // Only the method NAME is public; the IBAN / MobilePay number live on the
-    // invoice (auth-gated) so they aren't scraped from the open config endpoint.
-    payment: { method: config.payment.method, stripeEnabled: stripe.enabled() },
+    // Nobody pays at checkout: a booking is invoiced and waits in pending
+    // payment. The MobilePay number is shown to SIGNED-IN customers (they need
+    // it to pay) but withheld from anonymous callers, so it isn't scraped off
+    // an open endpoint — same rule the invoice document follows.
+    payment: {
+      method: config.payment.method,
+      mobilepay: req.user ? config.payment.mobilepay : '',
+      referenceHint: config.payment.referenceHint,
+      holdHours: config.payment.holdHours,
+    },
   });
 });
 
@@ -792,7 +823,6 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   if (!credit) {
     fundingPkg = packages.pickPackageForBooking(req.user.id);
     if (!fundingPkg && packages.findOption(String(req.body?.package || ''))) {
-      if (!stripe.enabled()) return fail('Card payments are not enabled yet.', 503);
       newPkg = packages.createPackagePurchase(req.user.id, String(req.body.package));
     }
   }
@@ -829,24 +859,33 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   // Optional free-text wishes for the coach, asked in the wizard's notes step.
   const notes = String(req.body?.notes || '').trim().slice(0, 500);
 
-  // Card bookings are NOT announced to the coach yet: no alert, no chat, and
+  // UNPAID bookings are NOT announced to the coach yet: no alert, no chat, and
   // the coach endpoints hide the row. The announcement (server/notify.js)
-  // fires when the payment confirms. Free-credit, active-package and legacy
-  // bank-transfer bookings have nothing pending, so the coach hears
-  // immediately; a booking waiting on a NEW package purchase is announced
-  // when that payment confirms (packages.markPackagePaid).
-  const cardFlow = !pkg && stripe.enabled() && price - discount - promoOffCents > 0;
+  // fires when the payment confirms. Free-credit and active-package bookings
+  // have nothing pending, so the coach hears immediately; a booking waiting on
+  // a NEW package purchase is announced when that payment confirms
+  // (packages.markPackagePaid).
+  const pendingPayment = !pkg && price - discount - promoOffCents > 0;
+
+  // Billing details for the invoice, snapshotted onto the booking: the invoice
+  // must keep the address it was issued to even if the customer later edits
+  // their profile.
+  const billing = readBilling(req.body, req.user);
 
   let bookingId;
   try {
     const info = db.prepare(`INSERT INTO bookings
       (code, customer_id, coach_id, date, hour, location, position, focus, is_online,
        price_cents, discount_cents, total_cents, credit_applied, notes, package_id,
-       discount_code, code_discount_cents, coach_notified, status, created_at)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?)`)
+       discount_code, code_discount_cents, coach_notified, status, created_at,
+       billing_name, billing_email, billing_phone, billing_address, billing_postcode,
+       billing_city, billing_notes)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?,?,?,?,?,?,?,?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus ? focus.id : '',
         (focus && focus.online) ? 1 : 0, price, discount, price - discount - promoOffCents, credit ? 1 : 0, notes,
-        pkg ? pkg.id : null, promoCode, promoOffCents, nowISO());
+        pkg ? pkg.id : null, promoCode, promoOffCents, nowISO(),
+        billing.name, billing.email, billing.phone, billing.address, billing.postcode,
+        billing.city, billing.notes);
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
     if (newPkg) db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
@@ -862,55 +901,36 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   // The invoice renders in the language the customer is booking in (fi|en).
   const langPref = readLang(req.body);
   if (langPref) db.prepare('UPDATE users SET lang = ? WHERE id = ?').run(langPref, req.user.id);
+  rememberBilling(req.user.id, billing);
 
   // Package-funded bookings create no invoice — the package was the payment.
   const invoice = pkg ? null : createInvoiceForBooking(bookingId);
   recordEvent(req, 'booking_completed', { coachId, code });
   sheets.scheduleSync();
 
-  // No payment pending -> announce now. Card bookings announce from the
-  // payment paths instead (webhook / refresh-payment / admin mark-paid);
+  // No payment pending -> announce now. A booking awaiting payment announces
+  // from the payment path instead (MobilePay webhook / admin mark-paid);
   // new-package bookings when the package payment confirms.
-  if (!cardFlow && !newPkg) announceBookingToCoach(bookingId);
+  if (!pendingPayment && !newPkg) announceBookingToCoach(bookingId);
   // The balance moved — maybe the "1 left" / "all used" notice is due.
   if (fundingPkg) packages.afterPackageChange(fundingPkg.id);
 
-  // Payment is due AT booking: the client redirects straight to this Checkout
-  // URL. The slot is held for config.stripe.payWindowMinutes — if the payment
-  // is interrupted, Omat varaukset has a pay button until the sweep releases
-  // the unpaid booking at the deadline.
-  let payUrl = null;
-  if (cardFlow) {
-    try {
-      const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-      const session = await stripe.createCheckoutSession({
-        metadata: { invoice_number: invoice.number },
-        successParam: `paid=${encodeURIComponent(invoice.number)}`,
-        amountCents: invoice.amount_cents,
-        description: `${config.siteName} — ${coach.name} ${date} ${String(hour).padStart(2, '0')}:00 (${invoice.number})`,
-        customerEmail: req.user.email,
-        origin,
-        images: [coachPhotoUrl(coach.photos)],
-        lang: langPref || db.prepare('SELECT lang FROM users WHERE id = ?').get(req.user.id).lang,
-      });
-      db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, invoice.id);
-      payUrl = session.url;
-    } catch (err) { console.error('[stripe]', err.message); }
-  } else if (newPkg) {
-    if (newPkg.price_cents === 0) {
-      // A code made the package free — activate it now (this also announces the
-      // linked booking to the coach), no Stripe checkout needed.
-      packages.markPackagePaid(newPkg.code, null);
-    } else {
-      // One payment for the whole package; this booking rides along as its
-      // first session and is announced when the payment confirms.
-      try { payUrl = await packageCheckout(req, newPkg); }
-      catch (err) { console.error('[stripe]', err.message); }
-    }
-  }
+  // A code made the package free — activate it now (this also announces the
+  // linked booking to the coach). Otherwise the package is invoiced like
+  // everything else and this booking rides along as its first session.
+  if (newPkg && newPkg.price_cents === 0) packages.markPackagePaid(newPkg.code);
 
   res.status(201).json({
-    payUrl,
+    // How the customer settles this booking. `pending` = the money has not
+    // arrived yet, so the booking is NOT confirmed until it does.
+    payment: {
+      pending: pendingPayment || Boolean(newPkg && newPkg.price_cents > 0),
+      method: config.payment.method,
+      mobilepay: config.payment.mobilepay,
+      reference: invoice ? invoice.number : (newPkg ? newPkg.code : null),
+      holdHours: config.payment.holdHours,
+    },
+    billing,
     booking: {
       code, date, hour, location, position, focus: focus ? focus.id : '',
       focusLabel: focus ? focus.label : '',
@@ -964,67 +984,30 @@ router.get('/invoices/:number', requireRole('customer', 'admin', 'coach'), (req,
   return res.sendFile(file);
 });
 
-// Start an online card payment for an invoice (Stripe Checkout redirect).
-router.post('/invoices/:number/pay', requireRole('customer', 'admin'), async (req, res) => {
-  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
-  // Sweep first: an invoice past its 72 h payment window voids here, so the
-  // guards below refuse to mint a Checkout session for a released booking.
+// How to settle an unpaid invoice: the MobilePay number, the reference to type
+// and the deadline the slot is held to. There is no online checkout — the
+// customer pays from their own MobilePay app and the payment is matched by
+// reference (webhook) or confirmed by an admin.
+router.get('/invoices/:number/payment', requireRole('customer', 'admin'), (req, res) => {
+  // Sweep first, so an invoice past its deadline reads as void rather than
+  // handing out payment instructions for a booking that no longer exists.
   autoCompleteBookings();
   const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(String(req.params.number));
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
   if (req.user.role !== 'admin' && inv.customer_email !== req.user.email) {
     return res.status(403).json({ error: 'Not allowed.' });
   }
-  if (inv.status === 'paid') return res.status(409).json({ error: 'Invoice is already paid.' });
-  if (inv.status === 'void') {
-    return res.status(409).json({ error: 'This invoice is voided (its booking was cancelled) — it cannot be marked paid.' });
-  }
-  if (!inv.amount_cents) return res.status(400).json({ error: 'Nothing to pay.' });
-  const booking = db.prepare(`SELECT b.date, b.hour, c.name AS coach, c.photos AS coachPhotos
-    FROM bookings b JOIN coaches c ON c.id = b.coach_id WHERE b.id = ?`).get(inv.booking_id);
-  const me = db.prepare('SELECT lang FROM users WHERE id = ?').get(req.user.id);
-  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-  try {
-    // Never leave two live sessions for one invoice (double charge / lost payment).
-    await stripe.expireSession(inv.stripe_session_id);
-    const session = await stripe.createCheckoutSession({
-      metadata: { invoice_number: inv.number },
-      successParam: `paid=${encodeURIComponent(inv.number)}`,
-      amountCents: inv.amount_cents,
-      description: `${config.siteName} — ${booking.coach} ${booking.date} ${String(booking.hour).padStart(2, '0')}:00 (${inv.number})`,
-      customerEmail: inv.customer_email,
-      origin,
-      images: [coachPhotoUrl(booking.coachPhotos)],
-      lang: me && me.lang,
-    });
-    db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, inv.id);
-    res.json({ url: session.url });
-  } catch (err) {
-    res.status(err.status || 502).json({ error: err.message });
-  }
-});
-
-// Success-URL return: re-read the Checkout session server-side and mark the
-// invoice paid. Works without any webhook (local/dev); idempotent with it.
-router.post('/invoices/:number/refresh-payment', requireRole('customer', 'admin'), async (req, res) => {
-  const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(String(req.params.number));
-  if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
-  if (req.user.role !== 'admin' && inv.customer_email !== req.user.email) {
-    return res.status(403).json({ error: 'Not allowed.' });
-  }
-  if (inv.status === 'paid') return res.json({ status: 'paid' });
-  if (!stripe.enabled() || !inv.stripe_session_id) return res.json({ status: inv.status });
-  try {
-    const session = await stripe.retrieveSession(inv.stripe_session_id);
-    if (session.payment_status === 'paid') stripe.markInvoicePaid(inv.number);
-    // Report the invoice's REAL state: if the payment landed after the booking
-    // was released and could not be restored (slot re-booked / cancelled), the
-    // invoice is still void and the customer must not be told "paid".
-    const after = db.prepare('SELECT status FROM invoices WHERE number = ?').get(inv.number);
-    res.json({ status: after ? after.status : inv.status });
-  } catch (err) {
-    res.status(err.status || 502).json({ error: err.message });
-  }
+  res.json({
+    status: inv.status,
+    amountCents: inv.amount_cents,
+    reference: inv.number,
+    dueDate: inv.due_date,
+    payBy: inv.pay_by || null,
+    atSession: Boolean(inv.at_session),
+    method: config.payment.method,
+    mobilepay: config.payment.mobilepay,
+    referenceHint: config.payment.referenceHint,
+  });
 });
 
 // ---------------------------------------------------------------------------
@@ -1044,9 +1027,6 @@ router.get('/groups', (req, res) => {
 router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) => {
   autoCompleteBookings();
   if (!requireVerified(req, res)) return;
-  if (!stripe.enabled() && config.groupTraining.pricePerPlayer > 0) {
-    return res.status(503).json({ error: 'Card payments are not enabled yet.' });
-  }
   const coachId = Number(req.body?.coachId);
   const date = String(req.body?.date || '');
   const hour = Number(req.body?.hour);
@@ -1091,49 +1071,33 @@ router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) 
   if (made.error) return res.status(409).json({ error: made.error });
   const su = made.signup;
   recordEvent(req, 'group_start', { code: gs.code, ageGroup });
+  rememberBilling(req.user.id, readBilling(req.body, req.user));
   if (su.price_cents === 0) {
-    groups.markSignupPaid(su.code, null);
-    return res.status(201).json({ payUrl: null, session: gs.code, signup: { code: su.code, status: 'confirmed' } });
+    groups.markSignupPaid(su.code);
+    return res.status(201).json({ session: gs.code, signup: { code: su.code, status: 'confirmed' } });
   }
-  let payUrl = null;
-  try { payUrl = await groupCheckout(req, su, gs); }
-  catch (err) { console.error('[stripe]', err.message); }
-  res.status(201).json({ payUrl, session: gs.code, signup: { code: su.code, status: su.status, payBy: su.pay_by } });
+  res.status(201).json({
+    session: gs.code,
+    signup: { code: su.code, status: su.status, payBy: su.pay_by },
+    payment: spotPayment(su),
+  });
 });
 
-// One Checkout session for a group signup (used at join + retry from the
-// bookings page). Group spots are card-only: they exist because of the
-// pay-at-booking flow.
-// `urls` (optional): {successUrl, cancelUrl} overrides for the login-free
-// payment links, whose return leg must not land on the auth-gated bookings page.
-async function groupCheckout(req, su, gs, urls = {}) {
-  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-  const me = db.prepare('SELECT email, lang FROM users WHERE id = ?').get(su.customer_id);
-  // Never leave two live sessions for one spot (double charge / lost payment).
-  await stripe.expireSession(su.stripe_session_id);
-  const session = await stripe.createCheckoutSession({
-    metadata: { group_signup: su.code },
-    successParam: `gpaid=${encodeURIComponent(su.code)}`,
-    amountCents: su.price_cents,
-    description: `${config.siteName} — Group training ${gs.date} ${String(gs.hour).padStart(2, '0')}:00 (${su.code})`,
-    customerEmail: me.email,
-    images: [CHECKOUT_LOGO],
-    origin,
-    lang: me.lang,
-    successUrl: urls.successUrl,
-    cancelUrl: urls.cancelUrl,
-  });
-  db.prepare('UPDATE group_signups SET stripe_session_id = ? WHERE id = ?').run(session.id, su.id);
-  return session.url;
-}
+// How a pending group spot gets paid: MobilePay, using the spot's own code as
+// the reference (server/payments.js resolves GSU-… to this signup).
+const spotPayment = (su) => ({
+  pending: su.status === 'pending',
+  method: config.payment.method,
+  mobilepay: config.payment.mobilepay,
+  reference: su.code,
+  amountCents: su.price_cents,
+  payBy: su.pay_by || null,
+});
 
 router.post('/groups/:code/join', requireRole('customer', 'admin'), async (req, res) => {
   autoCompleteBookings();
   const gs = db.prepare('SELECT * FROM group_sessions WHERE code = ?').get(String(req.params.code));
   if (!gs) return res.status(404).json({ error: 'Group session not found.' });
-  if (gs.price_cents > 0 && !stripe.enabled()) {
-    return res.status(503).json({ error: 'Card payments are not enabled yet.' });
-  }
   if (!requireVerified(req, res)) return;
   // Every spot carries the player's age group; the session's group is set by
   // its first booker and later joiners must match it.
@@ -1152,63 +1116,46 @@ router.post('/groups/:code/join', requireRole('customer', 'admin'), async (req, 
   if (!gs.age_group) db.prepare('UPDATE group_sessions SET age_group = ? WHERE id = ?').run(ageGroup, gs.id);
   const su = made.signup;
   recordEvent(req, 'group_join', { code: gs.code });
+  rememberBilling(req.user.id, readBilling(req.body, req.user));
   if (su.price_cents === 0) {
-    groups.markSignupPaid(su.code, null);
-    return res.status(201).json({ payUrl: null, signup: { code: su.code, status: 'confirmed' } });
+    groups.markSignupPaid(su.code);
+    return res.status(201).json({ signup: { code: su.code, status: 'confirmed' } });
   }
-  let payUrl = null;
-  try { payUrl = await groupCheckout(req, su, gs); }
-  catch (err) { console.error('[stripe]', err.message); }
-  // payUrl null = Stripe hiccup: the spot stays pending and the bookings page
-  // offers a pay button until the sweep releases it.
-  res.status(201).json({ payUrl, signup: { code: su.code, status: su.status, payBy: su.pay_by } });
+  res.status(201).json({
+    signup: { code: su.code, status: su.status, payBy: su.pay_by },
+    payment: spotPayment(su),
+  });
 });
 
-// Retry payment for a still-pending spot (mirrors /invoices/:number/pay).
-router.post('/group-signups/:code/pay', requireRole('customer', 'admin'), async (req, res) => {
-  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+// How to pay a still-pending spot (the panel on the bookings page).
+router.get('/group-signups/:code/payment', requireRole('customer', 'admin'), (req, res) => {
   autoCompleteBookings();
   const su = db.prepare('SELECT * FROM group_signups WHERE code = ?').get(String(req.params.code));
   if (!su) return res.status(404).json({ error: 'Signup not found.' });
   if (req.user.role !== 'admin' && su.customer_id !== req.user.id) {
     return res.status(403).json({ error: 'Not allowed.' });
   }
-  if (su.status !== 'pending') return res.status(409).json({ error: 'This spot is not awaiting payment.' });
-  const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(su.group_session_id);
-  try { res.json({ url: await groupCheckout(req, su, gs) }); }
-  catch (err) { res.status(err.status || 502).json({ error: err.message }); }
-});
-
-// Success-URL return for a group spot (mirrors the invoice refresh).
-router.post('/group-signups/:code/refresh-payment', requireRole('customer', 'admin'), async (req, res) => {
-  const su = db.prepare('SELECT * FROM group_signups WHERE code = ?').get(String(req.params.code));
-  if (!su) return res.status(404).json({ error: 'Signup not found.' });
-  if (req.user.role !== 'admin' && su.customer_id !== req.user.id) {
-    return res.status(403).json({ error: 'Not allowed.' });
-  }
-  if (su.status === 'confirmed') return res.json({ status: 'paid' });
-  if (!stripe.enabled() || !su.stripe_session_id) return res.json({ status: su.status });
-  try {
-    const session = await stripe.retrieveSession(su.stripe_session_id);
-    if (session.payment_status === 'paid') groups.markSignupPaid(su.code, session);
-    const after = db.prepare('SELECT status FROM group_signups WHERE id = ?').get(su.id);
-    res.json({ status: after.status === 'confirmed' ? 'paid' : after.status });
-  } catch (err) {
-    res.status(err.status || 502).json({ error: err.message });
-  }
+  res.json({ ...spotPayment(su), status: su.status, referenceHint: config.payment.referenceHint });
 });
 
 // ---------------------------------------------------------------------------
 // Login-free payment links (admin-created bookings, "send a payment request").
-// The emailed URL /api/pay/:token mints a fresh Stripe Checkout every time it
-// is opened, so the link keeps working until the reservation's deadline. The
-// return leg lands back HERE (not on the auth-gated bookings page) because
-// the payer may have no password — and the payment is confirmed server-side
-// on return, so it never depends on the webhook being configured.
+// The emailed URL /api/pay/:token opens the payment instructions without a
+// password — the payer may have no account at all. There is no checkout to
+// redirect to: the page states the MobilePay number, the reference to type and
+// the amount, and the money is matched back by reference (the MobilePay
+// webhook) or confirmed by an admin.
 // ---------------------------------------------------------------------------
-function payPage(res, lang, { titleKey, bodyKey, retryUrl = null, status = 200 }) {
+// `rows` (optional): [[label, value, strong], …] rendered as a payment table.
+function payPage(res, lang, { titleKey, bodyKey, rows = null, status = 200 }) {
   const title = i18n.tr(lang, titleKey);
   const body = i18n.tr(lang, bodyKey, { email: config.invoice.replyEmail });
+  const table = rows && rows.length ? `<table style="width:100%;border-collapse:collapse;margin:20px 0">
+    ${rows.map(([label, value, strong]) => `<tr>
+      <td style="padding:9px 0;border-bottom:1px solid #ededf0;color:#3f3f46">${escHtml(label)}</td>
+      <td style="padding:9px 0;border-bottom:1px solid #ededf0;text-align:right">${strong
+        ? `<strong>${escHtml(value)}</strong>` : escHtml(value)}</td></tr>`).join('')}
+  </table>` : '';
   res.status(status).type('html').send(`<!doctype html>
 <html lang="${lang}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>${escHtml(title)} — ${escHtml(config.siteName)}</title></head>
@@ -1216,10 +1163,22 @@ function payPage(res, lang, { titleKey, bodyKey, retryUrl = null, status = 200 }
   <div style="max-width:480px;margin:0 auto;background:#fff;border:1px solid #e4e4e7;border-radius:14px;padding:30px 28px">
     <h1 style="font-size:1.35rem;margin:0 0 12px">${escHtml(title)}</h1>
     <p style="color:#3f3f46;line-height:1.55">${escHtml(body)}</p>
-    ${retryUrl ? `<p style="margin:22px 0"><a href="${escHtml(retryUrl)}" style="background:#0a0a0b;color:#fff;text-decoration:none;font-weight:700;padding:12px 24px;border-radius:10px;display:inline-block">${escHtml(i18n.tr(lang, 'payweb.retry'))}</a></p>` : ''}
+    ${table}
     <p><a href="/" style="color:#3f3f46">${escHtml(i18n.tr(lang, 'payweb.back'))}</a></p>
   </div>
 </body></html>`);
+}
+
+// The MobilePay rows shown on a payment page: what to send, where, and the
+// reference that lets us match the money back to this purchase.
+function payRows(lang, reference, amountCents) {
+  return [
+    [i18n.tr(lang, 'invoice.paymentMethod'), i18n.trCfg(lang, config.payment.method)],
+    [i18n.tr(lang, 'invoice.mobilepayRow'), config.payment.mobilepay, true],
+    [i18n.tr(lang, 'invoice.payee'), config.payment.payee],
+    [i18n.tr(lang, 'invoice.reference'), reference, true],
+    [i18n.tr(lang, 'invoice.amount'), (amountCents / 100).toFixed(2).replace('.', ',') + ' €', true],
+  ];
 }
 
 // A token belongs to a 1-on-1 invoice or a group spot; load whichever it is.
@@ -1240,123 +1199,41 @@ function findPayTarget(token) {
   return null;
 }
 
-router.get('/pay/:token', async (req, res) => {
+router.get('/pay/:token', (req, res) => {
   autoCompleteBookings(); // settle deadlines first, so a released link reads as gone
   const t = findPayTarget(String(req.params.token));
   if (!t) return payPage(res, 'fi', { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 404 });
-  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-  const returnUrl = `${origin}/api/pay/${req.params.token}/return`;
-  // {CHECKOUT_SESSION_ID} is substituted by Stripe: the return leg then knows
-  // exactly which session was paid, even if the link was re-opened meanwhile
-  // (each open re-mints and overwrites the stored stripe_session_id).
-  const urls = { successUrl: `${returnUrl}?sid={CHECKOUT_SESSION_ID}`, cancelUrl: `${returnUrl}?cancelled=1` };
 
   if (t.type === 'invoice') {
     if (t.inv.status === 'paid') return payPage(res, t.lang, { titleKey: 'payweb.paid.title', bodyKey: 'payweb.paid.body' });
     if (t.inv.status !== 'sent' || t.booking.status !== 'confirmed') {
       return payPage(res, t.lang, { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 410 });
     }
-    if (!stripe.enabled()) {
-      // Card payments off: the invoice document itself carries the bank
-      // transfer instructions — show it instead of a checkout.
-      const file = path.join(OUTBOX, path.basename(t.inv.html_path || ''));
-      if (t.inv.html_path && fs.existsSync(file)) return res.sendFile(file);
-      return payPage(res, t.lang, { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 410 });
+    // The invoice document already states the amount, the MobilePay number and
+    // the reference — show it rather than paraphrasing it on another page.
+    const file = path.join(OUTBOX, path.basename(t.inv.html_path || ''));
+    if (t.inv.html_path && fs.existsSync(file)) {
+      res.set('Cache-Control', 'no-store');
+      return res.sendFile(file);
     }
-    try {
-      const coach = db.prepare('SELECT name, photos FROM coaches WHERE id = ?').get(t.booking.coach_id);
-      // Never leave two live sessions for one invoice (double charge / lost payment).
-      await stripe.expireSession(t.inv.stripe_session_id);
-      const session = await stripe.createCheckoutSession({
-        metadata: { invoice_number: t.inv.number },
-        amountCents: t.inv.amount_cents,
-        description: `${config.siteName} — ${coach.name} ${t.booking.date} ${String(t.booking.hour).padStart(2, '0')}:00 (${t.inv.number})`,
-        customerEmail: t.inv.customer_email,
-        images: [coachPhotoUrl(coach.photos)],
-        origin, lang: t.lang, ...urls,
-      });
-      db.prepare('UPDATE invoices SET stripe_session_id = ? WHERE id = ?').run(session.id, t.inv.id);
-      return res.redirect(303, session.url);
-    } catch (err) {
-      console.error('[stripe]', err.message);
-      return payPage(res, t.lang, { titleKey: 'payweb.pending.title', bodyKey: 'payweb.pending.body', retryUrl: `${origin}/api/pay/${req.params.token}`, status: 502 });
-    }
+    return payPage(res, t.lang, {
+      titleKey: 'payweb.pay.title', bodyKey: 'payweb.pay.body',
+      rows: payRows(t.lang, t.inv.number, t.inv.amount_cents),
+    });
   }
 
-  // Group spot.
+  // Group spot — no invoice document, so the instructions are the page.
   const hki = helsinkiNow();
   const sessionGone = t.gs.status !== 'open'
     || t.gs.date < hki.date || (t.gs.date === hki.date && t.gs.hour <= hki.hour);
   if (t.su.status === 'confirmed') return payPage(res, t.lang, { titleKey: 'payweb.paid.title', bodyKey: 'payweb.paid.body' });
-  if (t.su.status !== 'pending' || sessionGone || !stripe.enabled()) {
+  if (t.su.status !== 'pending' || sessionGone) {
     return payPage(res, t.lang, { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 410 });
   }
-  try {
-    return res.redirect(303, await groupCheckout(req, t.su, t.gs, urls));
-  } catch (err) {
-    console.error('[stripe]', err.message);
-    return payPage(res, t.lang, { titleKey: 'payweb.pending.title', bodyKey: 'payweb.pending.body', retryUrl: `${origin}/api/pay/${req.params.token}`, status: 502 });
-  }
-});
-
-// Stripe sends the payer back here after Checkout (success AND cancel). On
-// success the session is re-read server-side and the purchase confirmed —
-// exactly like the /refresh-payment endpoints, but without needing a login.
-router.get('/pay/:token/return', async (req, res) => {
-  const t = findPayTarget(String(req.params.token));
-  if (!t) return payPage(res, 'fi', { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 404 });
-  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-  const retryUrl = `${origin}/api/pay/${req.params.token}`;
-  // The session the customer actually paid identifies itself via ?sid=
-  // ({CHECKOUT_SESSION_ID} in the success URL) — check IT first, because the
-  // stored stripe_session_id may have been overwritten by a later open of the
-  // link. The metadata must match this token's purchase: a sid is untrusted
-  // query input, never a proof of payment by itself.
-  const sid = /^cs_[A-Za-z0-9_]+$/.test(String(req.query.sid || '')) ? String(req.query.sid) : null;
-
-  if (t.type === 'invoice') {
-    if (t.inv.status !== 'paid' && stripe.enabled()) {
-      for (const id of [...new Set([sid, t.inv.stripe_session_id].filter(Boolean))]) {
-        try {
-          const session = await stripe.retrieveSession(id);
-          if (session.payment_status === 'paid'
-              && session.metadata && session.metadata.invoice_number === t.inv.number) {
-            stripe.markInvoicePaid(t.inv.number);
-            break;
-          }
-        } catch (err) { console.error('[stripe]', err.message); }
-      }
-    }
-    const after = db.prepare('SELECT status FROM invoices WHERE id = ?').get(t.inv.id);
-    if (after && after.status === 'paid') {
-      return payPage(res, t.lang, { titleKey: 'payweb.paid.title', bodyKey: 'payweb.paid.body' });
-    }
-    if (after && after.status === 'sent') {
-      return payPage(res, t.lang, { titleKey: 'payweb.pending.title', bodyKey: 'payweb.pending.body', retryUrl });
-    }
-    return payPage(res, t.lang, { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 410 });
-  }
-
-  if (t.su.status !== 'confirmed' && stripe.enabled()) {
-    for (const id of [...new Set([sid, t.su.stripe_session_id].filter(Boolean))]) {
-      try {
-        const session = await stripe.retrieveSession(id);
-        if (session.payment_status === 'paid'
-            && session.metadata && session.metadata.group_signup === t.su.code) {
-          groups.markSignupPaid(t.su.code, session);
-          break;
-        }
-      } catch (err) { console.error('[stripe]', err.message); }
-    }
-  }
-  const after = db.prepare('SELECT status FROM group_signups WHERE id = ?').get(t.su.id);
-  if (after && after.status === 'confirmed') {
-    return payPage(res, t.lang, { titleKey: 'payweb.paid.title', bodyKey: 'payweb.paid.body' });
-  }
-  if (after && after.status === 'pending') {
-    return payPage(res, t.lang, { titleKey: 'payweb.pending.title', bodyKey: 'payweb.pending.body', retryUrl });
-  }
-  return payPage(res, t.lang, { titleKey: 'payweb.gone.title', bodyKey: 'payweb.gone.body', status: 410 });
+  return payPage(res, t.lang, {
+    titleKey: 'payweb.pay.title', bodyKey: 'payweb.pay.body',
+    rows: payRows(t.lang, t.su.code, t.su.price_cents),
+  });
 });
 
 // The customer's own group spots, for the bookings page.
@@ -1387,27 +1264,20 @@ router.get('/my-package', requireRole('customer', 'admin'), (req, res) => {
   res.json(packages.customerPackageSummary(req.user.id));
 });
 
-async function packageCheckout(req, pkg) {
-  const origin = `${req.headers['x-forwarded-proto'] || req.protocol}://${req.get('host')}`;
-  const me = db.prepare('SELECT email, lang FROM users WHERE id = ?').get(pkg.customer_id);
-  const session = await stripe.createCheckoutSession({
-    metadata: { package: pkg.code },
-    successParam: `pkgpaid=${encodeURIComponent(pkg.code)}`,
-    amountCents: pkg.price_cents,
-    description: `${config.siteName} — ${pkg.sessions_total} session package (${pkg.code})`,
-    customerEmail: me.email,
-    origin,
-    images: [CHECKOUT_LOGO],
-    lang: me.lang,
-  });
-  db.prepare('UPDATE packages SET stripe_session_id = ? WHERE id = ?').run(session.id, pkg.id);
-  return session.url;
-}
+// How a pending package purchase gets paid: MobilePay, using the package code
+// as the reference (server/payments.js resolves PKG-… back to this purchase).
+const packagePayment = (pkg) => ({
+  pending: pkg.status === 'pending',
+  method: config.payment.method,
+  mobilepay: config.payment.mobilepay,
+  reference: pkg.code,
+  amountCents: pkg.price_cents,
+  payBy: pkg.pay_by || null,
+});
 
 // Buy a package outright (from the bookings page). The wizard's combined
 // "package + first booking" purchase goes through POST /bookings instead.
 router.post('/packages/buy', requireRole('customer', 'admin'), async (req, res) => {
-  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
   if (!requireVerified(req, res)) return;
   const pkg = packages.createPackagePurchase(req.user.id, String(req.body?.package || ''));
   if (!pkg) return res.status(400).json({ error: 'Unknown package.' });
@@ -1422,50 +1292,24 @@ router.post('/packages/buy', requireRole('customer', 'admin'), async (req, res) 
     pkg.price_cents = ap.finalCents;
   }
   recordEvent(req, 'package_buy', { code: pkg.code, sessions: pkg.sessions_total });
+  rememberBilling(req.user.id, readBilling(req.body, req.user));
   if (pkg.price_cents === 0) {
-    // A code covered the whole package — activate it now, no checkout needed.
-    packages.markPackagePaid(pkg.code, null);
-    return res.status(201).json({ payUrl: null, code: pkg.code });
+    // A code covered the whole package — activate it now, nothing to pay.
+    packages.markPackagePaid(pkg.code);
+    return res.status(201).json({ code: pkg.code, payment: { pending: false } });
   }
-  try {
-    res.status(201).json({ payUrl: await packageCheckout(req, pkg), code: pkg.code });
-  } catch (err) {
-    // No orphan pending rows for a checkout that never opened.
-    db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(pkg.id, 'pending');
-    res.status(err.status || 502).json({ error: err.message });
-  }
+  res.status(201).json({ code: pkg.code, payment: packagePayment(pkg) });
 });
 
-// Retry payment for a still-pending package (checkout interrupted).
-router.post('/packages/:code/pay', requireRole('customer', 'admin'), async (req, res) => {
-  if (!stripe.enabled()) return res.status(503).json({ error: 'Card payments are not enabled yet.' });
+// How to pay a still-pending package purchase (the panel on the bookings page).
+router.get('/packages/:code/payment', requireRole('customer', 'admin'), (req, res) => {
   autoCompleteBookings();
   const pkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(String(req.params.code));
   if (!pkg) return res.status(404).json({ error: 'Package not found.' });
   if (req.user.role !== 'admin' && pkg.customer_id !== req.user.id) {
     return res.status(403).json({ error: 'Not allowed.' });
   }
-  if (pkg.status !== 'pending') return res.status(409).json({ error: 'This spot is not awaiting payment.' });
-  try { res.json({ url: await packageCheckout(req, pkg) }); }
-  catch (err) { res.status(err.status || 502).json({ error: err.message }); }
-});
-
-router.post('/packages/:code/refresh-payment', requireRole('customer', 'admin'), async (req, res) => {
-  const pkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(String(req.params.code));
-  if (!pkg) return res.status(404).json({ error: 'Package not found.' });
-  if (req.user.role !== 'admin' && pkg.customer_id !== req.user.id) {
-    return res.status(403).json({ error: 'Not allowed.' });
-  }
-  if (pkg.status === 'active') return res.json({ status: 'paid' });
-  if (!stripe.enabled() || !pkg.stripe_session_id) return res.json({ status: pkg.status });
-  try {
-    const session = await stripe.retrieveSession(pkg.stripe_session_id);
-    if (session.payment_status === 'paid') packages.markPackagePaid(pkg.code, session);
-    const after = db.prepare('SELECT status FROM packages WHERE id = ?').get(pkg.id);
-    res.json({ status: after.status === 'active' ? 'paid' : after.status });
-  } catch (err) {
-    res.status(err.status || 502).json({ error: err.message });
-  }
+  res.json({ ...packagePayment(pkg), status: pkg.status, referenceHint: config.payment.referenceHint });
 });
 
 // ---------------------------------------------------------------------------
@@ -2456,7 +2300,7 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
       { priceCents: adminAp.finalCents, discountCode: adminAp.code, codeDiscountCents: adminAp.discountCents });
     if (made.error) { discardNewAccount(); return res.status(409).json({ error: made.error }); }
     const su = made.signup;
-    if (payment === 'link' && stripe.enabled()) {
+    if (payment === 'link') {
       // Pending spot with a long window + login-free token; the payment-
       // request email carries the link. The coach hears when the money lands.
       db.prepare('UPDATE group_signups SET pay_by = ?, pay_token = ? WHERE id = ?')
@@ -2464,8 +2308,8 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
           crypto.randomBytes(16).toString('hex'), su.id);
       emails.sendGroupPaymentRequestEmail(su.id);
     } else {
-      // 'paid' | 'at_session' ('link' without Stripe degrades here too): the
-      // spot is confirmed now; paid_at only when the money actually moved.
+      // 'paid' | 'at_session': the spot is confirmed now; paid_at only when
+      // the money actually moved.
       db.prepare("UPDATE group_signups SET status = 'confirmed', pay_by = NULL, paid_at = ? WHERE id = ?")
         .run(payment === 'paid' ? nowISO() : null, su.id);
       const coach = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(gs.coach_id);
@@ -2514,14 +2358,15 @@ router.post('/admin/bookings', requireRole('admin'), async (req, res) => {
   }
   const invoice = createInvoiceForBooking(bookingId, { flow: payment });
   if (payment === 'link' && invoice.pay_token) {
-    // Coach hears when the payment confirms (markInvoicePaid), like any card booking.
+    // Coach hears when the payment confirms (payments.markInvoicePaid), like
+    // any other booking awaiting payment.
     emails.sendPaymentRequestEmail(invoice.number);
     // Surface the open (unpaid) deal in Attio right away — the coach copy waits
     // for payment, but the pipeline should show the opportunity now.
     attio.syncBooking(bookingId);
   } else {
-    // 'paid' | 'at_session' (or 'link' degraded to at-session without Stripe):
-    // nothing is pending — the coach and the customer hear right away.
+    // 'paid' | 'at_session': nothing is pending — the coach and the customer
+    // hear right away.
     announceBookingToCoach(bookingId);
   }
   sheets.scheduleSync();
@@ -3104,26 +2949,24 @@ router.delete('/admin/customers/:id', requireRole('admin'), (req, res) => {
   res.json({ ok: true, deletedBookings: bookings.length, releasedUpcoming: upcoming.length });
 });
 
+// Manual mark-paid — the everyday path while payments arrive on a PERSONAL
+// MobilePay number: the owner sees the money in their phone and confirms it
+// here. Same engine as the webhook (server/payments.js), so the receipt, the
+// coach announcement and the released-booking recovery are identical.
 router.post('/admin/invoices/:number/paid', requireRole('admin'), (req, res) => {
-  const inv = db.prepare('SELECT status, at_session FROM invoices WHERE number = ?').get(req.params.number);
+  const inv = db.prepare('SELECT status, at_session, booking_id FROM invoices WHERE number = ?')
+    .get(req.params.number);
   if (!inv) return res.status(404).json({ error: 'Invoice not found.' });
   if (inv.status === 'paid') return res.json({ ok: true });
   if (inv.status !== 'sent') {
     return res.status(409).json({ error: 'This invoice is voided (its booking was cancelled) — it cannot be marked paid.' });
   }
-  db.prepare("UPDATE invoices SET status = 'paid' WHERE number = ? AND status = 'sent'").run(req.params.number);
-  // Manual mark-paid: a bank transfer arrived — or, on a pay-at-session
-  // booking, cash/MobilePay changed hands on the pitch. The receipt goes out
-  // automatically, and a not-yet-announced card booking reaches its coach now.
-  sendReceiptForInvoice(req.params.number, inv.at_session ? 'manual' : 'bank')
-    .catch((e) => console.error('[receipt]', e.message));
-  const paidInv = db.prepare('SELECT booking_id FROM invoices WHERE number = ?').get(req.params.number);
-  if (paidInv) {
-    announceBookingToCoach(paidInv.booking_id);
-    // Update the deal to "Paid" — announce is idempotent, so a pay-at-session
-    // booking that was announced when created is re-synced here.
-    attio.syncBooking(paidInv.booking_id);
-  }
+  // 'manual' on a pay-at-session booking (cash/MobilePay on the pitch),
+  // 'mobilepay' when the invoice was settled from the customer's own app.
+  payments.markInvoicePaid(req.params.number, inv.at_session ? 'manual' : 'mobilepay');
+  // Update the deal to "Paid" — syncBooking is idempotent, so a pay-at-session
+  // booking that was already synced when created is simply re-synced here.
+  attio.syncBooking(inv.booking_id);
   res.json({ ok: true });
 });
 

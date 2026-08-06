@@ -223,8 +223,8 @@ CREATE TABLE IF NOT EXISTS group_sessions (
 );
 CREATE INDEX IF NOT EXISTS idx_group_sessions_date ON group_sessions (date, hour);
 
--- One player's spot in a group session. pending = card payment in flight
--- (holds the spot until pay_by); confirmed = paid (or added by the admin).
+-- One player's spot in a group session. pending = awaiting payment (holds the
+-- spot until pay_by); confirmed = paid (or added by the admin).
 CREATE TABLE IF NOT EXISTS group_signups (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   code TEXT NOT NULL UNIQUE,           -- e.g. GSU-4F7K2A
@@ -232,8 +232,6 @@ CREATE TABLE IF NOT EXISTS group_signups (
   customer_id INTEGER NOT NULL REFERENCES users(id),
   price_cents INTEGER NOT NULL,
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','confirmed','cancelled')),
-  stripe_session_id TEXT,
-  stripe_payment_intent TEXT,          -- kept for refunds on cancellation
   pay_by TEXT,                         -- unpaid signups are released after this
   paid_at TEXT,
   reminder_email_sent INTEGER NOT NULL DEFAULT 0,
@@ -256,7 +254,6 @@ CREATE TABLE IF NOT EXISTS packages (
   price_cents INTEGER NOT NULL,
   adjust_sessions INTEGER NOT NULL DEFAULT 0,  -- admin manual correction (+/-)
   status TEXT NOT NULL DEFAULT 'pending' CHECK (status IN ('pending','active','void')),
-  stripe_session_id TEXT,
   pay_by TEXT,                         -- unpaid purchases are voided after this
   paid_at TEXT,
   low_email_sent INTEGER NOT NULL DEFAULT 0,   -- "1 session left" notice sent
@@ -362,6 +359,21 @@ CREATE TABLE IF NOT EXISTS discounts (
   notes TEXT NOT NULL DEFAULT '',
   created_at TEXT NOT NULL
 );
+
+-- Every payment notification received from MobilePay (server/payments.js).
+-- event_id is UNIQUE and written BEFORE the payment is applied: that is what
+-- makes duplicate deliveries — the provider retries until it gets a 2xx — a
+-- no-op instead of a second confirmation. Also an audit trail of money that
+-- arrived with a reference nobody could match.
+CREATE TABLE IF NOT EXISTS payment_events (
+  id INTEGER PRIMARY KEY AUTOINCREMENT,
+  event_id TEXT NOT NULL UNIQUE,       -- provider's id, or a hash of the payload
+  reference TEXT NOT NULL DEFAULT '',  -- what the payer typed as the message
+  status TEXT NOT NULL DEFAULT '',     -- CAPTURED | CANCELLED | …
+  amount_cents INTEGER,
+  note TEXT NOT NULL DEFAULT '',       -- 'invoice:PBF-2026-0001' once matched
+  created_at TEXT NOT NULL
+);
 `);
 
 // Idempotent column migrations for databases created before a feature existed.
@@ -374,11 +386,9 @@ for (const stmt of [
   'ALTER TABLE invoices ADD COLUMN prev_status TEXT',
   // Customer's free-text notes to the coach, asked in the booking wizard.
   "ALTER TABLE bookings ADD COLUMN notes TEXT NOT NULL DEFAULT ''",
-  // Stripe Checkout session behind an online card payment (NULL = none started).
-  'ALTER TABLE invoices ADD COLUMN stripe_session_id TEXT',
-  // Card-payment deadline (UTC ISO, booking time + 72 h). Set only on invoices
-  // created while Stripe is enabled; NULL = legacy bank-transfer invoice, which
-  // the unpaid-booking sweep must never touch.
+  // Payment deadline (UTC ISO, booking time + config.payment.holdHours). The
+  // slot is held until then; NULL = an invoice the unpaid-booking sweep must
+  // never touch (free sessions, pay-at-session).
   'ALTER TABLE invoices ADD COLUMN pay_by TEXT',
   // One-shot flag: the "24 h left to pay" reminder notification went out.
   'ALTER TABLE invoices ADD COLUMN pay_reminder_sent INTEGER NOT NULL DEFAULT 0',
@@ -386,7 +396,7 @@ for (const stmt of [
   // national sports-site registry. NULL/'' = not chosen yet.
   'ALTER TABLE bookings ADD COLUMN pitch_id INTEGER',
   "ALTER TABLE bookings ADD COLUMN pitch_name TEXT NOT NULL DEFAULT ''",
-  // Has the coach been told about this booking? Card bookings start at 0 and
+  // Has the coach been told about this booking? Unpaid bookings start at 0 and
   // are announced when the payment confirms (server/notify.js); the DEFAULT 1
   // makes every pre-existing row count as already announced.
   'ALTER TABLE bookings ADD COLUMN coach_notified INTEGER NOT NULL DEFAULT 1',
@@ -419,7 +429,7 @@ for (const stmt of [
   // Who started the session: 'coach' (app) or 'player' (booked a free slot).
   "ALTER TABLE group_sessions ADD COLUMN created_by TEXT NOT NULL DEFAULT 'coach'",
   // Admin-created bookings: a payment-request link the customer can open
-  // WITHOUT logging in (GET /api/pay/:token mints a fresh Stripe Checkout).
+  // WITHOUT logging in (GET /api/pay/:token shows the invoice + how to pay).
   'ALTER TABLE invoices ADD COLUMN pay_token TEXT',
   'ALTER TABLE group_signups ADD COLUMN pay_token TEXT',
   // 1 = the admin agreed the customer pays at the session (cash/MobilePay on
@@ -453,8 +463,32 @@ for (const stmt of [
   // stamped by server/auth.js and shown in the admin CRM. NULL until the
   // account's first request after this column was added.
   'ALTER TABLE users ADD COLUMN last_seen_at TEXT',
+  // Billing details captured when the booking is made, so the business can
+  // invoice the customer separately (nobody pays at checkout). Snapshotted on
+  // the BOOKING — an invoice must keep the address it was issued to even if
+  // the customer later edits their profile.
+  "ALTER TABLE bookings ADD COLUMN billing_name TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE bookings ADD COLUMN billing_email TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE bookings ADD COLUMN billing_phone TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE bookings ADD COLUMN billing_address TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE bookings ADD COLUMN billing_postcode TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE bookings ADD COLUMN billing_city TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE bookings ADD COLUMN billing_notes TEXT NOT NULL DEFAULT ''",
+  // The same details remembered on the ACCOUNT, so the billing form comes back
+  // pre-filled next time instead of asking for the address at every booking.
+  "ALTER TABLE users ADD COLUMN billing_address TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN billing_postcode TEXT NOT NULL DEFAULT ''",
+  "ALTER TABLE users ADD COLUMN billing_city TEXT NOT NULL DEFAULT ''",
+  // Stripe is gone (2026-08): card checkout was replaced by MobilePay billing.
+  // Dropping the columns keeps the schema honest about what the app supports.
+  // SQLite ignores nothing here — each statement fails harmlessly on a database
+  // that never had the column (a fresh install).
+  'ALTER TABLE invoices DROP COLUMN stripe_session_id',
+  'ALTER TABLE group_signups DROP COLUMN stripe_session_id',
+  'ALTER TABLE group_signups DROP COLUMN stripe_payment_intent',
+  'ALTER TABLE packages DROP COLUMN stripe_session_id',
 ]) {
-  try { db.exec(stmt); } catch { /* column already exists */ }
+  try { db.exec(stmt); } catch { /* column already exists, or already dropped */ }
 }
 
 // Featured coaches that predate explicit spotlight numbering get their current
@@ -469,19 +503,6 @@ for (const stmt of [
     for (const c of unnumbered) set.run(++next, c.id);
   }
 }
-
-// Backfill for invoices created in the brief pay-at-booking era BEFORE pay_by
-// existed: still-unpaid card invoices get a 72 h window from this boot, so the
-// sweep can release them instead of letting the bookings complete unpaid.
-// Idempotent — after the first run no row matches (pay_by is set).
-// Pay-at-session invoices are excluded: they intentionally live with pay_by
-// NULL (the customer pays on the pitch), and one acquires a stripe_session_id
-// the moment the customer merely OPENS the online pay button — that must not
-// arm a release deadline the admin promised wouldn't exist.
-db.prepare(`UPDATE invoices SET pay_by = ?
-  WHERE pay_by IS NULL AND status = 'sent' AND stripe_session_id IS NOT NULL
-    AND at_session = 0`)
-  .run(new Date(Date.now() + 72 * 3600000).toISOString());
 
 // ---------------------------------------------------------------------------
 // Europe/Helsinki time helpers. All business dates/hours are Helsinki-local.
@@ -551,24 +572,20 @@ function autoCompleteBookings() {
   `).run(date, date, hour);
 }
 
-// Card payments are due AT booking: each invoice carries a pay_by deadline
-// (config.stripe.payWindowMinutes after booking) — and the session start is
-// always a deadline too, whichever comes first. The booking holds the slot
-// until then; this sweep releases it once the deadline passes: cancelled,
+// A booking is PENDING PAYMENT until the money arrives: each invoice carries a
+// pay_by deadline (config.payment.holdHours after booking) — and the session
+// start is always a deadline too, whichever comes first. The booking holds the
+// slot until then; this sweep releases it once the deadline passes: cancelled,
 // invoice voided, slot free again, customer AND coach notified. Only invoices
-// with a pay_by deadline are eligible — legacy bank-transfer invoices (pay_by
-// NULL) are never touched.
+// with a pay_by deadline are eligible — pay-at-session and free bookings
+// (pay_by NULL) are never touched.
 function expireUnpaidBookings() {
-  // No Stripe guard here: the sweep only ever touches invoices that carry a
-  // pay_by deadline (created while card payments were on). If the key is later
-  // removed, those bookings must still expire instead of completing unpaid.
   const now = new Date().toISOString();
   const hki = helsinkiNow();
 
-  // One-shot "24 h left" reminder — only meaningful when the business runs a
-  // long pay-later window. With the current pay-at-booking window (< 24 h) the
-  // customer is mid-checkout and a reminder would fire instantly, so skip.
-  if (config.stripe.payWindowMinutes >= 24 * 60) {
+  // One-shot "24 h left" reminder — only meaningful when the hold outlasts a
+  // day. With a shorter window the reminder would fire almost immediately.
+  if (config.payment.holdHours >= 24) {
     const remindBefore = new Date(Date.now() + 24 * 3600000).toISOString();
     const toRemind = db.prepare(`
       SELECT b.code, b.date, b.hour, b.customer_id, i.id AS invoice_id

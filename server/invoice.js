@@ -1,11 +1,10 @@
 // Invoice + receipt generation, in the customer's language (users.lang).
 //
-// With Stripe configured, payment is due AT booking: the invoice row is
-// created but NOT emailed; once the payment lands (webhook or return-URL
-// check), the document is regenerated as a PAID RECEIPT and emailed
-// automatically. Zero-amount (free-credit) bookings get their receipt
-// immediately. Without Stripe the legacy flow remains: the invoice itself is
-// emailed with bank-transfer instructions.
+// Nobody pays at checkout. A booking is made, the invoice is emailed with the
+// MobilePay details, and the booking sits in PENDING PAYMENT until the money
+// arrives; then the same document is regenerated as a PAID RECEIPT and emailed
+// automatically (server/payments.js). Zero-amount (free-credit) bookings and
+// admin-marked-paid bookings get their receipt immediately.
 const path = require('node:path');
 const fs = require('node:fs');
 const config = require('../config');
@@ -33,9 +32,18 @@ function nextInvoiceNumber() {
   return `${prefix}${String(last + 1).padStart(4, '0')}`;
 }
 
-// One renderer for both documents. `paid` = { method: 'card'|'credit'|'bank',
-// date: 'YYYY-MM-DD' } turns the invoice into a receipt: PAID badge, payment
-// summary instead of the "how to pay" bank block.
+// The billing address block under "Billed to", from the details captured at
+// booking. Bookings made before billing capture existed (and admin-created
+// ones without an address) simply render nothing here.
+function billingAddressHTML(booking) {
+  const cityLine = [booking.billing_postcode, booking.billing_city].filter(Boolean).join(' ');
+  const lines = [booking.billing_address, cityLine, booking.billing_phone].filter(Boolean);
+  return lines.length ? lines.map((l) => esc(l)).join('<br>') + '<br>' : '';
+}
+
+// One renderer for both documents. `paid` = { method: 'mobilepay'|'credit'|
+// 'manual', date: 'YYYY-MM-DD' } turns the invoice into a receipt: PAID badge,
+// payment summary instead of the "how to pay" block.
 function renderInvoiceHTML(inv, booking, customer, coachName, focus, lang, paid = null) {
   const L = (key, params) => tr(lang, key, params);
   const sale = booking.discount_cents > 0;
@@ -57,7 +65,8 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focus, lang, paid 
   <h1>${esc(config.siteName)}</h1>
   <p class="muted">${esc(config.invoice.businessLine2)} · ${esc(config.invoice.replyEmail)}</p>
   <h2>${esc(docTitle)} ${paid ? `<span class="paidstamp">${esc(L('receipt.badge'))}</span>` : ''}</h2>
-  <p><strong>${esc(L('invoice.billedTo'))}:</strong> ${esc(customer.name)} &lt;${esc(customer.email)}&gt;<br>
+  <p><strong>${esc(L('invoice.billedTo'))}:</strong> ${esc(booking.billing_name || customer.name)} &lt;${esc(booking.billing_email || customer.email)}&gt;<br>
+     ${billingAddressHTML(booking)}
      <strong>${esc(L('invoice.issued'))}:</strong> ${esc(localDate(lang, inv.issued_at.slice(0, 10)))}${paid ? '' : ` ·
      <strong>${esc(L('invoice.due'))}:</strong> ${esc(localDate(lang, inv.due_date))}`}<br>
      <strong>${esc(L('invoice.bookingRef'))}:</strong> ${esc(booking.code)}</p>
@@ -86,10 +95,10 @@ function renderInvoiceHTML(inv, booking, customer, coachName, focus, lang, paid 
   <p class="muted">${esc(L('receipt.keepNote'))}</p>` : `
   <h3>${esc(L('invoice.howToPay'))}</h3>
   <table>
-    <tr><td>${esc(L('invoice.paymentMethod'))}</td><td>${esc(trCfg(lang, config.payment.method))}${config.payment.mobilepay ? esc(L('invoice.orMobilePay')) : esc(L('invoice.onlyMethod'))}</td></tr>
+    <tr><td>${esc(L('invoice.paymentMethod'))}</td><td>${esc(trCfg(lang, config.payment.method))}${config.payment.iban ? esc(L('invoice.orBank')) : esc(L('invoice.onlyMethod'))}</td></tr>
     <tr><td>${esc(L('invoice.payee'))}</td><td>${esc(config.payment.payee)}</td></tr>
-    <tr><td>${esc(L('invoice.ibanRow'))}</td><td><strong>${esc(config.payment.iban)}</strong></td></tr>
-    ${config.payment.mobilepay ? `<tr><td>${esc(L('invoice.mobilepayRow'))}</td><td><strong>${esc(config.payment.mobilepay)}</strong></td></tr>` : ''}
+    <tr><td>${esc(L('invoice.mobilepayRow'))}</td><td><strong>${esc(config.payment.mobilepay)}</strong></td></tr>
+    ${config.payment.iban ? `<tr><td>${esc(L('invoice.ibanRow'))}</td><td><strong>${esc(config.payment.iban)}</strong></td></tr>` : ''}
     <tr><td>${esc(L('invoice.reference'))}</td><td><strong>${esc(inv.number)}</strong></td></tr>
     <tr><td>${esc(L('invoice.amount'))}</td><td><strong>${eur(booking.total_cents)}</strong></td></tr>
     <tr><td>${esc(L('invoice.dueDate'))}</td><td>${esc(localDate(lang, inv.due_date))}</td></tr>
@@ -111,13 +120,13 @@ function loadInvoiceBundle(invoiceNumber) {
   return { inv, booking, customer, coach, focus, lang: pickLang(customer.lang) };
 }
 
-// Regenerate the document as a PAID receipt and email it. Method: 'card'
-// (Stripe), 'credit' (free session), 'bank' (admin marked a transfer paid).
+// Regenerate the document as a PAID receipt and email it. Method: 'mobilepay',
+// 'credit' (free session), 'manual' / 'bank' (admin marked it paid by hand).
 async function sendReceiptForInvoice(invoiceNumber, method) {
   const b = loadInvoiceBundle(invoiceNumber);
   if (!b) return { delivered: false, reason: 'not-found' };
   const paid = {
-    method: b.booking.credit_applied ? 'credit' : (method || 'card'),
+    method: b.booking.credit_applied ? 'credit' : (method || 'mobilepay'),
     date: helsinkiNow().date,
   };
   const html = renderInvoiceHTML(b.inv, b.booking, b.customer, b.coach.name, b.focus, b.lang, paid);
@@ -131,9 +140,10 @@ async function sendReceiptForInvoice(invoiceNumber, method) {
 }
 
 // Creates the invoice row + HTML file. Email policy:
-//  - free (0 €) booking          -> mark paid, send the receipt right away
-//  - Stripe configured, amount>0 -> no email yet (receipt follows the payment)
-//  - no Stripe (legacy)          -> email the bank-transfer invoice
+//  - free (0 €) booking -> mark paid, send the receipt right away
+//  - anything else      -> email the invoice with the MobilePay instructions;
+//                          the booking is PENDING PAYMENT until the money
+//                          arrives and the receipt replaces this document
 //
 // opts.flow marks an ADMIN-created booking and overrides the payment shape:
 //  - 'paid'       -> the money already changed hands: paid from the start,
@@ -142,9 +152,8 @@ async function sendReceiptForInvoice(invoiceNumber, method) {
 //                    sweep never releases it), at_session flag for the UIs,
 //                    no email here
 //  - 'link'       -> payment request emailed by the caller: long pay window
-//                    (config.adminPayLinkHours) + a login-free pay token.
-//                    Without Stripe there is nothing to link to, so it
-//                    degrades to the at-session shape.
+//                    (config.adminPayLinkHours) + a login-free pay token that
+//                    opens the invoice without a password.
 function createInvoiceForBooking(bookingId, opts = {}) {
   const booking = db.prepare('SELECT * FROM bookings WHERE id = ?').get(bookingId);
   const customer = db.prepare('SELECT name, email, lang FROM users WHERE id = ?').get(booking.customer_id);
@@ -155,22 +164,28 @@ function createInvoiceForBooking(bookingId, opts = {}) {
   const free = booking.total_cents === 0;
   const flow = free ? null : (opts.flow || null);
   const prepaid = flow === 'paid';
-  const linkFlow = flow === 'link' && Boolean(config.stripe.secretKey);
-  const atSession = flow === 'at_session' || (flow === 'link' && !linkFlow);
-  // Card payments are due AT booking, within config.stripe.payWindowMinutes
-  // (and always before the session — expireUnpaidBookings enforces both).
-  // pay_by stays NULL on free and legacy bank-transfer invoices so the sweep
-  // never touches them.
-  const cardFlow = !flow && !free && Boolean(config.stripe.secretKey);
+  const linkFlow = flow === 'link';
+  const atSession = flow === 'at_session';
+  // The normal flow: the customer is invoiced and the slot is held for
+  // config.payment.holdHours (and always only until the session starts —
+  // expireUnpaidBookings enforces both). pay_by stays NULL on free,
+  // already-paid and pay-at-session invoices so the sweep never touches them.
+  const billFlow = !flow && !free;
+  const holdHours = config.payment.holdHours || 72;
   const linkDue = helsinkiDateOffset(Math.ceil((config.adminPayLinkHours || 72) / 24));
+  const billDue = helsinkiDateOffset(Math.ceil(holdHours / 24));
   const inv = {
     number: nextInvoiceNumber(),
     issued_at: nowISO(),
-    due_date: cardFlow || prepaid ? helsinkiDateOffset(0)
+    due_date: prepaid ? helsinkiDateOffset(0)
       : atSession ? booking.date
       : linkFlow ? (booking.date < linkDue ? booking.date : linkDue)
+      // Due when the hold runs out, or at the session if that comes first —
+      // the date printed on the invoice is the date the money is actually
+      // needed by, never later than the deadline the booking is released on.
+      : billFlow ? (booking.date < billDue ? booking.date : billDue)
       : helsinkiDateOffset(config.invoice.dueDays),
-    pay_by: cardFlow ? new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString()
+    pay_by: billFlow ? new Date(Date.now() + holdHours * 3600000).toISOString()
       : linkFlow ? new Date(Date.now() + (config.adminPayLinkHours || 72) * 3600000).toISOString()
       : null,
     pay_token: linkFlow ? require('node:crypto').randomBytes(16).toString('hex') : null,
@@ -196,13 +211,15 @@ function createInvoiceForBooking(bookingId, opts = {}) {
       html,
       log: { type: 'receipt', userId: booking.customer_id, bookingCode: booking.code },
     }).catch(err => console.error('[mailer]', err.message));
-  } else if (!config.stripe.secretKey && !flow) {
-    sendInvoiceEmail({ to: customer.email, number: inv.number, html, lang,
+  } else if (billFlow) {
+    // Pending payment: the customer needs this document to pay it. (The
+    // 'link' flow emails its own payment request; 'at_session' needs none.)
+    sendInvoiceEmail({ to: booking.billing_email || customer.email, number: inv.number, html, lang,
       log: { userId: booking.customer_id, bookingCode: booking.code } })
       .catch(err => console.error('[mailer]', err.message));
   }
 
-  return { id: res.lastInsertRowid, ...inv, amount_cents: booking.total_cents, htmlFile: fileName, cardFlow };
+  return { id: res.lastInsertRowid, ...inv, amount_cents: booking.total_cents, htmlFile: fileName, billFlow };
 }
 
 module.exports = { createInvoiceForBooking, sendReceiptForInvoice, OUTBOX };

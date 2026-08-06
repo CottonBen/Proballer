@@ -243,9 +243,8 @@ async function buildGroups() {
         btn.disabled = true;
         try {
           const r = await API.post('/groups/start', body);
-          if (r.payUrl) { location.href = r.payUrl; return; }
-          if (r.signup && r.signup.status === 'confirmed') { toast(t('pay.success.group_title')); buildGroups(); return; }
-          toast(t('landing.groups.pay_failed'), true);
+          groupBooked(r);
+          buildGroups();
         } catch (err) {
           btn.disabled = false;
           toast(I18N.server(err.message), true);
@@ -256,14 +255,22 @@ async function buildGroups() {
   }
 }
 
+// A group spot is reserved the moment it is claimed, and paid afterwards by
+// MobilePay — the toast carries the number and the reference to type.
+function groupBooked(r) {
+  const p = r.payment;
+  toast(p && p.pending
+    ? t('pay.mp.intro', { number: p.mobilepay, reference: p.reference })
+    : t('pay.success.group_title'));
+}
+
 async function joinGroup(btn, ageGroup) {
   btn.disabled = true;
   try {
     const r = await API.post(`/groups/${encodeURIComponent(btn.dataset.join)}/join`,
       { ageGroup, lang: I18N.lang });
-    if (r.payUrl) { location.href = r.payUrl; return; }
-    if (r.signup && r.signup.status === 'confirmed') { toast(t('pay.success.group_title')); buildGroups(); return; }
-    toast(t('landing.groups.pay_failed'), true);
+    groupBooked(r);
+    buildGroups();
   } catch (err) {
     btn.disabled = false;
     toast(I18N.server(err.message), true);
@@ -301,8 +308,9 @@ function buildPackages() {
       btn.disabled = true;
       try {
         const r = await API.post('/packages/buy', { package: btn.dataset.buylanding });
-        if (r.payUrl) { location.href = r.payUrl; return; }
-        toast(t('landing.groups.pay_failed'), true);
+        toast(r.payment && r.payment.pending
+          ? t('pay.mp.intro', { number: r.payment.mobilepay, reference: r.payment.reference })
+          : t('pay.success.pkg_title'));
       } catch (err) {
         btn.disabled = false;
         toast(I18N.server(err.message), true);

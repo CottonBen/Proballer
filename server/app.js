@@ -32,10 +32,12 @@ app.use((req, res, next) => {
 // large-body allowance below can be limited to authenticated admins.
 app.use(sessionMiddleware);
 
-// Stripe webhook needs the RAW request body for signature verification, so it
-// mounts before the JSON parsers below.
-app.post('/api/stripe/webhook', express.raw({ type: 'application/json' }),
-  require('./stripe').webhookHandler);
+// The MobilePay webhook needs the RAW request body for signature verification,
+// so it mounts before the JSON parsers below. Dormant (503) until a Vipps
+// MobilePay merchant agreement supplies MOBILEPAY_WEBHOOK_SECRET — see
+// server/payments.js.
+app.post('/api/mobilepay/webhook', express.raw({ type: 'application/json', limit: '64kb' }),
+  require('./payments').webhookHandler);
 
 // Most requests carry tiny JSON; only an ADMIN creating/updating a coach carries
 // base64 photos, so only those get the larger limit (images are downscaled

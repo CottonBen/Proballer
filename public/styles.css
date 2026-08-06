@@ -500,6 +500,26 @@ table.data tr:hover td { background: rgba(255,255,255,0.025); }
 .status-confirmed { background: rgba(96,165,250,0.15); color: #7fb5fb; }
 /* Booked but not paid yet — amber, matching the "outstanding money" colour. */
 .status-pending { background: rgba(247,161,58,0.15); color: #f7a13a; }
+
+/* "How to pay" panel: shown under anything awaiting a MobilePay payment. */
+.paynote {
+  margin-top: 8px;
+  padding: 10px 12px;
+  border: 1px solid rgba(247,161,58,0.35);
+  border-radius: 10px;
+  background: rgba(247,161,58,0.07);
+  font-size: .86rem;
+  line-height: 1.6;
+}
+.paynote-title {
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: .07em;
+  font-size: .72rem;
+  color: #f7a13a;
+  margin-bottom: 4px;
+}
+.paynote strong { white-space: nowrap; }
 .status-completed { background: rgba(74,222,128,0.15); color: var(--ok); }
 .status-cancelled { background: rgba(255,107,107,0.13); color: var(--danger); }
 

@@ -1,8 +1,8 @@
 // Group training sessions: one coach, up to `capacity` players, each buying
-// their own spot (config.groupTraining.pricePerPlayer) through the same Stripe
-// Checkout flow as 1-on-1 bookings. Spots are held while a card payment is in
-// flight (pending + pay_by) so a session can never be oversold, and released
-// by the sweep if the payment never lands.
+// their own spot (config.groupTraining.pricePerPlayer) through the same
+// invoice-then-MobilePay flow as 1-on-1 bookings. A spot is held while it is
+// awaiting payment (pending + pay_by) so a session can never be oversold, and
+// released by the sweep if the money never arrives.
 'use strict';
 
 const crypto = require('node:crypto');
@@ -133,7 +133,7 @@ function createSignup(gs, customerId, opts = {}) {
       (code, group_session_id, customer_id, price_cents, status, pay_by, discount_code, code_discount_cents, created_at)
       VALUES (?,?,?,?, 'pending', ?, ?, ?, ?)`)
       .run(genCode('GSU'), gs.id, customerId, priceCents,
-        new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(),
+        new Date(Date.now() + (config.payment.holdHours || 72) * 3600000).toISOString(),
         opts.discountCode || '', opts.codeDiscountCents || 0, nowISO());
   } catch (err) {
     if (String(err.message).includes('UNIQUE')) {
@@ -149,27 +149,25 @@ function createSignup(gs, customerId, opts = {}) {
   return { signup: db.prepare('SELECT * FROM group_signups WHERE id = ?').get(id) };
 }
 
-// Payment confirmed (webhook or success-URL refresh; idempotent). If the spot
-// was released (or the whole session cancelled) while the payment was in
-// flight, re-claim it when there is still room — otherwise flag the admins to
-// refund by hand.
-function markSignupPaid(code, stripeSession) {
+// Payment confirmed (MobilePay webhook or an admin marking it paid; both
+// idempotent). If the spot was released — or the whole session cancelled —
+// before the money arrived, re-claim it when there is still room; otherwise
+// flag the admins to refund by hand.
+function markSignupPaid(code) {
   const su = db.prepare('SELECT * FROM group_signups WHERE code = ?').get(code);
   if (!su || su.status === 'confirmed') return false;
   const gs = db.prepare('SELECT * FROM group_sessions WHERE id = ?').get(su.group_session_id);
-  const intent = stripeSession && stripeSession.payment_intent ? String(stripeSession.payment_intent) : null;
   const hki = helsinkiNow();
   const sessionGone = !gs || gs.status !== 'open'
     || gs.date < hki.date || (gs.date === hki.date && gs.hour <= hki.hour);
   const wasReleased = su.status === 'cancelled';
   if (sessionGone || (wasReleased && takenCount(gs.id) >= gs.capacity)) {
-    require('./stripe').alertAdmins(`Payment received for group spot ${su.code}, but the session `
-      + `${gs ? gs.code : ''} is ${sessionGone ? 'no longer available' : 'full'} — please refund the payment in Stripe.`);
-    if (intent) db.prepare('UPDATE group_signups SET stripe_payment_intent = ? WHERE id = ?').run(intent, su.id);
+    require('./payments').alertAdmins(`Payment received for group spot ${su.code}, but the session `
+      + `${gs ? gs.code : ''} is ${sessionGone ? 'no longer available' : 'full'} — please refund the payment in MobilePay.`);
     return false;
   }
-  db.prepare(`UPDATE group_signups SET status = 'confirmed', paid_at = ?, stripe_payment_intent = ?
-    WHERE id = ?`).run(nowISO(), intent, su.id);
+  db.prepare("UPDATE group_signups SET status = 'confirmed', paid_at = ? WHERE id = ?")
+    .run(nowISO(), su.id);
 
   // Tell the coach (in-app; the roster lives in the coach app).
   const coach = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(gs.coach_id);
@@ -226,24 +224,20 @@ function expirePendingSignups() {
   }
 }
 
-// Cancel one player's paid spot (admin removal or session cancellation):
-// refund through Stripe when we hold the payment intent; if that fails the
-// admins are alerted to refund by hand. The cancellation email states what
-// happened either way.
+// Cancel one player's spot (admin removal or session cancellation). MobilePay
+// has no automatic refund — the money went to the business's own number — so a
+// PAID spot always raises an admin notification to send it back by hand, and
+// the cancellation email tells the player a refund is on its way.
 async function cancelSignup(signupId, reasonKey /* 'removed' | 'session_cancelled' */) {
   const su = db.prepare('SELECT * FROM group_signups WHERE id = ?').get(signupId);
   if (!su || su.status === 'cancelled') return false;
   db.prepare("UPDATE group_signups SET status = 'cancelled' WHERE id = ?").run(su.id);
-  let refunded = false;
   const paid = Boolean(su.paid_at) && su.price_cents > 0;
   if (paid) {
-    refunded = await require('./stripe').refundPayment(su.stripe_payment_intent);
-    if (!refunded) {
-      require('./stripe').alertAdmins(`Group spot ${su.code} was cancelled but could not be `
-        + 'refunded automatically — please refund the payment in Stripe.');
-    }
+    require('./payments').alertAdmins(`Group spot ${su.code} was cancelled after it was paid `
+      + `(${(su.price_cents / 100).toFixed(2)} €) — please refund the player in MobilePay.`);
   }
-  require('./emails').sendGroupCancelledEmail(su.id, { reasonKey, refunded, paid });
+  require('./emails').sendGroupCancelledEmail(su.id, { reasonKey, refunded: false, paid });
   return true;
 }
 

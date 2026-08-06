@@ -19,8 +19,11 @@ Fully self-contained: Node.js + built-in SQLite, no external services required t
     (goalkeepers/defenders/midfielders/attackers, multi-select) with a **Save filters** button,
     and their session list.
   - **Customer** → `/my-bookings`: their sessions and invoices.
-- **Invoices** — every confirmed booking creates an invoice (HTML in `data/outbox/`),
+- **Invoices** — every booking creates an invoice (HTML in `data/outbox/`),
   emailed automatically once SMTP is configured.
+- **Payment: MobilePay only** — nobody pays at checkout. A booking is made, the
+  customer's billing details are captured with it, and the booking sits in
+  **pending payment** until the money arrives (see below).
 - **Data everywhere** — every dataset downloads as CSV and syncs to Google Sheets when connected.
 
 ## Run it locally
@@ -198,10 +201,46 @@ aliases — add the address first in Gmail → Settings → Accounts → *Send m
 otherwise Gmail silently rewrites the sender back to the login address. `SITE_URL`
 (default `https://proballerscoaching.com`) controls the links inside the emails.
 
+## Payments (MobilePay)
+
+Nobody pays at checkout. The flow is:
+
+1. The customer picks a session and fills in their billing details.
+2. The booking is created in **pending payment** — the slot is held, but the coach
+   is *not* told about it yet and the session is not confirmed.
+3. The invoice is emailed. It carries the MobilePay number, the amount, and the
+   **invoice number as the reference** the payer types in the message field.
+4. When the money arrives the invoice flips to paid, a receipt is emailed, the
+   booking is confirmed and the coach is notified.
+
+An unpaid booking holds its slot for `payment.holdHours` (72 h by default) or
+until the session starts, whichever comes first; after that it is released, the
+slot reopens and the customer is emailed. Group spots and prepaid packages work
+the same way, using the spot code (`GSU-…`) or package code (`PKG-…`) as the
+reference.
+
+**Confirming payments — two ways, both idempotent:**
+
+- **By hand (the default).** A *personal* MobilePay number has no API. The owner
+  sees the payment in their phone and clicks **mark paid** in the admin dashboard.
+- **Automatically.** With a Vipps MobilePay **merchant** agreement, set
+  `MOBILEPAY_WEBHOOK_SECRET` and point the webhook at
+  `POST /api/mobilepay/webhook`. Each notification is signature-verified
+  (HMAC-SHA256 of the raw body, hex or base64, in `X-MobilePay-Signature`),
+  recorded in `payment_events` for idempotency, and matched to the right
+  purchase by reference — case-insensitively and ignoring dashes and spaces, so
+  `pbf 2026 0001` finds `PBF-2026-0001`. Duplicate deliveries, failed or
+  cancelled payments and references nobody can match are all handled: the last
+  raises an admin notification rather than losing the money silently.
+  Without the secret the endpoint answers 503 and the manual path is unaffected.
+
+Set `PAYMENT_MOBILEPAY` to change the receiving number (see [.env.example](.env.example)).
+
 ## Configuration
 
 Business rules live in [config.js](config.js): prices, the sale percentage, training
-hours (8–20), cities, positions, session focus types, invoice details. Change and restart.
+hours (8–22), cities, positions, session focus types, payment and invoice details.
+Change and restart.
 
 ## Project layout
 

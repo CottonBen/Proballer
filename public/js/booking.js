@@ -220,7 +220,7 @@ async function renderReview() {
   }
   const pkgRemaining = (!needsAuth && !hasCredit && W.pkgInfo) ? W.pkgInfo.remaining : 0;
   const pkgOptions = (W.site.packages || []).filter((o) => o.sessions > 1);
-  const canChoosePkg = !hasCredit && !pkgRemaining && W.site.payment.stripeEnabled
+  const canChoosePkg = !hasCredit && !pkgRemaining
     && pkgOptions.length > 0 && !needsAuth;
   if (!canChoosePkg) W.package = 'single';
   const chosenPkg = canChoosePkg && W.package !== 'single'
@@ -232,9 +232,8 @@ async function renderReview() {
     ? I18N.server(W.site.payment.method).toLowerCase()
     : t('booking.review.payment_method_fallback');
 
-  // Card bookings (single OR package purchase) are paid right now.
-  const cardFlow = W.site.payment.stripeEnabled && !hasCredit && !pkgRemaining && payNowCents > 0;
-  const confirmLabel = cardFlow ? t('booking.review.start_payment') : t('booking.review.confirm_button');
+  // Nothing is paid at checkout: the booking is made and then invoiced.
+  const confirmLabel = t('booking.review.confirm_button');
 
   const pkgChooser = canChoosePkg ? `
     <div style="margin-top:14px">
@@ -291,9 +290,7 @@ async function renderReview() {
         ? t('mybookings.pkg.autouse')
         : chosenPkg
           ? `${t('booking.pkg.hint')} ${t('booking.review.pay_note', { price: eur(payNowCents) })}`
-          : (W.site.payment.stripeEnabled
-            ? t('booking.review.pay_note', { price: eur(price - discount) })
-            : t('booking.review.invoice_note', {
+          : (t('booking.review.invoice_note', {
                 price: eur(price - discount),
                 delivery: W.site.emailDelivery
                   ? t('booking.review.invoice_note_delivery_email')
@@ -346,11 +343,6 @@ async function renderReview() {
   body().querySelector('#confirm-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
     btn.disabled = true; btn.textContent = t('booking.review.confirm_button_busy');
-    // Card flow: the server round-trip includes creating the Stripe Checkout
-    // session, so show the payment screen IMMEDIATELY — the wait reads as
-    // "moving to payment" instead of a frozen button, and the redirect fires
-    // the instant the URL arrives.
-    if (cardFlow) renderPayRedirect(null);
     try {
       const result = await API.post('/bookings', {
         coachId: W.coach.id, date: W.slot.date, hour: W.slot.hour,
@@ -504,32 +496,10 @@ function wizardVerifyPanel(panel, email, pending = false) {
 
 // --- success ----------------------------------------------------------------
 
-// The moment between "confirm" and Stripe: one big obvious screen. Rendered
-// optimistically (payUrl = null, no button yet) while the server creates the
-// booking + Checkout session, then again with the real URL to navigate — the
-// button is the fallback if the browser is slow to follow the redirect.
-function renderPayRedirect(payUrl) {
-  body().innerHTML = `
-    <div style="text-align:center;padding:70px 0 60px">
-      <h2 style="font-size:clamp(2rem,6vw,3rem);margin-bottom:14px">${t('booking.success.redirecting_title')}</h2>
-      <p class="muted" style="font-size:1.15rem;max-width:34ch;margin:0 auto 26px">${t('booking.success.redirecting')}</p>
-      ${payUrl ? `<a class="btn btn-primary" href="${esc(payUrl)}"
-        style="font-size:1.1rem;padding:16px 38px">${t('booking.success.paybtn')}</a>` : ''}
-    </div>`;
-  if (payUrl) location.href = payUrl;
-}
-
-function renderSuccess({ booking, invoice, payUrl, package: pkg }) {
-  // Payment is due AT booking: go STRAIGHT to Stripe — no interim "success"
-  // screen that could read as "already confirmed". (Covers single-session
-  // card payments AND a package bought together with this booking.)
-  if (payUrl) {
-    renderPayRedirect(payUrl);
-    return;
-  }
-  // Package flows have no invoice. Funded by an active package: confirmed,
-  // show the new balance. A package purchase whose checkout failed to open:
-  // be honest — nothing is confirmed until it is paid on the bookings page.
+function renderSuccess({ booking, invoice, payment, package: pkg }) {
+  // Package flows have no invoice. Funded by an already-paid package: the
+  // session is confirmed, show the new balance. A package bought with this
+  // booking still has to be paid — be honest, nothing is confirmed yet.
   if (!invoice && pkg) {
     body().innerHTML = `
     <div style="text-align:center;padding:12px 0">
@@ -540,7 +510,7 @@ function renderSuccess({ booking, invoice, payUrl, package: pkg }) {
       <p>${t('booking.success.reference', { code: `<strong>${esc(booking.code)}</strong>` })}</p>
       ${pkg.funded
         ? `<p style="color:var(--lime)">${t('booking.pkg.success_remaining', { n: pkg.remaining })}</p>`
-        : `<p class="form-error">${t('landing.groups.pay_failed')}</p>`}
+        : payPanel(payment)}
       <a class="btn btn-primary" href="/my-bookings">${t('common.nav.my_bookings')}</a>
     </div>`;
     return;
@@ -559,24 +529,28 @@ function renderSuccess({ booking, invoice, payUrl, package: pkg }) {
           ${booking.creditApplied ? `<span class="chip" style="font-size:.68rem">${t('booking.success.credit_chip')}</span>` : ''}</strong></div>
         <div class="review-row" style="border:none"><span class="muted">${t('booking.success.due_label')}</span><strong>${esc(I18N.lang === 'fi' ? fiDate(invoice.dueDate) : invoice.dueDate)}</strong></div>
       </div>
+      ${payPanel(payment)}
       <p class="small muted">${W.site.emailDelivery
-          && (invoice.amountCents === 0 || !W.site.payment.stripeEnabled)
         ? t('booking.success.invoice_emailed')
         : t('booking.success.invoice_ready')} ${t('booking.success.payment_note',
           { myBookingsLink: `<a href="/my-bookings">${t('common.nav.my_bookings')}</a>` })}</p>
       <div style="display:flex;gap:10px;justify-content:center;margin-top:8px;flex-wrap:wrap">
-        ${invoice.amountCents > 0 && W.site.payment.stripeEnabled
-          ? `<button class="btn btn-primary" id="pay-now">${t('pay.now')}</button>` : ''}
         <a class="btn btn-ghost" href="/api/invoices/${encodeURIComponent(invoice.number)}" target="_blank">${t('booking.success.view_invoice')}</a>
-        <a class="btn ${invoice.amountCents > 0 && W.site.payment.stripeEnabled ? 'btn-ghost' : 'btn-primary'}" href="/my-bookings">${t('common.nav.my_bookings')}</a>
+        <a class="btn btn-primary" href="/my-bookings">${t('common.nav.my_bookings')}</a>
       </div>
     </div>`;
-  const payBtn = body().querySelector('#pay-now');
-  if (payBtn) payBtn.addEventListener('click', async () => {
-    payBtn.disabled = true;
-    try {
-      const { url } = await API.post(`/invoices/${encodeURIComponent(invoice.number)}/pay`, {});
-      location.href = url;
-    } catch (e) { payBtn.disabled = false; toast(I18N.server(e.message), true); }
-  });
+}
+
+// "Pending payment": what to send, where, and the reference that lets us match
+// the money back to this booking. Shown whenever the booking is not yet paid.
+function payPanel(payment) {
+  if (!payment || !payment.pending || !payment.mobilepay) return '';
+  return `<div class="card paynote" style="text-align:left;margin:18px 0">
+    <div class="paynote-title">${t('pay.mp.how')}</div>
+    <p class="small" style="margin:6px 0 10px">${t('pay.mp.intro', {
+      number: `<strong>${esc(payment.mobilepay)}</strong>`,
+      reference: `<strong>${esc(payment.reference)}</strong>` })}</p>
+    <div class="review-row"><span class="muted">${t('pay.mp.number')}</span><strong>${esc(payment.mobilepay)}</strong></div>
+    <div class="review-row" style="border:none"><span class="muted">${t('pay.mp.reference')}</span><strong>${esc(payment.reference)}</strong></div>
+  </div>`;
 }

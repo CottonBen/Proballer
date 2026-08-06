@@ -413,11 +413,17 @@ const I18N_DICT = {
   "pay.success.cta": { fi: "Näytä varaukseni", en: "Show my bookings" },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
   "pay.refund_pending": { fi: "Maksusi ehti perille vasta varauksen peruunnuttua, eikä varausta voitu enää palauttaa. Palautamme maksun sinulle — otamme yhteyttä.", en: "Your payment arrived after the booking had already been cancelled and it could not be restored. We will refund the payment and be in touch." },
-  "pay.card": { fi: "Maksa kortilla", en: "Pay by card" },
-  "pay.now": { fi: "Maksa nyt kortilla", en: "Pay now by card" },
   "pay.received": { fi: "Maksu vastaanotettu — kiitos! Lasku on merkitty maksetuksi.", en: "Payment received — thank you! The invoice is marked paid." },
   "pay.pending": { fi: "Maksu käsitellään — lasku päivittyy hetken kuluttua.", en: "Payment is processing — the invoice updates shortly." },
   "pay.cancelled": { fi: "Maksua ei suoritettu.", en: "The payment was not completed." },
+
+  // --- MobilePay: the customer pays from their own app, we match by reference ---
+  "pay.mp.how": { fi: "Näin maksat", en: "How to pay" },
+  "pay.mp.intro": { fi: "Lähetä summa MobilePaylla numeroon {number} ja kirjoita viestikenttään viite {reference}. Varaus vahvistuu heti kun maksu näkyy meillä.", en: "Send the amount by MobilePay to {number} and type the reference {reference} in the message field. Your booking is confirmed as soon as the payment reaches us." },
+  "pay.mp.number": { fi: "MobilePay-numero", en: "MobilePay number" },
+  "pay.mp.reference": { fi: "Viite (viestikenttään)", en: "Reference (message field)" },
+  "pay.mp.amount": { fi: "Summa", en: "Amount" },
+  "pay.mp.awaiting": { fi: "Odottaa maksua", en: "Awaiting payment" },
 
   // --- chat ---
   "chat.title": { fi: "Viestit — Proballers Coaching", en: "Chats — Proballers Coaching" },

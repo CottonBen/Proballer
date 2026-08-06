@@ -71,32 +71,39 @@ module.exports = {
     replyEmail: 'proballerscoaching@gmail.com',
   },
 
-  // The one and only payment method: bank transfer to the owner's account.
-  // The IBAN comes from the PAYMENT_IBAN env var (kept out of the source); set
-  // it in .env locally and in the host's environment in production.
+  // The one and only payment method: MobilePay. Nobody pays at checkout —
+  // the customer books, gives their billing details, and the booking waits in
+  // PENDING PAYMENT until the money arrives. The invoice carries the MobilePay
+  // number below and the invoice number as the reference (viestikenttä).
   payment: {
-    method: 'Bank transfer',
+    method: 'MobilePay',
     payee: process.env.PAYMENT_PAYEE || 'Proballers Coaching',
-    iban: process.env.PAYMENT_IBAN || 'FI00 0000 0000 0000 00',
-    // Optional MobilePay number (Finnish mobile payment). Blank = not offered;
-    // set PAYMENT_MOBILEPAY to a phone number to add it to invoices.
-    mobilepay: process.env.PAYMENT_MOBILEPAY || '',
-    // Customers use the invoice number as the payment reference (viestikenttä).
+    // Where the money goes. Override with PAYMENT_MOBILEPAY.
+    mobilepay: process.env.PAYMENT_MOBILEPAY || '+358 44 9872431',
+    // Optional bank-transfer alternative, printed under the MobilePay block.
+    // Blank (the default) = MobilePay only.
+    iban: process.env.PAYMENT_IBAN || '',
     referenceHint: 'Use the invoice number as the message/reference',
+    // How long an unpaid booking holds its slot before the sweep releases it.
+    // The session start is always a deadline too, whichever comes first. The
+    // customer gets a "24 h left to pay" reminder when this exceeds 24 h.
+    holdHours: 72,
   },
 
-  // Stripe card payments (optional). Set STRIPE_SECRET_KEY (sk_test_/sk_live_)
-  // to enable the "Pay by card" flow; STRIPE_WEBHOOK_SECRET (whsec_...) lets
-  // Stripe confirm payments server-to-server in production. Without keys the
-  // site is bank-transfer-only, exactly as before.
-  stripe: {
-    secretKey: process.env.STRIPE_SECRET_KEY || '',
-    webhookSecret: process.env.STRIPE_WEBHOOK_SECRET || '',
-    // Payment is due AT booking: the customer is sent straight to card payment
-    // and the slot is held this many minutes before an unpaid booking is
-    // auto-released. (Raise to e.g. 72*60 to offer a pay-later window instead —
-    // reminders and all release/restore logic follow this number.)
-    payWindowMinutes: 45,
+  // Vipps MobilePay MERCHANT integration (optional, off by default).
+  //
+  // A PERSONAL MobilePay number — the +358 number above — has no API and no
+  // webhooks: those payments land in the owner's phone and an admin marks the
+  // invoice paid in the dashboard. That is the flow the site runs today.
+  //
+  // With a Vipps MobilePay merchant agreement, set MOBILEPAY_WEBHOOK_SECRET
+  // (and MOBILEPAY_MERCHANT_SERIAL) and POST /api/mobilepay/webhook starts
+  // confirming payments automatically: each notification is matched to an
+  // invoice / group spot / package by the reference the payer typed. Nothing
+  // else changes — the manual path keeps working alongside it.
+  mobilepay: {
+    webhookSecret: process.env.MOBILEPAY_WEBHOOK_SECRET || '',
+    merchantSerial: process.env.MOBILEPAY_MERCHANT_SERIAL || '',
   },
 
   // Group training: one coach, up to `capacity` players, each paying

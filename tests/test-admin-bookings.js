@@ -53,16 +53,20 @@ async function page(p) {
   return { status: res.status, text: await res.text(), location: res.headers.get('location') };
 }
 
-function sendWebhook(metadata, paymentIntent) {
+let webhookSeq = 0;
+// One MobilePay payment notification. Takes the same {invoice_number} /
+// {group_signup} / {package} shape the tests already use and turns it into the
+// single reference a real payer types into MobilePay's message field.
+function sendWebhook(target) {
+  const t = target && target.data ? target.data.object.metadata : (target || {});
+  const reference = t.invoice_number || t.group_signup || t.package || '';
   const raw = JSON.stringify({
-    type: 'checkout.session.completed',
-    data: { object: { payment_status: 'paid', metadata, payment_intent: paymentIntent || 'pi_test_1' } },
+    eventId: `ev_${++webhookSeq}_${reference}`, reference, name: 'CAPTURED',
   });
-  const t = Math.floor(Date.now() / 1000);
-  const v1 = crypto.createHmac('sha256', WEBHOOK_SECRET).update(`${t}.${raw}`).digest('hex');
-  return fetch(BASE + '/api/stripe/webhook', {
+  const sig = crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
+  return fetch(BASE + '/api/mobilepay/webhook', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${t},v1=${v1}` },
+    headers: { 'Content-Type': 'application/json', 'X-MobilePay-Signature': sig },
     body: raw,
   });
 }
@@ -80,8 +84,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
       ...process.env,
       PORT: String(PORT), DATA_DIR, DEMO_DATA: '0',
       SMTP_HOST: '',
-      STRIPE_SECRET_KEY: 'sk_test_dummy',
-      STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      MOBILEPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
       ADMIN_EMAIL: 'admin@test.local', ADMIN_PASSWORD: 'TestAdmin123!',
       COACH_EMAIL: 'coach@test.local', COACH_PASSWORD: 'TestCoach123!',
       SITE_URL: BASE,
@@ -189,13 +192,17 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     check('payment-request email sent', emailCount('payreq') === payreqBefore + 1, emailCount('payreq'));
     check('booking-confirmed email NOT sent yet', emailCount('booking') === 0, emailCount('booking'));
 
-    // Pay link with a broken Stripe key -> "not completed" page with retry (502).
+    // The login-free pay link serves the invoice itself: amount, MobilePay
+    // number and the reference the payer types. No password, no checkout.
     let pg = await page(`/api/pay/${linkInv.pay_token}`);
-    check('pay link: checkout failure shows retry page', pg.status === 502
-      && pg.text.includes('Maksua ei viimeistelty'), pg.status);
-    pg = await page(`/api/pay/${linkInv.pay_token}/return`);
-    check('return page before payment: still pending', pg.status === 200
-      && pg.text.includes('Maksua ei viimeistelty'), pg.status);
+    check('pay link opens the invoice without logging in', pg.status === 200
+      && pg.text.includes(linkInv.number), pg.status);
+    check('pay link states the MobilePay number and how to pay',
+      pg.text.includes('+358 44 9872431') && pg.text.includes('Näin maksat'), pg.status);
+    check('the Stripe return leg is gone',
+      (await page(`/api/pay/${linkInv.pay_token}/return`)).status === 404);
+    check('an unknown pay token is refused',
+      (await page('/api/pay/' + 'f'.repeat(32))).status === 404);
 
     // Payment lands through the webhook.
     await sendWebhook({ invoice_number: linkInv.number });
@@ -427,9 +434,12 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     check('pending link spot on session #2', r.status === 201, r.data);
     const suSleep = db.prepare('SELECT * FROM group_signups WHERE code = ?').get(r.data.code);
     // sid smoke check while the spot is still pending: a bogus sid must not crash.
-    pg = await page(`/api/pay/${suSleep.pay_token}/return?sid=cs_bogus123`);
-    check('bogus ?sid on the return page degrades to pending', pg.status === 200
-      && pg.text.includes('Maksua ei viimeistelty'), pg.status);
+    // A group spot has no invoice document, so its pay link renders the
+    // MobilePay details with the SPOT CODE as the reference.
+    pg = await page(`/api/pay/${suSleep.pay_token}`);
+    check('group pay link shows the spot code as the reference',
+      pg.status === 200 && pg.text.includes(suSleep.code)
+      && pg.text.includes('+358 44 9872431'), pg.status);
     const releaseBefore2 = emailCount('group_release');
     db.prepare('UPDATE group_sessions SET date = ? WHERE id = ?').run(helsinkiDate(-1), grp2.id);
     await admin('GET', '/groups'); // any sweep-triggering read

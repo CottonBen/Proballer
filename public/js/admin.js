@@ -1203,7 +1203,6 @@ function nbPaint() {
   }
 
   if (NB.step === 3) {
-    const stripeOn = CONFIG.payment && CONFIG.payment.stripeEnabled;
     const opt = (val, label, sub) => `
       <button class="btn ${NB.payment === val ? 'btn-primary' : 'btn-ghost'}" data-pay="${val}"
         style="display:block;width:100%;text-align:left;margin-bottom:8px">
@@ -1212,8 +1211,8 @@ function nbPaint() {
     box.innerHTML = `${head}
       <label class="small muted">${t('admin.nb.payment')}</label>
       <div style="margin-top:6px">
-        ${stripeOn ? opt('link', t('admin.nb.pay.link'),
-          t('admin.nb.pay.link.sub', { hours: CONFIG.adminPayLinkHours || 72 })) : ''}
+        ${opt('link', t('admin.nb.pay.link'),
+          t('admin.nb.pay.link.sub', { hours: CONFIG.adminPayLinkHours || 72 }))}
         ${opt('paid', t('admin.nb.pay.paid'), t('admin.nb.pay.paid.sub'))}
         ${opt('at_session', t('admin.nb.pay.at_session'), t('admin.nb.pay.at_session.sub'))}
       </div>${nav()}`;

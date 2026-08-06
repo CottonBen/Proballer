@@ -47,13 +47,20 @@ function client() {
   };
 }
 
-function sendWebhook(payload) {
-  const raw = JSON.stringify(payload);
-  const t = Math.floor(Date.now() / 1000);
-  const v1 = crypto.createHmac('sha256', WEBHOOK_SECRET).update(`${t}.${raw}`).digest('hex');
-  return fetch(BASE + '/api/stripe/webhook', {
+let webhookSeq = 0;
+// One MobilePay payment notification. Takes the same {invoice_number} /
+// {group_signup} / {package} shape the tests already use and turns it into the
+// single reference a real payer types into MobilePay's message field.
+function sendWebhook(target) {
+  const t = target && target.data ? target.data.object.metadata : (target || {});
+  const reference = t.invoice_number || t.group_signup || t.package || '';
+  const raw = JSON.stringify({
+    eventId: `ev_${++webhookSeq}_${reference}`, reference, name: 'CAPTURED',
+  });
+  const sig = crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
+  return fetch(BASE + '/api/mobilepay/webhook', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${t},v1=${v1}` },
+    headers: { 'Content-Type': 'application/json', 'X-MobilePay-Signature': sig },
     body: raw,
   });
 }
@@ -72,8 +79,7 @@ const day = (offset) => {
       DATA_DIR,
       DEMO_DATA: '0',
       SMTP_HOST: '',            // never send real email from tests
-      STRIPE_SECRET_KEY: 'sk_test_dummy',
-      STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      MOBILEPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
       ADMIN_EMAIL: 'admin@test.local', ADMIN_PASSWORD: 'TestAdmin123!',
       COACH_EMAIL: 'coach@test.local', COACH_PASSWORD: 'TestCoach123!',
       SITE_URL: BASE,

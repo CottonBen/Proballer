@@ -299,8 +299,8 @@ function sendGroupBookedCopies(signupId) {
 
 // Admin created a booking for this customer and chose "send a payment
 // request": the email carries a login-free pay link (GET /api/pay/:token
-// mints a fresh Stripe Checkout every time it is opened). `payBy` on the
-// invoice sets the deadline the copy quotes.
+// opens the invoice and the MobilePay instructions without a password).
+// `payBy` on the invoice sets the deadline the copy quotes.
 function sendPaymentRequestEmail(invoiceNumber) {
   const inv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(invoiceNumber);
   if (!inv || !inv.pay_token) return;

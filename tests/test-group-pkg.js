@@ -45,16 +45,20 @@ function client() {
   };
 }
 
-function sendWebhook(metadata, paymentIntent) {
+let webhookSeq = 0;
+// One MobilePay payment notification. Takes the same {invoice_number} /
+// {group_signup} / {package} shape the tests already use and turns it into the
+// single reference a real payer types into MobilePay's message field.
+function sendWebhook(target) {
+  const t = target && target.data ? target.data.object.metadata : (target || {});
+  const reference = t.invoice_number || t.group_signup || t.package || '';
   const raw = JSON.stringify({
-    type: 'checkout.session.completed',
-    data: { object: { payment_status: 'paid', metadata, payment_intent: paymentIntent || 'pi_test_1' } },
+    eventId: `ev_${++webhookSeq}_${reference}`, reference, name: 'CAPTURED',
   });
-  const t = Math.floor(Date.now() / 1000);
-  const v1 = crypto.createHmac('sha256', WEBHOOK_SECRET).update(`${t}.${raw}`).digest('hex');
-  return fetch(BASE + '/api/stripe/webhook', {
+  const sig = crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
+  return fetch(BASE + '/api/mobilepay/webhook', {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json', 'Stripe-Signature': `t=${t},v1=${v1}` },
+    headers: { 'Content-Type': 'application/json', 'X-MobilePay-Signature': sig },
     body: raw,
   });
 }
@@ -70,8 +74,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
       ...process.env,
       PORT: String(PORT), DATA_DIR, DEMO_DATA: '0',
       SMTP_HOST: '',
-      STRIPE_SECRET_KEY: 'sk_test_dummy',
-      STRIPE_WEBHOOK_SECRET: WEBHOOK_SECRET,
+      MOBILEPAY_WEBHOOK_SECRET: WEBHOOK_SECRET,
       ADMIN_EMAIL: 'admin@test.local', ADMIN_PASSWORD: 'TestAdmin123!',
       COACH_EMAIL: 'coach@test.local', COACH_PASSWORD: 'TestCoach123!',
       SITE_URL: BASE,
@@ -172,16 +175,16 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     r = await customers[0]('GET', '/my-groups');
     check('player sees a confirmed spot', r.data.length === 1 && r.data[0].status === 'confirmed', r.data);
 
-    // Admin: attendance, remove a player (refund fails with dummy key -> alert),
-    // move the session, add a walk-in by email.
+    // Admin: attendance, remove a player (MobilePay has no automatic refund,
+    // so the admins are told to send it back), move the session, add a walk-in.
     r = await admin('GET', '/admin/groups');
     check('admin sees attendance 4/4', r.data[0].attendance === 4 && r.data[0].taken === 4, r.data[0]);
     const sid3 = r.data[0].players.find((p) => p.email === 'pelaaja3@test.local').signupId;
     r = await admin('DELETE', `/admin/groups/${g1id}/players/${sid3}`);
     check('admin removes a player', r.status === 200, r.status);
     check('cancellation email sent to the removed player', emailCount('group_cancel') === 1, emailCount('group_cancel'));
-    check('failed auto-refund alerts the admins', Boolean(db.prepare(
-      `SELECT 1 FROM notifications WHERE message LIKE '%could not be refunded automatically%'`).get()), null);
+    check('cancelling a PAID spot alerts the admins to refund it by hand', Boolean(db.prepare(
+      `SELECT 1 FROM notifications WHERE message LIKE '%please refund the player in MobilePay%'`).get()), null);
 
     r = await admin('PUT', `/admin/groups/${g1id}`, { date: D4, hour: 11, location: 'Helsinki' });
     check('admin moves the session', r.status === 200 && r.data.date === D4 && r.data.hour === 11, r.data);
@@ -305,11 +308,27 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     r = await admin('POST', `/admin/packages/${aRow.id}/adjust`, { delta: -10 });
     check('over-negative adjustment rejected', r.status === 409, r.status);
 
-    // Dashboard buy with a broken checkout leaves no orphan pending row.
+    // Dashboard buy: the package is invoiced, not charged. It stays PENDING
+    // (no sessions usable) and the response carries the MobilePay details and
+    // the package code the buyer types as the reference.
+    const balanceBefore = (await G('GET', '/my-package')).data.remaining;
     r = await G('POST', '/packages/buy', { package: 'pack8' });
-    check('dashboard buy fails cleanly with a dead Stripe key', r.status === 502, r.status);
-    check('no orphan pending package', db.prepare(
-      "SELECT COUNT(*) n FROM packages WHERE status = 'pending' AND customer_id = ?").get(gUserId).n === 0, null);
+    check('dashboard buy creates a pending purchase', r.status === 201, r.status);
+    check('buy response carries the MobilePay payment details',
+      r.data.payment && r.data.payment.pending === true
+      && r.data.payment.mobilepay === '+358 44 9872431'
+      && r.data.payment.reference === r.data.code, r.data.payment);
+    const boughtPkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(r.data.code);
+    check('the purchase is pending with a hold deadline',
+      boughtPkg.status === 'pending' && boughtPkg.pay_by > new Date().toISOString(), boughtPkg);
+    check('a pending package grants no sessions yet',
+      (await G('GET', '/my-package')).data.remaining === balanceBefore, balanceBefore);
+    // Paying it by MobilePay (reference = the package code) activates it.
+    await sendWebhook({ package: r.data.code });
+    check('MobilePay payment activates the package',
+      db.prepare('SELECT status FROM packages WHERE code = ?').get(r.data.code).status === 'active');
+    check('activating it adds its 8 sessions to the balance',
+      (await G('GET', '/my-package')).data.remaining === balanceBefore + 8, balanceBefore);
 
     // Pending-package expiry releases the linked booking…
     const H = customers[6];

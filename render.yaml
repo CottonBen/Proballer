@@ -38,10 +38,14 @@ services:
         sync: false
       - key: COACH_PASSWORD
         sync: false
-      # Stripe card payments (set in the dashboard; test keys first):
-      - key: STRIPE_SECRET_KEY
+      # Where MobilePay payments are sent (defaults to the owner's number):
+      - key: PAYMENT_MOBILEPAY
         sync: false
-      - key: STRIPE_WEBHOOK_SECRET
+      # Automatic payment confirmation — only with a Vipps MobilePay MERCHANT
+      # agreement. Without these the admin marks payments paid by hand.
+      - key: MOBILEPAY_WEBHOOK_SECRET
+        sync: false
+      - key: MOBILEPAY_MERCHANT_SERIAL
         sync: false
       # Real invoice emails (any SMTP provider — Brevo/Mailgun/Postmark):
       - key: SMTP_HOST

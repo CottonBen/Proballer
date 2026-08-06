@@ -1,4 +1,5 @@
-// Prepaid 1-on-1 session packages (3/5/8 sessions, paid upfront by card).
+// Prepaid 1-on-1 session packages (3/5/8 sessions, invoiced and paid upfront
+// by MobilePay before the sessions become bookable).
 //
 // The core invariant: a package's remaining balance is DERIVED, never stored —
 //   remaining = sessions_total + adjust_sessions − COUNT(non-cancelled
@@ -74,16 +75,17 @@ function createPackagePurchase(customerId, optionId) {
     (code, customer_id, sessions_total, price_cents, status, pay_by, created_at)
     VALUES (?,?,?,?, 'pending', ?, ?)`)
     .run(genCode('PKG'), customerId, opt.sessions, opt.price * 100,
-      new Date(Date.now() + config.stripe.payWindowMinutes * 60000).toISOString(), nowISO());
+      new Date(Date.now() + (config.payment.holdHours || 72) * 3600000).toISOString(), nowISO());
   return db.prepare('SELECT * FROM packages WHERE id = ?').get(Number(info.lastInsertRowid));
 }
 
-// Payment confirmed (webhook or success-URL refresh; both call this,
-// idempotent). A package is not slot-bound, so even a payment landing after
-// the pending-purchase sweep voided it simply activates it — the customer
-// paid, the sessions are theirs. Any linked wizard booking is announced to
-// its coach if the slot survived; if not, the sessions stay usable anyway.
-function markPackagePaid(code, stripeSession) {
+// Payment confirmed (MobilePay webhook or an admin marking it paid; both call
+// this, idempotent). A package is not slot-bound, so even a payment landing
+// after the pending-purchase sweep voided it simply activates it — the
+// customer paid, the sessions are theirs. Any linked wizard booking is
+// announced to its coach if the slot survived; if not, the sessions stay
+// usable anyway.
+function markPackagePaid(code) {
   const pkg = db.prepare('SELECT * FROM packages WHERE code = ?').get(code);
   if (!pkg || pkg.status === 'active') return false;
   db.prepare("UPDATE packages SET status = 'active', paid_at = ? WHERE id = ?").run(nowISO(), pkg.id);

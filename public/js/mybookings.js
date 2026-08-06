@@ -32,45 +32,13 @@
 
   await loadReviewsSection();   // independent of the bookings table below
 
-  // Returning from Stripe Checkout: confirm the payment server-side. A
-  // successful payment gets the full "booking successful" screen; the rarer
-  // outcomes (still pending / released before the money arrived) stay toasts.
-  const params = new URLSearchParams(location.search);
-  if (params.get('paid')) {
-    try {
-      const r = await API.post(`/invoices/${encodeURIComponent(params.get('paid'))}/refresh-payment`, {});
-      // 'void' = the money arrived after the booking was released and it could
-      // not be restored — be honest, a refund is on its way.
-      if (r.status === 'paid') showPaySuccess();
-      else toast(r.status === 'void' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'void');
-    } catch { toast(t('pay.pending')); }
-    history.replaceState(null, '', '/my-bookings');
-  } else if (params.get('gpaid')) {
-    // Back from a group-spot payment.
-    try {
-      const r = await API.post(`/group-signups/${encodeURIComponent(params.get('gpaid'))}/refresh-payment`, {});
-      if (r.status === 'paid') showPaySuccess('pay.success.group_title', 'pay.success.group_body');
-      else toast(r.status === 'cancelled' ? t('pay.refund_pending') : t('pay.pending'), r.status === 'cancelled');
-    } catch { toast(t('pay.pending')); }
-    history.replaceState(null, '', '/my-bookings');
-  } else if (params.get('pkgpaid')) {
-    // Back from a package payment.
-    try {
-      const r = await API.post(`/packages/${encodeURIComponent(params.get('pkgpaid'))}/refresh-payment`, {});
-      if (r.status === 'paid') showPaySuccess('pay.success.pkg_title', 'pay.success.pkg_body');
-      else toast(t('pay.pending'));
-    } catch { toast(t('pay.pending')); }
-    history.replaceState(null, '', '/my-bookings');
-  } else if (params.get('paycancel')) {
-    toast(t('pay.cancelled'), true);
-    history.replaceState(null, '', '/my-bookings');
-  }
-
   await loadPackageSection();
   await loadGroupsSection();
 
-  let stripeOn = false;
-  try { stripeOn = Boolean((await API.get('/config')).payment.stripeEnabled); } catch { /* off */ }
+  // The MobilePay number is only in /config for signed-in callers, which is
+  // exactly who this page serves.
+  let pay = {};
+  try { pay = (await API.get('/config')).payment || {}; } catch { /* fall back to no panel */ }
 
   const rows = await API.get('/my-bookings');
   const tbl = document.getElementById('bookings-table');
@@ -78,9 +46,6 @@
   if (!rows.length) return;
 
   const hourSep = I18N.lang === 'fi' ? '.' : ':'; // FI '08.00', EN '08:00'
-  // Card-payment deadline (72 h from booking, from the server) in local time.
-  const payDeadline = (iso) => new Date(iso).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
-    { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
   tbl.innerHTML = `
     <tr><th>${t('mybookings.table.ref')}</th><th>${t('mybookings.table.when')}</th><th>${t('mybookings.table.coach')}</th><th>${t('mybookings.table.session')}</th><th>${t('mybookings.table.where')}</th>
       <th>${t('mybookings.table.total')}</th><th>${t('mybookings.table.status')}</th><th>${t('mybookings.table.invoice')}</th></tr>` +
@@ -100,22 +65,31 @@
           return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`; })()}</td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>${
-              stripeOn && b.invoice_status === 'sent' && b.total_cents > 0
-                ? `<br><button class="btn btn-primary btn-sm" style="margin-top:6px" data-pay="${esc(b.invoice_number)}">${t('pay.card')}</button>${
-                    b.pay_by ? `<br><span class="small muted">⏳ ${t('pay.deadline', { deadline: esc(payDeadline(b.pay_by)) })}</span>` : ''
-                  }` : ''
+              b.invoice_status === 'sent' && b.total_cents > 0
+                ? mobilePayNote(pay, b.invoice_number, b.total_cents, b.pay_by) : ''
             }` : '—'}</td>
       </tr>`).join('');
-
-  // Card payment: create a Checkout session and hand over to Stripe.
-  tbl.querySelectorAll('[data-pay]').forEach((btn) => btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    try {
-      const { url } = await API.post(`/invoices/${encodeURIComponent(btn.dataset.pay)}/pay`, {});
-      location.href = url;
-    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
-  }));
 })().catch((e) => toast(I18N.server(e.message), true));
+
+// The "how to pay" note under anything awaiting payment: nothing to click —
+// the customer pays from their own MobilePay app, and the reference is what
+// lets us match the money back to this purchase.
+function mobilePayNote(pay, reference, amountCents, payBy) {
+  if (!pay.mobilepay) return '';
+  return `<div class="paynote">
+    <div class="paynote-title">${t('pay.mp.how')}</div>
+    <div><span class="muted">${t('pay.mp.number')}:</span> <strong>${esc(pay.mobilepay)}</strong></div>
+    <div><span class="muted">${t('pay.mp.reference')}:</span> <strong>${esc(reference)}</strong></div>
+    <div><span class="muted">${t('pay.mp.amount')}:</span> <strong>${eur(amountCents)}</strong></div>
+    ${payBy ? `<div class="small muted" style="margin-top:4px">⏳ ${t('pay.deadline', { deadline: esc(payDeadline(payBy)) })}</div>` : ''}
+  </div>`;
+}
+
+// Payment deadline (config.payment.holdHours from booking) in local time.
+function payDeadline(iso) {
+  return new Date(iso).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
+    { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
+}
 
 // --- prepaid session package: balance, history, buy buttons -------------------
 async function loadPackageSection() {
@@ -126,9 +100,9 @@ async function loadPackageSection() {
     [data, cfg] = await Promise.all([API.get('/my-package'), API.get('/config')]);
   } catch { box.innerHTML = ''; return; }
   const options = (cfg.packages || []).filter((o) => o.sessions > 1);
-  const stripeOn = Boolean(cfg.payment && cfg.payment.stripeEnabled);
+  const pay = cfg.payment || {};
 
-  const buyButtons = stripeOn && options.length ? `
+  const buyButtons = options.length ? `
     <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px">
       ${options.map((o) => `<button class="btn btn-ghost btn-sm" data-buypkg="${o.id}">
         ${t('mybookings.pkg.buy_pack', { n: o.sessions, price: eur(o.price * 100) })}</button>`).join('')}
@@ -142,10 +116,11 @@ async function loadPackageSection() {
           <span class="small">${t('mybookings.pkg.row', { n: pk.sessions })} · ${eur(pk.priceCents)}
             <span class="muted">· ${esc(pk.purchasedAt)}</span></span>
           <span class="small" style="white-space:nowrap">${pk.pending
-            ? `<button class="btn btn-primary btn-sm" data-paypkg="${esc(pk.code)}">${t('pay.now')}</button>`
+            ? `<span class="status-tag status-pending">${t('pay.mp.awaiting')}</span>`
             : `${t('mybookings.pkg.used', { used: pk.used, total: pk.sessions + pk.adjusted })}
                · <strong>${pk.remaining}</strong> ⚽</span>`}
-        </div>`).join('')}
+        </div>
+        ${pk.pending ? mobilePayNote(pay, pk.code, pk.priceCents, null, null) : ''}`).join('')}
     </div>` : '';
 
   box.innerHTML = `<div class="card" ${data.remaining > 0 ? 'style="border-color:var(--lime)"' : ''}>
@@ -159,19 +134,13 @@ async function loadPackageSection() {
     ${history}
   </div>`;
 
+  // Buying a package invoices it — the panel that appears carries the
+  // MobilePay number and the package code to use as the reference.
   box.querySelectorAll('[data-buypkg]').forEach((btn) => btn.addEventListener('click', async () => {
     btn.disabled = true;
     try {
-      const r = await API.post('/packages/buy', { package: btn.dataset.buypkg });
-      if (r.payUrl) { location.href = r.payUrl; return; }
-      toast(t('landing.groups.pay_failed'), true);
-    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
-  }));
-  box.querySelectorAll('[data-paypkg]').forEach((btn) => btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    try {
-      const { url } = await API.post(`/packages/${encodeURIComponent(btn.dataset.paypkg)}/pay`, {});
-      location.href = url;
+      await API.post('/packages/buy', { package: btn.dataset.buypkg });
+      await loadPackageSection();
     } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
   }));
 }
@@ -180,8 +149,11 @@ async function loadPackageSection() {
 async function loadGroupsSection() {
   const box = document.getElementById('groups-section');
   if (!box) return;
-  let rows;
-  try { rows = await API.get('/my-groups'); } catch { box.innerHTML = ''; return; }
+  let rows, pay = {};
+  try {
+    rows = await API.get('/my-groups');
+    pay = (await API.get('/config')).payment || {};
+  } catch { box.innerHTML = ''; return; }
   if (!rows.length) { box.innerHTML = ''; return; }
   const hourSep = I18N.lang === 'fi' ? '.' : ':';
   box.innerHTML = `<div class="card">
@@ -198,19 +170,19 @@ async function loadGroupsSection() {
         <span class="small" style="white-space:nowrap">${g.sessionStatus === 'cancelled'
           ? `<span class="status-tag status-cancelled">${t('common.status.cancelled')}</span>`
           : g.status === 'pending'
-            ? `<button class="btn btn-primary btn-sm" data-paygroup="${esc(g.code)}">${t('pay.now')}</button>`
+            ? `<span class="status-tag status-pending">${t('pay.mp.awaiting')}</span>`
             : `<span class="status-tag status-${esc(g.sessionStatus === 'completed' ? 'completed' : 'confirmed')}">${t('common.status.' + (g.sessionStatus === 'completed' ? 'completed' : 'confirmed'))}</span>`}
         </span>
-      </div>`).join('')}
+      </div>
+      ${g.status === 'pending' && g.sessionStatus !== 'cancelled'
+        ? mobilePayNote(pay, g.code, g.priceCents, g.payBy, payDeadlineLocal) : ''}`).join('')}
   </div>`;
-  box.querySelectorAll('[data-paygroup]').forEach((btn) => btn.addEventListener('click', async () => {
-    btn.disabled = true;
-    try {
-      const { url } = await API.post(`/group-signups/${encodeURIComponent(btn.dataset.paygroup)}/pay`, {});
-      location.href = url;
-    } catch (e) { btn.disabled = false; toast(I18N.server(e.message), true); }
-  }));
 }
+
+// Shared deadline formatter for the payment panels outside the bookings table.
+const payDeadlineLocal = (iso) => new Date(iso).toLocaleString(
+  I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
+  { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 
 // --- reviews: leave one per coach you've completed a session with -------------
 async function loadReviewsSection() {

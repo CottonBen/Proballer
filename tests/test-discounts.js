@@ -160,7 +160,7 @@ function client() {
     cwd: PROJECT,
     env: {
       ...process.env, PORT: String(PORT), DATA_DIR: EDATA, DEMO_DATA: '0', SMTP_HOST: '',
-      STRIPE_SECRET_KEY: 'sk_test_dummy', STRIPE_WEBHOOK_SECRET: 'whsec_x',
+      MOBILEPAY_WEBHOOK_SECRET: 'whsec_x',
       ADMIN_EMAIL: 'admin@test.local', ADMIN_PASSWORD: 'TestAdmin123!',
       COACH_EMAIL: 'coach@test.local', COACH_PASSWORD: 'TestCoach123!', SITE_URL: BASE,
     },
