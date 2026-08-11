@@ -27,8 +27,6 @@ services:
         sync: false
       - key: PAYMENT_PAYEE
         sync: false
-      - key: PAYMENT_MOBILEPAY   # optional MobilePay number
-        sync: false
       # Initial admin/coach credentials — set these before the first boot:
       - key: ADMIN_EMAIL
         sync: false

@@ -53,6 +53,18 @@ function client() {
 }
 
 let webhookSeq = 0;
+// Post an ARBITRARY signed body — for payload shapes the app does not know.
+async function sendRaw(obj) {
+  const raw = JSON.stringify(obj);
+  const sig = crypto.createHmac('sha256', WEBHOOK_SECRET).update(raw).digest('hex');
+  const r = await fetch(BASE + '/api/mobilepay/webhook', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'X-MobilePay-Signature': sig },
+    body: raw,
+  });
+  return { status: r.status, body: await r.text() };
+}
+
 // One MobilePay payment notification. Takes the same {invoice_number} /
 // {group_signup} / {package} shape the tests already use and turns it into the
 // single reference a real payer types into MobilePay's message field.
@@ -330,6 +342,24 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
       boughtPkg.status === 'pending' && boughtPkg.pay_by > new Date().toISOString(), boughtPkg);
     check('a pending package grants no sessions yet',
       (await G('GET', '/my-package')).data.remaining === balanceBefore, balanceBefore);
+    // A signature-verified notification we cannot READ must not vanish: field
+    // names differ between Vipps products and the first live one is where that
+    // shows up. Keep the payload, alert the admins, apply nothing.
+    {
+      const before = db.prepare("SELECT COUNT(*) n FROM payment_events WHERE status = 'UNRECOGNISED'").get().n;
+      const w1 = await sendRaw({ unexpected: 'shape', amountMinor: 4000 });
+      const w2 = await sendRaw({ another: 'shape' });
+      const w3 = await sendRaw({ unexpected: 'shape', amountMinor: 4000 });   // exact repeat
+      check('unreadable payload is accepted, not applied',
+        w1.status === 200 && w2.status === 200 && w3.status === 200, [w1.status, w2.status, w3.status]);
+      const after = db.prepare("SELECT COUNT(*) n FROM payment_events WHERE status = 'UNRECOGNISED'").get().n;
+      check('each distinct unreadable payload is kept once', after === before + 2, { before, after });
+      check('the raw payload is kept for diagnosis', Boolean(db.prepare(
+        "SELECT 1 FROM payment_events WHERE status = 'UNRECOGNISED' AND note LIKE 'raw:%unexpected%'").get()));
+      check('admins are told we could not read it', Boolean(db.prepare(
+        "SELECT 1 FROM notifications WHERE message LIKE '%could not read%'").get()));
+    }
+
     // Paying it by MobilePay (reference = the package code) activates it.
     await sendWebhook({ package: r.data.code });
     check('MobilePay payment activates the package',

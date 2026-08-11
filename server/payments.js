@@ -262,7 +262,26 @@ function webhookHandler(req, res) {
   try { body = JSON.parse(raw); } catch { return res.status(400).json({ error: 'Bad payload.' }); }
 
   const ev = readEvent(body && typeof body === 'object' ? body : {});
-  if (!ev.status) return res.json({ received: true, ignored: 'no-status' });
+  if (!ev.status) {
+    // The signature checked out, so this really is MobilePay — we just cannot
+    // read it. Field names differ between Vipps products, and the FIRST live
+    // notification is where that shows up. Keep the payload and shout, rather
+    // than answering 200 and leaving no trace of a payment we did not
+    // understand. Truncated: this is a diagnostic, not a second ledger.
+    // Seed the id from the BODY: an unreadable payload has no reference or
+    // status to derive one from, so every one of them would otherwise collapse
+    // onto the same id and only the first would ever be kept.
+    recordEvent({
+      ...ev,
+      status: 'UNRECOGNISED',
+      eventId: ev.eventId || 'raw-' + crypto.createHash('sha256').update(raw).digest('hex').slice(0, 32),
+    }, 'raw:' + raw.slice(0, 400));
+    alertAdmins('A MobilePay notification arrived that we could not read (unrecognised '
+      + 'payload shape) — the payment has NOT been applied. The raw message is in the '
+      + 'payment_events table; it usually means the field names need adjusting in '
+      + 'server/payments.js.');
+    return res.json({ received: true, ignored: 'unrecognised-payload' });
+  }
   // In-flight states (CREATED, PENDING…) are noise: nothing has happened yet.
   if (!PAID_STATES.has(ev.status) && !FAILED_STATES.has(ev.status)) {
     return res.json({ received: true, ignored: 'not-terminal' });
