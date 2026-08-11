@@ -1430,8 +1430,43 @@ const I18N_SERVER_PATTERNS = [
 
 const I18N = (() => {
   const LS_KEY = 'pbf-lang';
+
+  // Public pages exist once per language: Finnish on the bare path, English
+  // under /en. On those the URL decides — a saved preference must never render
+  // English content at a Finnish URL, or the two versions stop being honest
+  // translations of each other and search engines index the wrong one.
+  //
+  // Everywhere else (the signed-in pages, which are noindex and have no /en
+  // twin) the saved preference still decides, exactly as before.
+  const EN_PREFIX = /^\/en(?=\/|$)/;
+  const barePath = () => location.pathname.replace(EN_PREFIX, '') || '/';
+  const isMirrored = (p) => p === '/' || /^\/coaches\/[^/]+\/?$/.test(p);
+
   let lang = 'fi';
-  try { if (localStorage.getItem(LS_KEY) === 'en') lang = 'en'; } catch { /* private mode */ }
+  if (EN_PREFIX.test(location.pathname)) {
+    lang = 'en';
+  } else if (!isMirrored(location.pathname)) {
+    try { if (localStorage.getItem(LS_KEY) === 'en') lang = 'en'; } catch { /* private mode */ }
+  }
+
+  // Where this page lives in the other language ('' = it has no twin).
+  function pathInLang(target) {
+    const bare = barePath();
+    if (!isMirrored(bare)) return '';
+    return target === 'en' ? (bare === '/' ? '/en' : '/en' + bare) : bare;
+  }
+
+  // A link to a public page, in the language currently on screen. Public pages
+  // exist once per language, so a link written as a bare '/…' would quietly
+  // drop an English reader back onto the Finnish site — and would tell a
+  // crawler the English pages lead nowhere but Finnish ones.
+  function url(p) {
+    if (lang !== 'en' || typeof p !== 'string' || p[0] !== '/') return p;
+    if (/^\/en(?=[/#?]|$)/.test(p)) return p;             // already localised
+    const pathPart = p.split(/[#?]/)[0];
+    const mirrored = pathPart === '/' || /^\/coaches\/[^/]+\/?$/.test(pathPart);
+    return mirrored ? '/en' + (p === '/' ? '' : p) : p;
+  }
 
   function t(key, params) {
     // hasOwnProperty guard: never resolve inherited Object.prototype members.
@@ -1483,15 +1518,24 @@ const I18N = (() => {
   function setLang(next) {
     if (next !== 'fi' && next !== 'en') return;
     try { localStorage.setItem(LS_KEY, next); } catch { /* private mode */ }
-    // Reload: every page renders its dynamic content in the new language from
-    // scratch — no stale mixed-language widgets.
+    // On a page that has a twin, switching language means GOING to that twin —
+    // the URL is what says which language this is. Elsewhere, reload in place.
+    // Either way the page rebuilds from scratch, so no widget is left half
+    // translated.
+    const to = pathInLang(next);
+    if (to && to !== location.pathname) {
+      location.href = to + location.search + location.hash;
+      return;
+    }
     location.reload();
   }
 
-  return { get lang() { return lang; }, t, server, applyStatic, setLang };
+  return { get lang() { return lang; }, t, server, applyStatic, setLang, url };
 })();
 
 const t = I18N.t;
+// Language-aware link to a public page — see I18N.url().
+const lurl = I18N.url;
 
 // Position-group chip/label helper, shared by every page that shows coaches.
 function posLabel(id) { return t('cfg.position.' + id); }

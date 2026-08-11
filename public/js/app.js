@@ -167,7 +167,7 @@ function renderPlayerHome() {
     ${next.length
       ? next.map((b) => sessionCard(b)).join('')
       : emptyState('cal', t('app.player.upcoming_empty'))}
-    <a class="btn btn-primary" href="/#coaches" style="display:block;text-align:center;margin-top:12px">
+    <a class="btn btn-primary" href="${lurl('/#coaches')}" style="display:block;text-align:center;margin-top:12px">
       ${t('app.player.book_cta')}</a>
   </div>`;
 }
@@ -815,7 +815,7 @@ function renderProfile() {
       <div class="pf-lang" id="pf-lang"></div>
       <a class="pf-link" href="/my-bookings">${t('common.mybookings')}
         <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-      <a class="pf-link" href="/">${t('app.profile.website')}
+      <a class="pf-link" href="${lurl('/')}">${t('app.profile.website')}
         <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
       <button class="pf-link pf-logout" id="pf-logout">
         <svg viewBox="0 0 24 24" stroke="var(--danger)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
@@ -838,7 +838,7 @@ function renderProfile() {
       <div class="pf-lang" id="pf-lang"></div>
       <a class="pf-link" href="/admin">${t('app.admin.fulladmin')}
         <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-      <a class="pf-link" href="/">${t('app.profile.website')}
+      <a class="pf-link" href="${lurl('/')}">${t('app.profile.website')}
         <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
       <button class="pf-link pf-logout" id="pf-logout">
         <svg viewBox="0 0 24 24" stroke="var(--danger)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>
@@ -887,7 +887,7 @@ function renderProfile() {
 
     <a class="pf-link" href="/coach">${t('app.profile.manage')}
       <svg viewBox="0 0 24 24"><path d="M5 12h14M13 6l6 6-6 6"/></svg></a>
-    <a class="pf-link" href="/">${t('app.profile.website')}
+    <a class="pf-link" href="${lurl('/')}">${t('app.profile.website')}
       <svg viewBox="0 0 24 24"><path d="M14 4h6v6M20 4l-9 9M18 14v5a1 1 0 0 1-1 1H5a1 1 0 0 1-1-1V7a1 1 0 0 1 1-1h5"/></svg></a>
     <button class="pf-link pf-logout" id="pf-logout">
       <svg viewBox="0 0 24 24" stroke="var(--danger)"><path d="M9 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h4M16 17l5-5-5-5M21 12H9"/></svg>

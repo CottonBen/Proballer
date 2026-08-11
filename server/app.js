@@ -123,11 +123,17 @@ app.get('/sitemap.xml', (req, res) => {
   res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(seo.sitemapXml());
 });
 
-app.get('/', seoPage(() => seo.renderHome()));
+// Finnish is the canonical site and keeps the bare paths; English mirrors them
+// under /en. Two URLs, one language each, is what lets both get indexed — a
+// crawler never clicks a language toggle, so the old single URL could only ever
+// be indexed as Finnish. hreflang on each page ties the pair together.
+app.get('/', seoPage(() => seo.renderHome('fi')));
+app.get('/en', seoPage(() => seo.renderHome('en')));
 // Public coach profile pages, e.g. /coaches/otto-ukkonen. Each gets its own
 // title, description and Person markup — they used to share one generic head,
 // which made six real pages look like one duplicate to a search engine.
-app.get('/coaches/:slug', seoPage((req) => seo.renderCoachProfile(req.params.slug)));
+app.get('/coaches/:slug', seoPage((req) => seo.renderCoachProfile(req.params.slug, 'fi')));
+app.get('/en/coaches/:slug', seoPage((req) => seo.renderCoachProfile(req.params.slug, 'en')));
 
 // Signed-in pages: noindex, since they are empty shells until a script fills
 // them in for one particular person.

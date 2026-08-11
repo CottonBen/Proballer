@@ -29,7 +29,7 @@ function buildSlides() {
       html: `
         <div>
           <div class="kicker">${t('landing.spotlight')}</div>
-          <h1><a href="/coaches/${encodeURIComponent(c.slug)}" style="color:inherit">${esc(c.name)}</a></h1>
+          <h1><a href="${lurl(`/coaches/${encodeURIComponent(c.slug)}`)}" style="color:inherit">${esc(c.name)}</a></h1>
           <div class="slide-tags">
             ${c.positions.map((p) => `<span class="chip">${esc(posLabel(p))}</span>`).join('')}
             ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join('')}
@@ -37,7 +37,7 @@ function buildSlides() {
           <p class="bio">${esc(coachBio(c))}</p>
           <div style="display:flex;gap:10px;flex-wrap:wrap">
             <button class="btn btn-primary" data-book="${c.id}">${t('landing.bookwith', { name: esc(c.name.split(' ')[0]) })}</button>
-            <a class="btn btn-ghost" href="/coaches/${encodeURIComponent(c.slug)}">${t('landing.fullprofile')}</a>
+            <a class="btn btn-ghost" href="${lurl(`/coaches/${encodeURIComponent(c.slug)}`)}">${t('landing.fullprofile')}</a>
           </div>
         </div>`,
     });
@@ -502,7 +502,7 @@ function buildCoachGrid() {
           ${c.locations.map((l) => `<span class="chip gray">${esc(l)}</span>`).join(' ')}
         </div>
         <p class="bio">${esc(coachBio(c))}</p>
-        <a class="small" href="/coaches/${encodeURIComponent(c.slug)}">${t('landing.fullprofile.arrow')}</a>
+        <a class="small" href="${lurl(`/coaches/${encodeURIComponent(c.slug)}`)}">${t('landing.fullprofile.arrow')}</a>
         <div class="reviews-panel" id="reviews-${c.id}" hidden></div>
         <div class="foot">
           <span>${slidePriceHTML()}</span>

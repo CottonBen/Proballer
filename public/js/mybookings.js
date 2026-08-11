@@ -15,7 +15,7 @@
       html += `<div class="card" style="border-color:var(--lime);margin-bottom:14px">
         🎁 <strong style="color:var(--lime)">${t('mybookings.credit.banner', { count: esc(freeCredits) })}</strong>
         <span class="muted small">${t('mybookings.credit.hint')}</span>
-        <a class="btn btn-primary btn-sm" href="/#coaches" style="margin-left:8px">${t('mybookings.credit.use_now')}</a>
+        <a class="btn btn-primary btn-sm" href="${lurl('/#coaches')}" style="margin-left:8px">${t('mybookings.credit.use_now')}</a>
       </div>`;
     }
     const unread = notifications.filter((n) => !n.read);

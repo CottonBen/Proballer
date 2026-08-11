@@ -31,7 +31,7 @@ function renderProfile(coach, reviewsData) {
           `<img src="${esc(p)}" alt="" data-i="${i}" class="${i === 0 ? 'on' : ''}">`).join('')}</div>` : ''}
       </div>
       <div>
-        <a href="/#coaches" class="small muted">${t('profile.back')}</a>
+        <a href="${lurl('/#coaches')}" class="small muted">${t('profile.back')}</a>
         <div class="kicker" style="color:var(--lime);font-weight:700;letter-spacing:.22em;
           text-transform:uppercase;font-size:.8rem;margin:14px 0 10px">${t('profile.kicker')}</div>
         <h1 style="font-size:clamp(2.2rem,6vw,4rem)">${esc(coach.name)}</h1>
@@ -71,7 +71,7 @@ function renderNotFound() {
     <div style="padding:70px 0;text-align:center">
       <h1 style="font-size:2.4rem">${t('profile.notfound.heading')}</h1>
       <p class="muted">${t('profile.notfound.body')}</p>
-      <a class="btn btn-primary" href="/#coaches">${t('profile.notfound.cta')}</a>
+      <a class="btn btn-primary" href="${lurl('/#coaches')}">${t('profile.notfound.cta')}</a>
     </div>`;
 }
 

@@ -263,6 +263,30 @@ shared link is rendered server-side in [server/seo.js](server/seo.js):
   `/coach`, `/app`, `/login`) — they are empty shells until a script fills them
   in for one person.
 
+### Two languages, two URLs
+
+Finnish keeps the bare paths; English mirrors them under `/en`:
+
+| Finnish | English |
+| --- | --- |
+| `/` | `/en` |
+| `/coaches/otto-ukkonen` | `/en/coaches/otto-ukkonen` |
+
+Both get indexed because each has its own URL, its own `<html lang>`, its own
+title and description, and reciprocal `hreflang` (with `x-default` → Finnish).
+A crawler never clicks a language toggle, so the previous single URL could only
+ever be indexed as Finnish.
+
+On these public pages **the URL decides the language** — a saved preference must
+never render English at a Finnish URL, or the two stop being honest translations
+of each other. The FI/EN toggle therefore navigates between the pair instead of
+reloading. Signed-in pages have no `/en` twin and keep switching in place, which
+is fine: they are `noindex`.
+
+Links to public pages must be built with `I18N.url()` on the client
+(`server/seo.js` does the same for static markup), so an English page never
+links back into the Finnish site.
+
 `SITE_URL` controls the absolute URLs in all of the above. Covered by
 `tests/test-seo.js`.
 

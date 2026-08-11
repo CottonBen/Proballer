@@ -66,8 +66,11 @@ const get = async (p) => {
     check('sitemap served as XML', r.status === 200 && r.type.includes('xml'), r.type);
     check('sitemap lists the homepage', r.body.includes(`<loc>${SITE}/</loc>`));
     const locs = [...r.body.matchAll(/<loc>([^<]+)<\/loc>/g)].map((m) => m[1]);
-    check('sitemap lists every active coach',
-      locs.filter((l) => l.includes('/coaches/')).length >= 4, locs.length);
+    check('sitemap lists every active coach in both languages',
+      locs.filter((l) => l.includes('/coaches/')).length >= 8, locs.length);
+    check('sitemap lists the English homepage', locs.includes(`${SITE}/en`), locs.slice(0, 4));
+    check('sitemap declares hreflang alternates',
+      r.body.includes('xmlns:xhtml=') && r.body.includes('hreflang="x-default"'));
     check('sitemap URLs are absolute', locs.every((l) => l.startsWith(SITE)), locs[0]);
     // A deactivated coach must drop out — the sitemap is built from live data.
     const { DatabaseSync } = require('node:sqlite');
@@ -121,6 +124,54 @@ const get = async (p) => {
     r = await get('/coaches/no-such-coach');
     check('unknown coach slug is noindexed', r.body.includes('content="noindex, nofollow"'));
     check('unknown coach slug has no canonical', !r.body.includes('rel="canonical"'));
+
+    // --- English mirror ------------------------------------------------------
+    // The whole reason /en exists: a crawler never clicks a language toggle, so
+    // a single URL could only ever be indexed as Finnish.
+    const fi = await get('/');
+    const en = await get('/en');
+    check('/en 200s', en.status === 200, en.status);
+    check('/en declares itself English', /<html lang="en"/.test(en.body));
+    check('/ stays Finnish', /<html lang="fi"/.test(fi.body));
+    const enTitle = /<title[^>]*>([^<]*)<\/title>/.exec(en.body)[1];
+    const fiTitle = /<title[^>]*>([^<]*)<\/title>/.exec(fi.body)[1];
+    check('the two homepages have different titles', enTitle !== fiTitle, [fiTitle, enTitle]);
+    check('/en title is actually in English', /football coaching/i.test(enTitle), enTitle);
+    check('/en canonicalises to itself', en.body.includes(`<link rel="canonical" href="${SITE}/en">`));
+    check('/en og:locale is English', en.body.includes('content="en_GB"'));
+
+    // hreflang has to be reciprocal or Google discards the whole cluster.
+    for (const [label, page] of [['fi', fi], ['en', en]]) {
+      check(`${label} homepage points at the Finnish version`,
+        page.body.includes(`hreflang="fi" href="${SITE}/"`));
+      check(`${label} homepage points at the English version`,
+        page.body.includes(`hreflang="en" href="${SITE}/en"`));
+      check(`${label} homepage declares x-default`,
+        page.body.includes(`hreflang="x-default" href="${SITE}/"`));
+    }
+
+    const enCoach = await get(`/en/coaches/${slugs[0].slug}`);
+    check('English coach page 200s', enCoach.status === 200, enCoach.status);
+    check('English coach page canonicalises under /en',
+      enCoach.body.includes(`<link rel="canonical" href="${SITE}/en/coaches/${slugs[0].slug}">`));
+    check('English coach title is in English',
+      /football coach/i.test(/<title[^>]*>([^<]*)<\/title>/.exec(enCoach.body)[1]));
+    const enLd = JSON.parse(/<script type="application\/ld\+json">(.*?)<\/script>/s
+      .exec(enCoach.body)[1].replace(/\\u003c/g, '<'));
+    check('English JSON-LD uses the English job title',
+      enLd.jobTitle === 'Football coach', enLd.jobTitle);
+
+    // An English page must not link back into the Finnish site, or it reads as
+    // a dead end to a crawler and silently switches language for a reader.
+    const enHrefs = [...en.body.matchAll(/href="(\/[^"]*)"/g)].map((m) => m[1]);
+    const leaked = enHrefs.filter((h) => !/^\/en(\/|#|$)/.test(h)
+      && !/^\/(assets|js|styles|api|uploads)/.test(h));
+    check('no English page link falls back to a Finnish URL', leaked.length === 0, leaked);
+    check('English assets are NOT rewritten under /en',
+      enHrefs.some((h) => h === '/styles.css'), enHrefs);
+    // Finnish must be untouched by all of the above.
+    const fiHrefs = [...fi.body.matchAll(/href="(\/[^"]*)"/g)].map((m) => m[1]);
+    check('Finnish page keeps its bare links', fiHrefs.includes('/'), fiHrefs);
 
     // --- private pages -------------------------------------------------------
     for (const p of ['/admin', '/my-bookings', '/chats', '/coach', '/app', '/login']) {
