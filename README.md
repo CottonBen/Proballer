@@ -244,6 +244,28 @@ away on every row.
 
 Set `PAYMENT_MOBILEPAY` to change the receiving number (see [.env.example](.env.example)).
 
+## Search engines (SEO)
+
+The site paints itself with JavaScript, and crawlers and link-preview bots do
+not run scripts. So everything that has to be right in a search result or a
+shared link is rendered server-side in [server/seo.js](server/seo.js):
+
+- **`/robots.txt`** and **`/sitemap.xml`**, both generated. The sitemap is built
+  from the live coach list, so adding or deactivating a coach in the admin
+  updates it with no file to remember.
+- **Per-coach `<head>`** on `/coaches/:slug` — its own title, description,
+  canonical, social card and `Person` markup (including the star rating once a
+  coach has reviews). These six pages previously shared one generic title, which
+  made them look like a single duplicate.
+- **Homepage `SportsActivityLocation` markup** carrying the cities served and
+  live prices from [config.js](config.js), so the two never drift apart.
+- **`noindex`** on every signed-in page (`/admin`, `/my-bookings`, `/chats`,
+  `/coach`, `/app`, `/login`) — they are empty shells until a script fills them
+  in for one person.
+
+`SITE_URL` controls the absolute URLs in all of the above. Covered by
+`tests/test-seo.js`.
+
 ## Configuration
 
 Business rules live in [config.js](config.js): prices, the sale percentage, training

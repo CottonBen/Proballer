@@ -106,6 +106,38 @@ app.get('/admin/financial-model', (req, res) => {
 // get a unique random filename each time, so they are safe to cache for long.
 app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { maxAge: '7d' }));
 
+// Pages whose <head> is finished server-side (server/seo.js): the client script
+// paints the body, but crawlers and link-preview bots never run it, so the
+// title, description, canonical, social card and structured data have to be in
+// the HTML as served.
+const seo = require('./seo');
+const seoPage = (render) => (req, res) => {
+  res.set('Cache-Control', 'no-cache');
+  res.type('html').send(render(req));
+};
+
+app.get('/robots.txt', (req, res) => {
+  res.type('text/plain').set('Cache-Control', 'public, max-age=86400').send(seo.robotsTxt());
+});
+app.get('/sitemap.xml', (req, res) => {
+  res.type('application/xml').set('Cache-Control', 'public, max-age=3600').send(seo.sitemapXml());
+});
+
+app.get('/', seoPage(() => seo.renderHome()));
+// Public coach profile pages, e.g. /coaches/otto-ukkonen. Each gets its own
+// title, description and Person markup — they used to share one generic head,
+// which made six real pages look like one duplicate to a search engine.
+app.get('/coaches/:slug', seoPage((req) => seo.renderCoachProfile(req.params.slug)));
+
+// Signed-in pages: noindex, since they are empty shells until a script fills
+// them in for one particular person.
+app.get('/login', seoPage(() => seo.renderPrivate('login.html', `Kirjaudu sisään — ${config.siteName}`)));
+app.get('/coach', seoPage(() => seo.renderPrivate('coach.html', `Valmentajan kalenteri — ${config.siteName}`)));
+app.get('/app', seoPage(() => seo.renderPrivate('app.html', `Proballers sovellus`)));
+app.get('/chats', seoPage(() => seo.renderPrivate('chats.html', `Viestit — ${config.siteName}`)));
+app.get('/admin', seoPage(() => seo.renderPrivate('admin.html', `Ylläpito — ${config.siteName}`)));
+app.get('/my-bookings', seoPage(() => seo.renderPrivate('my-bookings.html', `Omat varaukset — ${config.siteName}`)));
+
 // Static assets + the pages (kept as clean paths). Code files (html/js/css)
 // use no-cache: the browser keeps a copy but revalidates on every load (a cheap
 // 304 when unchanged), so a deploy is visible immediately instead of visitors
@@ -113,26 +145,15 @@ app.use('/uploads', express.static(path.join(DATA_DIR, 'uploads'), { maxAge: '7d
 const PUBLIC_DIR = path.join(__dirname, '..', 'public');
 app.use(express.static(PUBLIC_DIR, {
   extensions: ['html'],
+  // '/' and the named pages above are rendered by server/seo.js so their <head>
+  // is complete for crawlers; static must not shortcut past them with the raw
+  // file. (Direct hits like /index.html still work and are canonicalised.)
+  index: false,
   setHeaders(res, filePath) {
     res.setHeader('Cache-Control',
       /\.(html|js|css)$/.test(filePath) ? 'no-cache' : 'public, max-age=604800');
   },
 }));
-// sendFile bypasses the static middleware's setHeaders, so set the same
-// no-cache policy here — pages must revalidate after every deploy.
-const page = (file) => (req, res) => {
-  res.set('Cache-Control', 'no-cache');
-  res.sendFile(path.join(PUBLIC_DIR, file));
-};
-app.get('/login', page('login.html'));
-app.get('/coach', page('coach.html'));
-app.get('/app', page('app.html'));   // mobile app for any signed-in user; not signed in -> /login
-app.get('/chats', page('chats.html'));
-app.get('/admin', page('admin.html'));
-app.get('/my-bookings', page('my-bookings.html'));
-// Public coach profile pages, e.g. /coaches/otto-ukkonen (the client script
-// resolves the slug; an unknown slug renders its own not-found state).
-app.get('/coaches/:slug', page('coach-profile.html'));
 
 app.use((req, res) => {
   res.set('Cache-Control', 'no-cache');
