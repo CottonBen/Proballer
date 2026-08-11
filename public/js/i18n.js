@@ -404,9 +404,6 @@ const I18N_DICT = {
 
   // --- payments (MobilePay: invoiced, paid from the customer's own app) ---
   "booking.review.pay_note": { fi: "Vahvistaminen luo laskun koko paketista ({price}). Maksat sen MobilePaylla — treenit avautuvat käyttöön, kun maksu on saapunut.", en: "Confirming issues one invoice for the whole package ({price}). You pay it by MobilePay — the sessions unlock once the payment arrives." },
-  "booking.success.redirecting_title": { fi: "Siirrytään maksuun", en: "Moving to payment" },
-  "booking.success.redirecting": { fi: "Ohjaamme sinut turvalliseen korttimaksuun.", en: "We are taking you to secure card payment." },
-  "booking.success.paybtn": { fi: "Siirry maksuun", en: "Move to payment" },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
 
   // --- MobilePay: the customer pays from their own app, we match by reference ---
@@ -976,7 +973,6 @@ const I18N_DICT = {
   "landing.groups.join": { fi: "Varaa paikka", en: "Book a spot" },
   "landing.groups.perplayer": { fi: "/ pelaaja", en: "/ player" },
   "landing.groups.login_first": { fi: "Kirjaudu ensin sisään varataksesi paikan.", en: "Log in first to book a spot." },
-  "landing.groups.pay_failed": { fi: "Maksun aloitus epäonnistui — paikka odottaa maksua Omat varaukset -sivulla.", en: "Could not start the payment — your spot awaits payment on the My bookings page." },
 
   // --- packages: booking wizard ----------------------------------------------
   "booking.promo.title": { fi: "Alennuskoodi", en: "Discount code" },
