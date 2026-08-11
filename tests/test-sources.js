@@ -4,6 +4,13 @@
 // existing financial records, and the consistency of the report's definitions.
 'use strict';
 
+// Billing details every paying booking now carries (the invoice has to go
+// somewhere — POST /bookings refuses without them).
+const BILLING = {
+  name: 'Testi Maksaja', email: 'lasku@test.local', phone: '+358 40 123 4567',
+  address: 'Testikatu 1 A 2', postcode: '00100', city: 'Helsinki',
+};
+
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -177,7 +184,7 @@ const helsinkiDate = (offset) => new Intl.DateTimeFormat('en-CA',
       "SELECT source FROM users WHERE email = 'phone@test.local'").get().source === 'admin');
 
     // --- revenue attribution through the existing financial records ----------
-    r = await fb.api('POST', '/bookings', { coachId, date: d3, hour: 10, location: 'Helsinki' });
+    r = await fb.api('POST', '/bookings', { billing: BILLING, coachId, date: d3, hour: 10, location: 'Helsinki' });
     check('facebook customer books', r.status === 201, r.data);
     await sendWebhook({ invoice_number: r.data.invoice.number });
     check('facebook invoice paid', db.prepare(

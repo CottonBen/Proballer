@@ -147,10 +147,10 @@ const I18N_DICT = {
   "booking.review.credit_chip": { fi: "ILMAINEN — hyvitys perutusta treenistä", en: "FREE — credit from a cancelled session" },
   "booking.review.sale_chip": { fi: "{saleLabel} −{salePercent}%", en: "{saleLabel} −{salePercent}%" },
   "booking.review.free_note": { fi: "Tämä treeni on ilmainen — treenikertasi käytetään automaattisesti, ja 0,00 €:n lasku on vain omaksi kuitiksesi.", en: "This session is free — your credit is applied automatically and the 0,00 € invoice is just for your records." },
-  "booking.review.invoice_note": { fi: "Vahvistaminen luo laskun ({price}, maksuaikaa 7 päivää){delivery}. Maksutapa on {method} — tilinumero (IBAN) ja viitenumero löytyvät laskulta.", en: "Confirming issues the invoice ({price}, due in 7 days){delivery}. Payment is by {method} — the account number (IBAN) and reference are on the invoice." },
+  "booking.review.invoice_note": { fi: "Vahvistaminen varaa ajan ja luo laskun ({price}){delivery}. Maksat {method}illa vasta varauksen jälkeen — varaus vahvistuu, kun maksu on saapunut.", en: "Confirming reserves the time and issues the invoice ({price}){delivery}. You pay by {method} afterwards — the booking is confirmed once the payment arrives." },
   "booking.review.invoice_note_delivery_email": { fi: ", joka lähetetään sähköpostiisi", en: " to your email" },
   "booking.review.invoice_note_delivery_mybookings": { fi: ", jonka näet Omat varaukset -sivulla", en: ", viewable in My bookings" },
-  "booking.review.payment_method_fallback": { fi: "tilisiirto", en: "bank transfer" },
+  "booking.review.payment_method_fallback": { fi: "MobilePay", en: "MobilePay" },
   "booking.review.confirm_button": { fi: "Vahvista varaus", en: "Confirm booking" },
   "booking.review.confirm_button_busy": { fi: "Varataan…", en: "Booking…" },
   "booking.toast.slot_taken": { fi: "Tuo aika ehdittiin juuri varata — valitsethan toisen ajan.", en: "That time was just taken — please pick another." },
@@ -171,7 +171,7 @@ const I18N_DICT = {
   "booking.success.due_label": { fi: "Eräpäivä", en: "Due" },
   "booking.success.invoice_emailed": { fi: "Lasku on lähetetty sähköpostiisi.", en: "The invoice has been sent to your email." },
   "booking.success.invoice_ready": { fi: "Laskusi on katsottavissa alla.", en: "Your invoice is ready to view below." },
-  "booking.success.payment_note": { fi: "Maksa tilisiirrolla — IBAN ja viitenumero ovat laskulla. Voit avata laskun milloin tahansa sivulta {myBookingsLink}.", en: "Pay by bank transfer — the IBAN and payment reference are on the invoice. You can open it any time from {myBookingsLink}." },
+  "booking.success.payment_note": { fi: "Voit avata laskun milloin tahansa sivulta {myBookingsLink}.", en: "You can open the invoice any time from {myBookingsLink}." },
   "booking.success.view_invoice": { fi: "Näytä lasku", en: "View invoice" },
   "common.nav.my_bookings": { fi: "Omat varaukset", en: "My bookings" },
 
@@ -403,11 +403,10 @@ const I18N_DICT = {
   "booking.review.notes_label": { fi: "Lisätiedot", en: "Notes" },
 
   // --- payments (MobilePay: invoiced, paid from the customer's own app) ---
-  "booking.review.pay_note": { fi: "Vahvistamisen jälkeen siirryt suoraan turvalliseen korttimaksuun ({price}). Varaus on voimassa, kun maksu on suoritettu — saat kuitin sähköpostiisi.", en: "After confirming you go straight to secure card payment ({price}). The booking is final once the payment completes — a receipt lands in your email." },
+  "booking.review.pay_note": { fi: "Vahvistaminen luo laskun koko paketista ({price}). Maksat sen MobilePaylla — treenit avautuvat käyttöön, kun maksu on saapunut.", en: "Confirming issues one invoice for the whole package ({price}). You pay it by MobilePay — the sessions unlock once the payment arrives." },
   "booking.success.redirecting_title": { fi: "Siirrytään maksuun", en: "Moving to payment" },
   "booking.success.redirecting": { fi: "Ohjaamme sinut turvalliseen korttimaksuun.", en: "We are taking you to secure card payment." },
   "booking.success.paybtn": { fi: "Siirry maksuun", en: "Move to payment" },
-  "booking.review.start_payment": { fi: "Aloita maksu", en: "Start payment" },
   "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
 
   // --- MobilePay: the customer pays from their own app, we match by reference ---
@@ -417,6 +416,29 @@ const I18N_DICT = {
   "pay.mp.reference": { fi: "Viite (viestikenttään)", en: "Reference (message field)" },
   "pay.mp.amount": { fi: "Summa", en: "Amount" },
   "pay.mp.awaiting": { fi: "Odottaa maksua", en: "Awaiting payment" },
+
+  // --- billing details asked in the wizard before an invoice is issued ---
+  "booking.billing.title": { fi: "Laskutustiedot", en: "Billing details" },
+  "booking.billing.hint": { fi: "Lähetämme laskun näillä tiedoilla. Maksu tapahtuu MobilePaylla varauksen jälkeen — varaus vahvistuu kun maksu on saapunut.", en: "We send the invoice to these details. Payment is by MobilePay after booking — the booking is confirmed once it arrives." },
+  "booking.billing.edit": { fi: "Muokkaa", en: "Edit" },
+  "booking.billing.name": { fi: "Koko nimi", en: "Full name" },
+  "booking.billing.email": { fi: "Sähköposti", en: "Email" },
+  "booking.billing.phone": { fi: "Puhelin", en: "Phone" },
+  "booking.billing.address": { fi: "Katuosoite", en: "Street address" },
+  "booking.billing.postcode": { fi: "Postinumero", en: "Postal code" },
+  "booking.billing.city": { fi: "Postitoimipaikka", en: "City" },
+  "booking.billing.notes": { fi: "Muut laskutustiedot (esim. Y-tunnus, viite)", en: "Other invoice details (e.g. business ID, reference)" },
+  "booking.billing.missing": { fi: "Täytä tähdellä merkityt kentät, jotta voimme lähettää laskun.", en: "Please fill in the starred fields so we can send the invoice." },
+  "booking.billing.bad_email": { fi: "Tarkista sähköpostiosoite.", en: "Please check the email address." },
+
+  // --- admin: payment state of bookings ---
+  "admin.pay.filter.all": { fi: "Kaikki maksut", en: "All payments" },
+  "admin.pay.filter.pending": { fi: "Odottaa maksua", en: "Awaiting payment" },
+  "admin.pay.filter.paid": { fi: "Maksetut", en: "Paid" },
+  "admin.pay.filter.at_session": { fi: "Maksu paikan päällä", en: "Pays at session" },
+  "admin.pay.summary": { fi: "{count} varausta odottaa maksua — yhteensä {total}.", en: "{count} bookings awaiting payment — {total} in total." },
+  "admin.pay.summary.none": { fi: "Kaikki varaukset on maksettu.", en: "Every booking is paid." },
+  "admin.billing.show": { fi: "Laskutustiedot", en: "Billing details" },
 
   // --- chat ---
   "chat.title": { fi: "Viestit — Proballers Coaching", en: "Chats — Proballers Coaching" },
@@ -1183,6 +1205,10 @@ const I18N_DICT = {
 // Keyed by the EXACT English string the server sends; translated only in FI
 // mode. Patterns (RegExp -> template) handle messages with embedded values.
 const I18N_SERVER_EXACT = {
+  "Please fill in your billing details so we can invoice you.":
+    "Täytä laskutustiedot, jotta voimme lähettää sinulle laskun.",
+  "That billing email does not look right.":
+    "Tarkista laskutuksen sähköpostiosoite.",
   // Discount / promo code validation (server/discounts.js). Shown to customers
   // in the booking wizard and to the admin in the discount panel.
   "You have already used this discount code.": "Olet jo käyttänyt tämän alennuskoodin.",

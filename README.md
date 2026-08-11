@@ -205,7 +205,10 @@ otherwise Gmail silently rewrites the sender back to the login address. `SITE_UR
 
 Nobody pays at checkout. The flow is:
 
-1. The customer picks a session and fills in their billing details.
+1. The customer picks a session and fills in their billing details (name, email,
+   phone, street address, postal code, city, plus any extra invoice reference).
+   The details are remembered on the account, so a returning customer just sees
+   a one-line summary with an **Edit** button.
 2. The booking is created in **pending payment** — the slot is held, but the coach
    is *not* told about it yet and the session is not confirmed.
 3. The invoice is emailed. It carries the MobilePay number, the amount, and the
@@ -218,6 +221,11 @@ until the session starts, whichever comes first; after that it is released, the
 slot reopens and the customer is emailed. Group spots and prepaid packages work
 the same way, using the spot code (`GSU-…`) or package code (`PKG-…`) as the
 reference.
+
+In the admin dashboard, bookings can be filtered by payment state (**awaiting
+payment / paid / pays at session**) on top of the usual status filter, with a
+running total of what is still owed and the customer's invoice address one click
+away on every row.
 
 **Confirming payments — two ways, both idempotent:**
 

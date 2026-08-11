@@ -1,6 +1,13 @@
 // Discount / promo codes: unit tests for the pricing module (scratch DB) plus
 // an E2E pass that boots a real server and redeems a code through the API.
 'use strict';
+
+// Billing details every paying booking now carries (the invoice has to go
+// somewhere — POST /bookings refuses without them).
+const BILLING = {
+  name: 'Testi Maksaja', email: 'lasku@test.local', phone: '+358 40 123 4567',
+  address: 'Testikatu 1 A 2', postcode: '00100', city: 'Helsinki',
+};
 const path = require('node:path');
 const fs = require('node:fs');
 const { spawn } = require('node:child_process');
@@ -209,10 +216,38 @@ function client() {
     const date = helsinkiDate(2);
     const hour = 10;
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, date, hour, new Date().toISOString());
-    r = await cust('POST', '/bookings', { coachId, date, hour, location: 'Helsinki', code: 'welcome10' });
+
+    // Nobody pays at checkout, so an invoice needs somewhere to go: a payable
+    // booking is refused until the billing details are there, and refusing it
+    // must not leave a booking or an invoice behind.
+    r = await cust('POST', '/bookings', { coachId, date, hour, location: 'Helsinki' });
+    check('booking without billing details refused', r.status === 400
+      && /billing details/i.test(r.data.error || ''), r.data);
+    r = await cust('POST', '/bookings', {
+      coachId, date, hour, location: 'Helsinki',
+      billing: { ...BILLING, email: 'not-an-email' },
+    });
+    check('booking with a bad billing email refused', r.status === 400
+      && /billing email/i.test(r.data.error || ''), r.data);
+    check('no booking rows left behind by the refusals',
+      db2.prepare('SELECT COUNT(*) n FROM bookings WHERE customer_id = ?').get(custId).n === 0, null);
+
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date, hour, location: 'Helsinki', code: 'welcome10' });
     check('booking with code accepted', r.status === 201, r.data);
     check('booking total is 40 € − 10 € = 30 € (3000c)', r.data.booking.totalCents === 3000, r.data.booking);
     check('booking reports the code + saving', r.data.booking.discountCode === 'WELCOME10' && r.data.booking.codeDiscountCents === 1000, r.data.booking);
+    {
+      const b = db2.prepare('SELECT * FROM bookings WHERE code = ?').get(r.data.booking.code);
+      check('billing details snapshotted onto the booking',
+        b.billing_name === BILLING.name && b.billing_email === BILLING.email
+        && b.billing_address === BILLING.address && b.billing_postcode === BILLING.postcode
+        && b.billing_city === BILLING.city, b);
+      const u = db2.prepare('SELECT billing_address, billing_postcode, billing_city FROM users WHERE id = ?').get(custId);
+      check('address remembered on the account for next time',
+        u.billing_address === BILLING.address && u.billing_city === BILLING.city, u);
+      check('/me hands the saved address back for the form',
+        (await cust('GET', '/me')).data.billing.address === BILLING.address);
+    }
     const bk = db2.prepare("SELECT id, total_cents, discount_code, code_discount_cents FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1").get(custId);
     check('DB row stores discounted total + code', bk.total_cents === 3000 && bk.discount_code === 'WELCOME10' && bk.code_discount_cents === 1000, bk);
 
@@ -233,12 +268,12 @@ function client() {
     // WELCOME10 now used up (max_uses 1) — reuse blocked
     const date2 = helsinkiDate(3);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, date2, hour, new Date().toISOString());
-    r = await cust('POST', '/bookings', { coachId, date: date2, hour, location: 'Helsinki', code: 'welcome10' });
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date: date2, hour, location: 'Helsinki', code: 'welcome10' });
     check('second use of a max-1 code is rejected', r.status === 400 && /fully used/.test(r.data.error || ''), r.data);
 
     // booking still works with no code — and the price is a flat 40 € with NO
     // automatic sale (price == total, zero sale discount).
-    r = await cust('POST', '/bookings', { coachId, date: date2, hour, location: 'Helsinki' });
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date: date2, hour, location: 'Helsinki' });
     check('plain booking is a flat 40 € — no sale discount',
       r.status === 201 && r.data.booking.totalCents === 4000
       && r.data.booking.priceCents === 4000 && r.data.booking.discountCents === 0, r.data.booking);
@@ -247,7 +282,7 @@ function client() {
     await admin('POST', '/admin/discounts', { code: 'OLD', kind: 'percent', percent: 10, expiresAt: '2020-01-01' });
     const date3 = helsinkiDate(4);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, date3, hour, new Date().toISOString());
-    r = await cust('POST', '/bookings', { coachId, date: date3, hour, location: 'Helsinki', code: 'OLD' });
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date: date3, hour, location: 'Helsinki', code: 'OLD' });
     check('expired code rejected at booking', r.status === 400 && /expired/.test(r.data.error || ''), r.data);
 
     // --- Per-customer cap end-to-end: "first booking only" -------------------
@@ -258,7 +293,7 @@ function client() {
 
     const dA = helsinkiDate(6);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, dA, 11, new Date().toISOString());
-    r = await cust('POST', '/bookings', { coachId, date: dA, hour: 11, location: 'Helsinki', code: 'firstonly' });
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date: dA, hour: 11, location: 'Helsinki', code: 'firstonly' });
     check('customer A books with the 1-per-customer code', r.status === 201 && r.data.booking.discountCode === 'FIRSTONLY', r.data);
     const bkA = db2.prepare("SELECT id FROM bookings WHERE customer_id=? AND discount_code='FIRSTONLY' ORDER BY id DESC LIMIT 1").get(custId);
     // Unpaid it does not count yet — mark it paid so it becomes A's one redemption.
@@ -267,7 +302,7 @@ function client() {
 
     const dA2 = helsinkiDate(7);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, dA2, 11, new Date().toISOString());
-    r = await cust('POST', '/bookings', { coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
     check('same customer is blocked from reusing a 1-per-customer code', r.status === 400 && /already used/.test(r.data.error || ''), r.data);
 
     // A DIFFERENT customer can still redeem the same code (per-customer, not global).
@@ -275,7 +310,7 @@ function client() {
     await cust2('POST', '/auth/signup', { name: 'Toinen', email: 'p2@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
     const v2 = db2.prepare("SELECT code FROM pending_signups WHERE email='p2@test.local'").get().code;
     await cust2('POST', '/auth/verify-signup', { email: 'p2@test.local', code: v2 });
-    r = await cust2('POST', '/bookings', { coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
+    r = await cust2('POST', '/bookings', { billing: BILLING, coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
     check('a different customer can still use the code', r.status === 201 && r.data.booking.discountCode === 'FIRSTONLY', r.data);
 
     // --- Cancellation credit only for GENUINELY PAID bookings ----------------
@@ -291,7 +326,7 @@ function client() {
     const paidCustId = (await paidCust('POST', '/auth/verify-signup', { email: 'paid@test.local', code: pv })).data.user.id;
     const pd = helsinkiDate(8);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, pd, 12, new Date().toISOString());
-    await paidCust('POST', '/bookings', { coachId, date: pd, hour: 12, location: 'Helsinki' });
+    await paidCust('POST', '/bookings', { billing: BILLING, coachId, date: pd, hour: 12, location: 'Helsinki' });
     const paidBid = db2.prepare('SELECT id FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1').get(paidCustId).id;
     const paidInvNum = db2.prepare('SELECT number FROM invoices WHERE booking_id=?').get(paidBid).number;
     await admin('POST', `/admin/invoices/${paidInvNum}/paid`);
@@ -307,7 +342,7 @@ function client() {
     const freeCustId = (await freeCust('POST', '/auth/verify-signup', { email: 'free@test.local', code: fv })).data.user.id;
     const fd = helsinkiDate(9);
     db2.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)').run(coachId, fd, 12, new Date().toISOString());
-    r = await freeCust('POST', '/bookings', { coachId, date: fd, hour: 12, location: 'Helsinki', code: 'free100' });
+    r = await freeCust('POST', '/bookings', { billing: BILLING, coachId, date: fd, hour: 12, location: 'Helsinki', code: 'free100' });
     check('100%-off booking is €0 and not credit-funded', r.data.booking.totalCents === 0 && r.data.booking.creditApplied === false, r.data.booking);
     const freeBid = db2.prepare('SELECT id FROM bookings WHERE customer_id=? ORDER BY id DESC LIMIT 1').get(freeCustId).id;
     check('its invoice is a €0 "paid" receipt (no money moved)',

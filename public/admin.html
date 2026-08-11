@@ -109,9 +109,16 @@
         <button data-s="completed" data-i18n="admin.bookings.filter.completed">Pidetyt</button>
         <button data-s="cancelled" data-i18n="admin.bookings.filter.cancelled">Perutut</button>
         </div>
+        <div class="window-pills" id="payment-filter">
+        <button data-p="" class="on" data-i18n="admin.pay.filter.all">Kaikki maksut</button>
+        <button data-p="pending" data-i18n="admin.pay.filter.pending">Odottaa maksua</button>
+        <button data-p="paid" data-i18n="admin.pay.filter.paid">Maksetut</button>
+        <button data-p="at_session" data-i18n="admin.pay.filter.at_session">Maksu paikan päällä</button>
+        </div>
       </div>
     </div>
     <div class="card" style="overflow-x:auto">
+      <p class="small muted" id="bookings-summary" style="margin:0 0 10px"></p>
       <table class="data" id="bookings-table"></table>
     </div>
 

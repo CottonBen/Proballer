@@ -46,6 +46,17 @@ function readBilling(body, user) {
   };
 }
 
+// What the invoice cannot be issued without. Returns an error message, or null
+// when the details are good enough to bill. Kept in step with BILLING_FIELDS in
+// public/js/booking.js — the client refuses first, this is the real gate.
+function billingGap(b) {
+  for (const key of ['name', 'email', 'phone', 'address', 'postcode', 'city']) {
+    if (!b[key]) return 'Please fill in your billing details so we can invoice you.';
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(b.email)) return 'That billing email does not look right.';
+  return null;
+}
+
 // Remember the address on the account so the billing form comes back
 // pre-filled. Only ever fills blanks in / overwrites with something non-empty.
 function rememberBilling(userId, billing) {
@@ -602,11 +613,19 @@ router.get('/me', (req, res) => {
     'SELECT COUNT(*) n FROM notifications WHERE user_id = ? AND read = 0').get(req.user.id).n;
   // Dual roles: an admin can also have a coach profile (e.g. Kalle, Ben).
   const coachProfile = Boolean(db.prepare('SELECT 1 FROM coaches WHERE user_id = ?').get(req.user.id));
-  const me = db.prepare('SELECT email_verified, area FROM users WHERE id = ?').get(req.user.id);
+  const me = db.prepare(`SELECT email_verified, area, name, email, phone,
+      billing_address, billing_postcode, billing_city FROM users WHERE id = ?`).get(req.user.id);
   res.json({
     user: req.user, freeCredits, unreadNotifications, coachProfile,
     verified: Boolean(me && me.email_verified),
     area: me ? me.area : '',
+    // Billing details remembered from the last booking, so the wizard's form
+    // comes back pre-filled instead of asking for the address every time.
+    billing: me ? {
+      name: me.name || '', email: me.email || '', phone: me.phone || '',
+      address: me.billing_address || '', postcode: me.billing_postcode || '',
+      city: me.billing_city || me.area || '',
+    } : null,
     unreadChats: unreadChatCount(req.user),
   });
 });
@@ -869,8 +888,16 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
 
   // Billing details for the invoice, snapshotted onto the booking: the invoice
   // must keep the address it was issued to even if the customer later edits
-  // their profile.
+  // their profile. Required whenever there is actually an invoice to send —
+  // a free-credit or package-funded session needs no address.
   const billing = readBilling(req.body, req.user);
+  if (pendingPayment || newPkg) {
+    const gap = billingGap(billing);
+    if (gap) {
+      if (newPkg) db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
+      return fail(gap);
+    }
+  }
 
   let bookingId;
   try {
@@ -2450,7 +2477,9 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
            b.total_cents, b.status, b.created_at, b.notes, b.pitch_name,
            c.name AS coach, u.name AS customer, u.email AS customer_email,
            i.number AS invoice_number, i.status AS invoice_status, i.at_session AS invoice_at_session,
-           p.status AS package_status
+           i.pay_by AS pay_by, p.code AS package_code, p.status AS package_status,
+           b.billing_name, b.billing_email, b.billing_phone, b.billing_address,
+           b.billing_postcode, b.billing_city, b.billing_notes
     FROM bookings b
     JOIN coaches c ON c.id = b.coach_id
     JOIN users u ON u.id = b.customer_id

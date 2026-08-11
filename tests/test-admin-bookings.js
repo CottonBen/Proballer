@@ -5,6 +5,13 @@
 // payments confirm through the signed webhook exactly like production.
 'use strict';
 
+// Billing details every paying booking now carries (the invoice has to go
+// somewhere — POST /bookings refuses without them).
+const BILLING = {
+  name: 'Testi Maksaja', email: 'lasku@test.local', phone: '+358 40 123 4567',
+  address: 'Testikatu 1 A 2', postcode: '00100', city: 'Helsinki',
+};
+
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -278,7 +285,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     // rejected for being outside business hours before the 24h rule is tested.
     const soon = hh <= 17 ? { date: helsinkiDate(0), hour: Math.max(hh + 2, 8) } : { date: helsinkiDate(1), hour: 8 };
     addSlot(soon.date, soon.hour);
-    r = await cust('POST', '/bookings', { coachId, date: soon.date, hour: soon.hour, location: 'Helsinki' });
+    r = await cust('POST', '/bookings', { billing: BILLING, coachId, date: soon.date, hour: soon.hour, location: 'Helsinki' });
     check('public booking inside 24 h is rejected', r.status === 400
       && /24 hours in advance/.test(r.data.error), r.data);
     r = await admin('POST', '/admin/bookings', {

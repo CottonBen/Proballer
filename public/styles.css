@@ -501,6 +501,30 @@ table.data tr:hover td { background: rgba(255,255,255,0.025); }
 /* Booked but not paid yet — amber, matching the "outstanding money" colour. */
 .status-pending { background: rgba(247,161,58,0.15); color: #f7a13a; }
 
+/* Billing form in the booking wizard. Two columns on desktop; the wide fields
+   (name, email, address, city, notes) span both. One column on narrow screens. */
+.billing-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+.billing-field { display: flex; flex-direction: column; gap: 3px; }
+.billing-field.wide { grid-column: 1 / -1; }
+.billing-field .input { width: 100%; }
+.billing-field .input.bad { border-color: #ff6b6b; }
+@media (max-width: 520px) {
+  .billing-grid { grid-template-columns: 1fr; }
+  .billing-field.wide { grid-column: auto; }
+}
+
+/* Admin bookings table: the customer's invoice address, folded away. */
+.billing-details { margin-top: 4px; }
+.billing-details summary { cursor: pointer; list-style: none; }
+.billing-details summary::-webkit-details-marker { display: none; }
+.billing-details summary::before { content: '▸ '; }
+.billing-details[open] summary::before { content: '▾ '; }
+.billing-details > div { margin-top: 4px; line-height: 1.5; }
+
 /* "How to pay" panel: shown under anything awaiting a MobilePay payment. */
 .paynote {
   margin-top: 8px;

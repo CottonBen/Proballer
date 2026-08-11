@@ -27,6 +27,8 @@ async function openWizard(coach, site, preset = null) {
   W.pkgInfo = undefined; // fetched once at the review step
   W.code = '';           // promo code the customer typed (validated server-side)
   W.codeInfo = null;     // { code, discountCents, finalCents } once applied
+  W.billing = null;      // invoice details; loaded from the account at review
+  W.billingOpen = false; // form expanded (vs. the one-line summary)
   W.step = 0;
   backdrop().classList.add('open');
   document.body.style.overflow = 'hidden';
@@ -192,6 +194,86 @@ function bindOptCards(field, onChange) {
 }
 
 // --- step 4: review + login + confirm ---------------------------------------
+// --- billing details (invoice address) --------------------------------------
+// Nobody pays at checkout, so the business needs somewhere to send the invoice.
+// The fields below are what an invoice legally needs; everything is remembered
+// on the account, so a returning customer only sees a one-line summary.
+const BILLING_FIELDS = [
+  { key: 'name',     required: true,  wide: true,  type: 'text',  autocomplete: 'name' },
+  { key: 'email',    required: true,  wide: true,  type: 'email', autocomplete: 'email' },
+  { key: 'phone',    required: true,  wide: false, type: 'tel',   autocomplete: 'tel' },
+  { key: 'postcode', required: true,  wide: false, type: 'text',  autocomplete: 'postal-code' },
+  { key: 'address',  required: true,  wide: true,  type: 'text',  autocomplete: 'street-address' },
+  { key: 'city',     required: true,  wide: true,  type: 'text',  autocomplete: 'address-level2' },
+  { key: 'notes',    required: false, wide: true,  type: 'text',  autocomplete: 'off' },
+];
+
+const billingComplete = (b) => Boolean(b) && BILLING_FIELDS
+  .filter((f) => f.required).every((f) => String(b[f.key] || '').trim());
+
+function billingSummary(b) {
+  return [b.name, b.address, [b.postcode, b.city].filter(Boolean).join(' ')]
+    .filter(Boolean).join(' · ');
+}
+
+function renderBillingPanel() {
+  const b = W.billing || {};
+  const label = (k) => t('booking.billing.' + k);
+  if (!W.billingOpen) {
+    return `<div style="margin-top:16px">
+      <div class="small muted" style="text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${t('booking.billing.title')}</div>
+      <div class="review-row" style="border:none">
+        <span class="small">${esc(billingSummary(b))}</span>
+        <button class="btn btn-ghost btn-sm" id="billing-edit">${t('booking.billing.edit')}</button>
+      </div>
+    </div>`;
+  }
+  return `<div style="margin-top:16px">
+    <div class="small muted" style="text-transform:uppercase;letter-spacing:.08em;margin-bottom:6px">${t('booking.billing.title')}</div>
+    <p class="small muted" style="margin:0 0 10px">${t('booking.billing.hint')}</p>
+    <div class="billing-grid">
+      ${BILLING_FIELDS.map((f) => `
+        <label class="billing-field ${f.wide ? 'wide' : ''}">
+          <span class="small muted">${esc(label(f.key))}${f.required ? ' *' : ''}</span>
+          <input class="input" type="${f.type}" data-bill="${f.key}" maxlength="${f.key === 'notes' ? 300 : 120}"
+            autocomplete="${f.autocomplete}" value="${esc(b[f.key] || '')}">
+        </label>`).join('')}
+    </div>
+    <p class="form-error small" id="billing-error" style="margin:8px 0 0"></p>
+  </div>`;
+}
+
+function wireBillingPanel() {
+  const edit = body().querySelector('#billing-edit');
+  if (edit) { edit.addEventListener('click', () => { W.billingOpen = true; renderReview(); }); return; }
+  // Keep W.billing in step with the inputs, so a re-render (package choice,
+  // promo code) never throws away what the customer has typed.
+  body().querySelectorAll('[data-bill]').forEach((el) => {
+    el.addEventListener('input', () => { W.billing[el.dataset.bill] = el.value; });
+  });
+}
+
+// Returns true when the form is good; otherwise marks the gaps and says so.
+function billingValid() {
+  const err = body().querySelector('#billing-error');
+  if (!body().querySelector('[data-bill]')) return billingComplete(W.billing);
+  const missing = BILLING_FIELDS.filter((f) => f.required && !String(W.billing[f.key] || '').trim());
+  body().querySelectorAll('[data-bill]').forEach((el) => el.classList.remove('bad'));
+  for (const f of missing) body().querySelector(`[data-bill="${f.key}"]`).classList.add('bad');
+  if (missing.length) {
+    if (err) err.textContent = t('booking.billing.missing');
+    body().querySelector(`[data-bill="${missing[0].key}"]`).focus();
+    return false;
+  }
+  if (!/^[^@\s]+@[^@\s]+\.[^@\s]+$/.test(String(W.billing.email).trim())) {
+    body().querySelector('[data-bill="email"]').classList.add('bad');
+    if (err) err.textContent = t('booking.billing.bad_email');
+    return false;
+  }
+  if (err) err.textContent = '';
+  return true;
+}
+
 async function renderReview() {
   const p = W.site.pricing;
   const price = p.sessionPrice * 100;
@@ -199,6 +281,14 @@ async function renderReview() {
   let me = { user: null };
   try { me = await API.get('/me'); } catch { /* anonymous */ }
   W.user = me.user;
+  // Billing details come from the account the first time this step renders;
+  // after that W.billing holds whatever the customer typed, so re-rendering
+  // (package choice, promo code) never wipes the form.
+  if (W.billing === null && me.billing) {
+    W.billing = { ...me.billing, notes: '' };
+    // A saved address means nothing left to ask — show the summary, not the form.
+    W.billingOpen = !billingComplete(W.billing);
+  }
   const needsAuth = !W.user || (W.user.role !== 'customer' && W.user.role !== 'admin');
   // Logged in but the email was never confirmed: the code form replaces the
   // login panel (the server refuses unverified bookings anyway).
@@ -268,6 +358,11 @@ async function renderReview() {
         : ''}</p>
     </div>` : '';
 
+  // Billing details — asked only when there is actually an invoice to send.
+  // A free-session credit or an already-paid package needs no address.
+  const needsBilling = !needsAuth && payNowCents > 0;
+  const billingBox = needsBilling ? renderBillingPanel() : '';
+
   body().innerHTML = header(t(STEP_TITLE_KEYS[3])) + `
     <div class="review-row"><span class="muted">${t('booking.review.coach_label')}</span><strong>${esc(W.coach.name)}</strong></div>
     <div class="review-row"><span class="muted">${t('booking.review.time_label')}</span>
@@ -298,6 +393,7 @@ async function renderReview() {
                 method: esc(payMethod),
               }))}</p>
     ${promoBox}
+    ${billingBox}
     <div id="auth-panel"></div>
     <div class="form-error" id="confirm-error"></div>
     <div class="wizard-nav">
@@ -305,6 +401,8 @@ async function renderReview() {
       <button class="btn btn-primary" id="confirm-btn" ${needsAuth || needsVerify ? 'disabled' : ''}>
         ${confirmLabel}</button>
     </div>`;
+
+  if (needsBilling) wireBillingPanel();
 
   body().querySelector('[data-nav="back"]').addEventListener('click', () => {
     W.step = skipLocation() ? 1 : 2;
@@ -342,6 +440,9 @@ async function renderReview() {
 
   body().querySelector('#confirm-btn').addEventListener('click', async (e) => {
     const btn = e.currentTarget;
+    // The invoice has to go somewhere: refuse to book until the form is filled
+    // (the server enforces the same rule).
+    if (needsBilling && !billingValid()) return;
     btn.disabled = true; btn.textContent = t('booking.review.confirm_button_busy');
     try {
       const result = await API.post('/bookings', {
@@ -350,6 +451,7 @@ async function renderReview() {
         notes: W.notes.trim(),
         package: chosenPkg ? chosenPkg.id : undefined,
         code: W.code || undefined, // promo code, re-validated server-side
+        billing: needsBilling ? W.billing : undefined,
         lang: I18N.lang, // the invoice is generated in this language
       });
       W.step = 4;

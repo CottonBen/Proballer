@@ -4,6 +4,7 @@
 let A = null;              // analytics payload
 let CONFIG = null;         // /config payload (positions, cities)
 let WIN = 'd30';           // selected window
+let PAY_FILTER = '';       // bookings payment filter ('' | pending | paid | at_session)
 const WIN_LABEL = {
   d7: t('admin.window.label.d7'), d30: t('admin.window.label.d30'),
   d90: t('admin.window.label.d90'), all: t('admin.window.label.all'),
@@ -26,6 +27,15 @@ const WIN_LABEL = {
     b.addEventListener('click', () => {
       document.querySelectorAll('#booking-filter button').forEach((x) => x.classList.toggle('on', x === b));
       loadBookings(b.dataset.s);
+    }));
+
+  // Payment state (awaiting payment / paid / pay at session) filters the rows
+  // the status filter fetched — it is derived, not a column, so it stays here.
+  document.querySelectorAll('#payment-filter button').forEach((b) =>
+    b.addEventListener('click', () => {
+      document.querySelectorAll('#payment-filter button').forEach((x) => x.classList.toggle('on', x === b));
+      PAY_FILTER = b.dataset.p;
+      loadBookings(currentBookingStatus());
     }));
 
   document.getElementById('cal-close').addEventListener('click', () =>
@@ -879,9 +889,35 @@ async function openCoachCalendar(id) {
 }
 
 // --- bookings table -----------------------------------------------------------
+const currentBookingStatus = () => {
+  const on = document.querySelector('#booking-filter button.on');
+  return on ? on.dataset.s : '';
+};
+
+// Where a booking stands with the money. 'at_session' is the admin's promise
+// that the customer pays on the pitch, so it is never chased as overdue.
+function paymentState(b) {
+  if (b.invoice_status === 'paid') return 'paid';
+  if (b.package_status === 'active') return 'paid';
+  if (b.invoice_at_session && b.invoice_status === 'sent') return 'at_session';
+  if (b.invoice_status === 'sent' || b.package_status === 'pending') return 'pending';
+  return b.invoice_number || b.package_code ? 'paid' : 'none';
+}
+
 async function loadBookings(status) {
-  const rows = await API.get('/admin/bookings' + (status ? `?status=${status}` : ''));
+  const all = await API.get('/admin/bookings' + (status ? `?status=${status}` : ''));
+  const rows = PAY_FILTER ? all.filter((b) => paymentState(b) === PAY_FILTER) : all;
   const tbl = document.getElementById('bookings-table');
+
+  // Standing total of what is still owed, so the owner knows what to chase.
+  const summary = document.getElementById('bookings-summary');
+  if (summary) {
+    const waiting = all.filter((b) => paymentState(b) === 'pending' && b.status !== 'cancelled');
+    const owed = waiting.reduce((sum, b) => sum + b.total_cents, 0);
+    summary.innerHTML = waiting.length
+      ? `⏳ ${t('admin.pay.summary', { count: waiting.length, total: eur(owed) })}`
+      : t('admin.pay.summary.none');
+  }
   const hourSep = I18N.lang === 'fi' ? '.' : ':'; // FI '14.00', EN '14:00'
   tbl.innerHTML = `
     <tr><th>${t('mybookings.table.ref')}</th><th>${t('mybookings.table.when')}</th><th>${t('mybookings.table.coach')}</th><th>${t('admin.table.customer')}</th><th>${t('mybookings.table.session')}</th>
@@ -905,7 +941,10 @@ async function loadBookings(status) {
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>
              <span class="muted small">${esc(t('admin.invoicestatus.' + b.invoice_status))}${
                b.invoice_at_session && b.invoice_status === 'sent'
-                 ? ' · ' + esc(t('admin.invoicestatus.atsession')) : ''}</span>` : '—'}</td>
+                 ? ' · ' + esc(t('admin.invoicestatus.atsession')) : ''}</span>
+             ${paymentState(b) === 'pending' && b.pay_by
+               ? `<br><span class="small muted">⏳ ${esc(payDeadlineLocal(b.pay_by))}</span>` : ''}
+             ${billingCell(b)}` : '—'}</td>
         <td style="white-space:nowrap">
           ${b.status === 'confirmed' ? `
             <button class="btn btn-ghost btn-sm" data-act="completed" data-id="${b.id}"
@@ -955,6 +994,28 @@ async function loadBookings(status) {
       toast(I18N.server(err.message), true);
     }
   }));
+}
+
+// The billing address the customer gave, folded away behind a disclosure so it
+// is there when an invoice has to be raised or a payment chased, without
+// widening the table for the other 95% of the time.
+function billingCell(b) {
+  const lines = [
+    b.billing_name, b.billing_email, b.billing_phone,
+    b.billing_address, [b.billing_postcode, b.billing_city].filter(Boolean).join(' '),
+    b.billing_notes,
+  ].filter(Boolean);
+  if (!lines.length) return '';
+  return `<details class="billing-details">
+    <summary class="small muted">${t('admin.billing.show')}</summary>
+    <div class="small">${lines.map((l) => esc(l)).join('<br>')}</div>
+  </details>`;
+}
+
+// A payment deadline in the admin's local time (short form for the table).
+function payDeadlineLocal(iso) {
+  return new Date(iso).toLocaleString(I18N.lang === 'fi' ? 'fi-FI' : 'en-GB',
+    { day: 'numeric', month: 'numeric', hour: '2-digit', minute: '2-digit' });
 }
 
 // --- create a booking on behalf of a customer ---------------------------------

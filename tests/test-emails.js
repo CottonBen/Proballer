@@ -4,6 +4,13 @@
 // with SMTP disabled (every send lands in email_log as 'smtp-not-configured').
 'use strict';
 
+// Billing details every paying booking now carries (the invoice has to go
+// somewhere — POST /bookings refuses without them).
+const BILLING = {
+  name: 'Testi Maksaja', email: 'lasku@test.local', phone: '+358 40 123 4567',
+  address: 'Testikatu 1 A 2', postcode: '00100', city: 'Helsinki',
+};
+
 const { spawn } = require('node:child_process');
 const fs = require('node:fs');
 const path = require('node:path');
@@ -162,7 +169,7 @@ const day = (offset) => {
     db.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)')
       .run(coachId, tomorrow, 10, new Date().toISOString());
 
-    r = await cust1('POST', '/bookings', {
+    r = await cust1('POST', '/bookings', { billing: BILLING,
       coachId, date: tomorrow, hour: 10, position: 'defenders', focus: 'technical',
       location: 'Helsinki', notes: 'Vasemman jalan syötöt', lang: 'en',
     });
@@ -298,7 +305,7 @@ const day = (offset) => {
     // --- unpaid booking release sends an email ---------------------------------
     db.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)')
       .run(coachId, tomorrow, 12, new Date().toISOString());
-    r = await cust2('POST', '/bookings', {
+    r = await cust2('POST', '/bookings', { billing: BILLING,
       coachId, date: tomorrow, hour: 12, position: 'defenders', focus: 'technical',
       location: 'Helsinki', lang: 'fi',
     });

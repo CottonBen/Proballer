@@ -4,6 +4,13 @@
 // webhook, exactly like production's server-to-server path.
 'use strict';
 
+// Billing details every paying booking now carries (the invoice has to go
+// somewhere — POST /bookings refuses without them).
+const BILLING = {
+  name: 'Testi Maksaja', email: 'lasku@test.local', phone: '+358 40 123 4567',
+  address: 'Testikatu 1 A 2', postcode: '00100', city: 'Helsinki',
+};
+
 const { spawn } = require('node:child_process');
 const path = require('node:path');
 const fs = require('node:fs');
@@ -140,7 +147,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     r = await coach('POST', '/coach/groups', { date: D3, hour: 10, location: 'Helsinki' });
     check('duplicate group slot rejected', r.status === 400, r.status);
 
-    r = await customers[0]('POST', '/bookings', {
+    r = await customers[0]('POST', '/bookings', { billing: BILLING,
       coachId, date: D3, hour: 10, position: 'defenders', focus: 'technical', location: 'Helsinki', lang: 'fi',
     });
     check('1-on-1 on the group hour rejected', r.status === 400
@@ -232,7 +239,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     }
 
     // Wizard: buy a 3-pack together with the first booking.
-    r = await G('POST', '/bookings', {
+    r = await G('POST', '/bookings', { billing: BILLING,
       coachId, date: D3, hour: 12, position: 'defenders', focus: 'technical',
       location: 'Helsinki', package: 'pack3', lang: 'fi',
     });
@@ -266,7 +273,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     check('2 of 3 sessions remain after the first booking', r.data.remaining === 2, r.data);
 
     // Second booking is auto-funded; remaining 1 fires the low-balance email.
-    r = await G('POST', '/bookings', {
+    r = await G('POST', '/bookings', { billing: BILLING,
       coachId, date: D3, hour: 13, position: 'defenders', focus: 'technical', location: 'Helsinki', lang: 'fi',
     });
     check('active package funds the next booking', r.data.package
@@ -277,14 +284,14 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     const B2 = r.data.booking.code;
 
     // Third booking drains it; the fully-used email fires.
-    r = await G('POST', '/bookings', {
+    r = await G('POST', '/bookings', { billing: BILLING,
       coachId, date: D4, hour: 12, position: 'defenders', focus: 'technical', location: 'Helsinki', lang: 'fi',
     });
     check('last package session used', r.data.package && r.data.package.remaining === 0, r.data.package);
     check('"package fully used" email fired', emailCount('package_done') === 1, emailCount('package_done'));
 
     // With the balance at zero the next booking is a normal single (invoice).
-    r = await G('POST', '/bookings', {
+    r = await G('POST', '/bookings', { billing: BILLING,
       coachId, date: D4, hour: 13, position: 'defenders', focus: 'technical', location: 'Helsinki', lang: 'fi',
     });
     check('empty balance falls back to pay-per-session', r.data.package === null
@@ -332,7 +339,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
 
     // Pending-package expiry releases the linked booking…
     const H = customers[6];
-    r = await H('POST', '/bookings', {
+    r = await H('POST', '/bookings', { billing: BILLING,
       coachId, date: D5, hour: 12, position: 'defenders', focus: 'technical',
       location: 'Helsinki', package: 'pack5', lang: 'fi',
     });
@@ -370,7 +377,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     db.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,16,?)')
       .run(coachId, D5, new Date().toISOString());
     // A refresh mid-signup leaves nothing to act with: no session, no account.
-    r = await unv('POST', '/bookings', { coachId, date: D5, hour: 16, location: 'Helsinki', lang: 'fi' });
+    r = await unv('POST', '/bookings', { billing: BILLING, coachId, date: D5, hour: 16, location: 'Helsinki', lang: 'fi' });
     check('pending signup cannot book (not logged in)', r.status === 401, r.status);
     r = await unv('POST', '/auth/verify-signup', { email: 'unverified@test.local', code: '000000' });
     check('wrong code rejected, still no account', r.status === 400
@@ -387,7 +394,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
       "SELECT COUNT(*) n FROM email_log WHERE type = 'verify' AND to_email = 'unverified@test.local'").get().n >= 1, null);
 
     // Booking without position/focus (the new wizard shape) succeeds.
-    r = await unv('POST', '/bookings', { coachId, date: D5, hour: 16, location: 'Helsinki', lang: 'fi' });
+    r = await unv('POST', '/bookings', { billing: BILLING, coachId, date: D5, hour: 16, location: 'Helsinki', lang: 'fi' });
     check('booking without position/focus succeeds', r.status === 201 && r.data.booking.focus === '', r.data.booking);
     const plainCode = r.data.booking.code;
     check('plain booking has an invoice (single flow)', Boolean(r.data.invoice), r.data.invoice);
@@ -484,7 +491,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
       : { date: helsinkiDate(1), hour: 19 };
     db.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)')
       .run(coachId, soon.date, soon.hour, new Date().toISOString());
-    r = await customers[0]('POST', '/bookings', {
+    r = await customers[0]('POST', '/bookings', { billing: BILLING,
       coachId, date: soon.date, hour: soon.hour, location: 'Helsinki', lang: 'fi',
     });
     check('booking under 24 h ahead rejected', r.status === 400
