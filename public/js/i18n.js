@@ -427,7 +427,6 @@ const I18N_DICT = {
   "booking.billing.address": { fi: "Katuosoite", en: "Street address" },
   "booking.billing.postcode": { fi: "Postinumero", en: "Postal code" },
   "booking.billing.city": { fi: "Postitoimipaikka", en: "City" },
-  "booking.billing.notes": { fi: "Muut laskutustiedot (esim. Y-tunnus, viite)", en: "Other invoice details (e.g. business ID, reference)" },
   "booking.billing.missing": { fi: "Täytä tähdellä merkityt kentät, jotta voimme lähettää laskun.", en: "Please fill in the starred fields so we can send the invoice." },
   "booking.billing.bad_email": { fi: "Tarkista sähköpostiosoite.", en: "Please check the email address." },
 

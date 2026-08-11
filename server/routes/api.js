@@ -42,7 +42,6 @@ function readBilling(body, user) {
     address: s(b.address) || saved.billing_address || '',
     postcode: s(b.postcode, 20) || saved.billing_postcode || '',
     city: s(b.city) || saved.billing_city || saved.area || '',
-    notes: s(b.notes, 300),
   };
 }
 
@@ -906,13 +905,13 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
        price_cents, discount_cents, total_cents, credit_applied, notes, package_id,
        discount_code, code_discount_cents, coach_notified, status, created_at,
        billing_name, billing_email, billing_phone, billing_address, billing_postcode,
-       billing_city, billing_notes)
-      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?,?,?,?,?,?,?,?)`)
+       billing_city)
+      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,0,'confirmed',?,?,?,?,?,?,?)`)
       .run(code, req.user.id, coachId, date, hour, location, position, focus ? focus.id : '',
         (focus && focus.online) ? 1 : 0, price, discount, price - discount - promoOffCents, credit ? 1 : 0, notes,
         pkg ? pkg.id : null, promoCode, promoOffCents, nowISO(),
         billing.name, billing.email, billing.phone, billing.address, billing.postcode,
-        billing.city, billing.notes);
+        billing.city);
     bookingId = Number(info.lastInsertRowid);
   } catch (err) {
     if (newPkg) db.prepare('DELETE FROM packages WHERE id = ? AND status = ?').run(newPkg.id, 'pending');
@@ -2479,7 +2478,7 @@ router.get('/admin/bookings', requireRole('admin'), (req, res) => {
            i.number AS invoice_number, i.status AS invoice_status, i.at_session AS invoice_at_session,
            i.pay_by AS pay_by, p.code AS package_code, p.status AS package_status,
            b.billing_name, b.billing_email, b.billing_phone, b.billing_address,
-           b.billing_postcode, b.billing_city, b.billing_notes
+           b.billing_postcode, b.billing_city
     FROM bookings b
     JOIN coaches c ON c.id = b.coach_id
     JOIN users u ON u.id = b.customer_id

@@ -473,7 +473,6 @@ for (const stmt of [
   "ALTER TABLE bookings ADD COLUMN billing_address TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE bookings ADD COLUMN billing_postcode TEXT NOT NULL DEFAULT ''",
   "ALTER TABLE bookings ADD COLUMN billing_city TEXT NOT NULL DEFAULT ''",
-  "ALTER TABLE bookings ADD COLUMN billing_notes TEXT NOT NULL DEFAULT ''",
   // The same details remembered on the ACCOUNT, so the billing form comes back
   // pre-filled next time instead of asking for the address at every booking.
   "ALTER TABLE users ADD COLUMN billing_address TEXT NOT NULL DEFAULT ''",
@@ -487,6 +486,9 @@ for (const stmt of [
   'ALTER TABLE group_signups DROP COLUMN stripe_session_id',
   'ALTER TABLE group_signups DROP COLUMN stripe_payment_intent',
   'ALTER TABLE packages DROP COLUMN stripe_session_id',
+  // Dropped 2026-08: an extra invoice-details field nobody needed (the
+  // customers are parents, not businesses).
+  'ALTER TABLE bookings DROP COLUMN billing_notes',
 ]) {
   try { db.exec(stmt); } catch { /* column already exists, or already dropped */ }
 }

@@ -206,9 +206,9 @@ otherwise Gmail silently rewrites the sender back to the login address. `SITE_UR
 Nobody pays at checkout. The flow is:
 
 1. The customer picks a session and fills in their billing details (name, email,
-   phone, street address, postal code, city, plus any extra invoice reference).
-   The details are remembered on the account, so a returning customer just sees
-   a one-line summary with an **Edit** button.
+   phone, street address, postal code, city). The details are remembered on the
+   account, so a returning customer just sees a one-line summary with an
+   **Edit** button.
 2. The booking is created in **pending payment** — the slot is held, but the coach
    is *not* told about it yet and the session is not confirmed.
 3. The invoice is emailed. It carries the MobilePay number, the amount, and the

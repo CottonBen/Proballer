@@ -205,7 +205,6 @@ const BILLING_FIELDS = [
   { key: 'postcode', required: true,  wide: false, type: 'text',  autocomplete: 'postal-code' },
   { key: 'address',  required: true,  wide: true,  type: 'text',  autocomplete: 'street-address' },
   { key: 'city',     required: true,  wide: true,  type: 'text',  autocomplete: 'address-level2' },
-  { key: 'notes',    required: false, wide: true,  type: 'text',  autocomplete: 'off' },
 ];
 
 const billingComplete = (b) => Boolean(b) && BILLING_FIELDS

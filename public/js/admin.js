@@ -1003,7 +1003,6 @@ function billingCell(b) {
   const lines = [
     b.billing_name, b.billing_email, b.billing_phone,
     b.billing_address, [b.billing_postcode, b.billing_city].filter(Boolean).join(' '),
-    b.billing_notes,
   ].filter(Boolean);
   if (!lines.length) return '';
   return `<details class="billing-details">
