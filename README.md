@@ -216,11 +216,21 @@ Nobody pays at checkout. The flow is:
 4. When the money arrives the invoice flips to paid, a receipt is emailed, the
    booking is confirmed and the coach is notified.
 
-An unpaid booking holds its slot for `payment.holdHours` (72 h by default) or
-until the session starts, whichever comes first; after that it is released, the
-slot reopens and the customer is emailed. Group spots and prepaid packages work
-the same way, using the spot code (`GSU-…`) or package code (`PKG-…`) as the
-reference.
+**A booking is never cancelled for non-payment.** Booking and paying are two
+separate timelines: the session is a commitment to turn up, so the coach is told
+immediately and the slot is held, while the money stays owed until it is
+settled — before the session, at the pitch, or weeks afterwards. An unpaid
+session that has already happened keeps its Pay panel and still shows as owed.
+
+The unpaid ones surface as a debtor list: the admin dashboard's **awaiting
+payment** filter, with a running total. Only a person can cancel a booking —
+that is a decision, not a timeout. Prepaid packages behave the same way: an
+unpaid one simply grants no sessions until it is paid.
+
+The one exception is **group spots**, which are capacity-limited — an unpaid
+hold there would block a real player out of a four-person session, so those
+still expire after `payment.holdHours`. Group spots and packages use the spot
+code (`GSU-…`) or package code (`PKG-…`) as the payment reference.
 
 In the admin dashboard, bookings can be filtered by payment state (**awaiting
 payment / paid / pays at session**) on top of the usual status filter, with a

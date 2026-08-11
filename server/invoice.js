@@ -166,27 +166,22 @@ function createInvoiceForBooking(bookingId, opts = {}) {
   const prepaid = flow === 'paid';
   const linkFlow = flow === 'link';
   const atSession = flow === 'at_session';
-  // The normal flow: the customer is invoiced and the slot is held for
-  // config.payment.holdHours (and always only until the session starts —
-  // expireUnpaidBookings enforces both). pay_by stays NULL on free,
-  // already-paid and pay-at-session invoices so the sweep never touches them.
+  // The normal flow: the customer is invoiced and can pay whenever — before
+  // the session, at the pitch, or afterwards. Nothing expires, so no invoice
+  // carries a release deadline; pay_by survives only for the admin pay-link,
+  // where it bounds how long that emailed link stays live.
   const billFlow = !flow && !free;
-  const holdHours = config.payment.holdHours || 72;
   const linkDue = helsinkiDateOffset(Math.ceil((config.adminPayLinkHours || 72) / 24));
-  const billDue = helsinkiDateOffset(Math.ceil(holdHours / 24));
   const inv = {
     number: nextInvoiceNumber(),
     issued_at: nowISO(),
     due_date: prepaid ? helsinkiDateOffset(0)
       : atSession ? booking.date
       : linkFlow ? (booking.date < linkDue ? booking.date : linkDue)
-      // Due when the hold runs out, or at the session if that comes first —
-      // the date printed on the invoice is the date the money is actually
-      // needed by, never later than the deadline the booking is released on.
-      : billFlow ? (booking.date < billDue ? booking.date : billDue)
+      // Ordinary payment terms. It is a due date, not a deadline: nothing is
+      // cancelled if it passes, the amount simply stays owed.
       : helsinkiDateOffset(config.invoice.dueDays),
-    pay_by: billFlow ? new Date(Date.now() + holdHours * 3600000).toISOString()
-      : linkFlow ? new Date(Date.now() + (config.adminPayLinkHours || 72) * 3600000).toISOString()
+    pay_by: linkFlow ? new Date(Date.now() + (config.adminPayLinkHours || 72) * 3600000).toISOString()
       : null,
     pay_token: linkFlow ? require('node:crypto').randomBytes(16).toString('hex') : null,
   };

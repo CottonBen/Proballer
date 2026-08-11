@@ -136,41 +136,16 @@ function afterPackageChange(packageId) {
   }
 }
 
-// Unpaid purchases past their deadline: void the package and release any
-// wizard booking that was waiting on it (slot free again, customer emailed —
-// same promise as the unpaid-invoice sweep).
-function expirePendingPackages() {
-  const now = new Date().toISOString();
-  const hki = helsinkiNow();
-  const stale = db.prepare(`SELECT id FROM packages
-    WHERE status = 'pending' AND pay_by IS NOT NULL AND pay_by < ?`).all(now);
-  for (const p of stale) {
-    db.prepare("UPDATE packages SET status = 'void' WHERE id = ?").run(p.id);
-    releaseLinkedBookings(p.id);
-  }
-  // A package-funded booking whose session starts before the payment deadline:
-  // release it at session start, exactly like the invoice sweep does.
-  const early = db.prepare(`SELECT DISTINCT b.package_id AS id FROM bookings b
-    JOIN packages p ON p.id = b.package_id
-    WHERE p.status = 'pending' AND b.status = 'confirmed' AND b.coach_notified = 0
-      AND (b.date < ? OR (b.date = ? AND b.hour <= ?))`).all(hki.date, hki.date, hki.hour);
-  for (const p of early) releaseLinkedBookings(p.id, true);
-}
-
-function releaseLinkedBookings(packageId, onlyStarted = false) {
-  const hki = helsinkiNow();
-  const rows = db.prepare(`SELECT id, date, hour, customer_id FROM bookings
-    WHERE package_id = ? AND status = 'confirmed' AND coach_notified = 0`).all(packageId);
-  for (const b of rows) {
-    if (onlyStarted && !(b.date < hki.date || (b.date === hki.date && b.hour <= hki.hour))) continue;
-    db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(b.id);
-    db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-      .run(b.customer_id, 'Your booking was cancelled because the payment was not completed. '
-        + 'The slot is open again — you are welcome to book a new time.', nowISO());
-    try { require('./emails').sendBookingReleasedEmail(b.id); }
-    catch (e) { console.error('[emails] release:', e.message); }
-  }
-}
+// Prepaid packages are never voided for non-payment either, and their linked
+// booking is never released. An unpaid package simply grants no sessions: the
+// booking it was bought alongside stays confirmed, shows as unpaid (the
+// customer dashboard and the admin debtor list both read package_status), and
+// is settled whenever the customer pays — the package code is the reference.
+//
+// Releasing it used to be necessary because the purchase had a deadline. Now
+// that payment has no deadline, cancelling the session would take away a slot
+// the customer still intends to use and still owes for.
+function expirePendingPackages() { /* nothing expires — see the note above */ }
 
 module.exports = {
   packageOptions, findOption, perSessionCents,

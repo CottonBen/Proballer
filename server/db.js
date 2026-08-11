@@ -555,7 +555,7 @@ function autoCompleteBookings() {
   // at its deadline, never silently "completed" into a free session. The same
   // goes for unpaid group spots and package purchases (lazy requires — those
   // modules require this file).
-  expireUnpaidBookings();
+  remindUnpaidBookings();
   try { require('./packages').expirePendingPackages(); } catch (e) { console.error('[packages] sweep:', e.message); }
   try { require('./groups').expirePendingSignups(); } catch (e) { console.error('[groups] sweep:', e.message); }
   const { date, hour } = helsinkiNow();
@@ -574,66 +574,38 @@ function autoCompleteBookings() {
   `).run(date, date, hour);
 }
 
-// A booking is PENDING PAYMENT until the money arrives: each invoice carries a
-// pay_by deadline (config.payment.holdHours after booking) — and the session
-// start is always a deadline too, whichever comes first. The booking holds the
-// slot until then; this sweep releases it once the deadline passes: cancelled,
-// invoice voided, slot free again, customer AND coach notified. Only invoices
-// with a pay_by deadline are eligible — pay-at-session and free bookings
-// (pay_by NULL) are never touched.
-function expireUnpaidBookings() {
-  const now = new Date().toISOString();
+// Unpaid bookings are NEVER cancelled for non-payment. A booking is a
+// commitment to turn up; the money is a separate ledger that stays open until
+// it is settled — before the session, at the pitch, or weeks afterwards.
+// Payment can be made at any time, so there is no deadline to enforce and
+// nothing here to release. (An admin or coach can still cancel a booking
+// deliberately; that is a decision, not a timeout.)
+//
+// What used to live here — cancel at pay_by, cancel at session start — is gone
+// on purpose. It made "pay after the session" impossible: the booking was
+// already void before the session happened.
+//
+// The unpaid ones surface instead as a debtor list: the admin dashboard's
+// "awaiting payment" filter, with a running total of what is owed.
+function remindUnpaidBookings() {
   const hki = helsinkiNow();
-
-  // One-shot "24 h left" reminder — only meaningful when the hold outlasts a
-  // day. With a shorter window the reminder would fire almost immediately.
-  if (config.payment.holdHours >= 24) {
-    const remindBefore = new Date(Date.now() + 24 * 3600000).toISOString();
-    const toRemind = db.prepare(`
-      SELECT b.code, b.date, b.hour, b.customer_id, i.id AS invoice_id
-      FROM bookings b JOIN invoices i ON i.booking_id = b.id
-      WHERE b.status = 'confirmed' AND i.status = 'sent'
-        AND i.pay_by IS NOT NULL AND i.pay_by > ? AND i.pay_by <= ?
-        AND i.pay_reminder_sent = 0`).all(now, remindBefore);
-    for (const r of toRemind) {
-      db.prepare('UPDATE invoices SET pay_reminder_sent = 1 WHERE id = ?').run(r.invoice_id);
-      db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-        .run(r.customer_id, `Payment reminder: your booking ${r.code} on ${r.date} at `
-          + `${String(r.hour).padStart(2, '0')}:00 is still unpaid — pay it on the My bookings page `
-          + 'within 24 hours (before the session, if it is sooner) or the booking will be cancelled automatically.', nowISO());
-    }
-  }
-
-  // Release: the payment window has passed, or the session is about to start.
-  const stale = db.prepare(`
-    SELECT b.id, b.code, b.date, b.hour, b.customer_id, b.coach_id, b.coach_notified,
-           i.number AS invoice_number
+  // A gentle nudge the day AFTER a session that is still unpaid. Not a threat
+  // — nothing is going to be cancelled — just a reminder that it is owed, sent
+  // once per booking (pay_reminder_sent is the one-shot flag).
+  const yesterday = helsinkiDateOffset(-1);
+  const owing = db.prepare(`
+    SELECT b.code, b.date, b.hour, b.customer_id, i.id AS invoice_id
     FROM bookings b JOIN invoices i ON i.booking_id = b.id
-    WHERE b.status = 'confirmed' AND b.total_cents > 0
-      AND i.status = 'sent' AND i.pay_by IS NOT NULL
-      AND (i.pay_by < ? OR b.date < ? OR (b.date = ? AND b.hour <= ?))`)
-    .all(now, hki.date, hki.date, hki.hour);
-  for (const s of stale) {
-    db.prepare("UPDATE bookings SET status = 'cancelled' WHERE id = ?").run(s.id);
-    db.prepare("UPDATE invoices SET status = 'void' WHERE number = ?").run(s.invoice_number);
+    WHERE b.status IN ('confirmed', 'completed') AND b.total_cents > 0
+      AND i.status = 'sent' AND i.at_session = 0
+      AND i.pay_reminder_sent = 0
+      AND (b.date < ? OR (b.date = ? AND b.hour + 1 <= ?))`)
+    .all(yesterday, yesterday, hki.hour);
+  for (const r of owing) {
+    db.prepare('UPDATE invoices SET pay_reminder_sent = 1 WHERE id = ?').run(r.invoice_id);
     db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-      .run(s.customer_id, 'Your booking was cancelled because the payment was not completed. '
-        + 'The slot is open again — you are welcome to book a new time.', nowISO());
-    // Email too: an interrupted checkout must never be mistaken for a
-    // confirmed session. (Lazy require — emails.js itself requires this file.)
-    try { require('./emails').sendBookingReleasedEmail(s.id); }
-    catch (e) { console.error('[emails] release:', e.message); }
-    // Coaches only hear about announced bookings — one that was never sent to
-    // them (unpaid card booking) also vanishes silently.
-    if (s.coach_notified) {
-      const coachUser = db.prepare('SELECT user_id FROM coaches WHERE id = ?').get(s.coach_id);
-      if (coachUser && coachUser.user_id) {
-        db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
-          .run(coachUser.user_id, `Booking ${s.code} on ${s.date} at `
-            + `${String(s.hour).padStart(2, '0')}:00 was released because the payment `
-            + 'was not completed. The slot is open again.', nowISO());
-      }
-    }
+      .run(r.customer_id, `Your session ${r.code} on ${r.date} is still unpaid. `
+        + 'You can pay it any time from the My bookings page.', nowISO());
   }
 }
 

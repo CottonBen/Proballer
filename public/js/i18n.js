@@ -404,7 +404,8 @@ const I18N_DICT = {
 
   // --- payments (MobilePay: invoiced, paid from the customer's own app) ---
   "booking.review.pay_note": { fi: "Vahvistaminen luo laskun koko paketista ({price}). Maksat sen MobilePaylla — treenit avautuvat käyttöön, kun maksu on saapunut.", en: "Confirming issues one invoice for the whole package ({price}). You pay it by MobilePay — the sessions unlock once the payment arrives." },
-  "pay.deadline": { fi: "Maksa viimeistään {deadline}, tai varaus peruuntuu", en: "Pay by {deadline} or the booking is cancelled" },
+  "pay.deadline": { fi: "Maksa viimeistään {deadline}", en: "Please pay by {deadline}" },
+  "pay.anytime": { fi: "Voit maksaa milloin tahansa — treeni on varattu.", en: "You can pay whenever suits you — the session is booked." },
 
   // --- MobilePay: the customer pays from their own app, we match by reference ---
   "pay.mp.how": { fi: "Näin maksat", en: "How to pay" },

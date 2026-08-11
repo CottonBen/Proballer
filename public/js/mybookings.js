@@ -62,11 +62,11 @@
           b.pitch_name ? `<br><span class="small muted">📍 ${esc(b.pitch_name)}</span>` : ''}</td>
         <td>${eur(b.total_cents)}</td>
         <td>${(() => { const k = bookingStatusKey(b);
-          return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`; })()}</td>
+          return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`
+            + (bookingUnpaid(b) ? `<br><span class="status-tag status-pending" style="margin-top:4px">${t('pay.mp.awaiting')}</span>` : ''); })()}</td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>${
-              b.invoice_status === 'sent' && b.total_cents > 0
-                ? mobilePayNote(pay, b.invoice_number, b.total_cents, b.pay_by) : ''
+              bookingUnpaid(b) ? mobilePayNote(pay, b.invoice_number, b.total_cents, b.pay_by) : ''
             }` : '—'}</td>
       </tr>`).join('');
 })().catch((e) => toast(I18N.server(e.message), true));

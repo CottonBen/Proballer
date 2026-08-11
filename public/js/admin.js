@@ -936,7 +936,8 @@ async function loadBookings(status) {
         })()}</td>
         <td>${eur(b.total_cents)}</td>
         <td>${(() => { const k = bookingStatusKey(b);
-          return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`; })()}</td>
+          return `<span class="status-tag status-${esc(k)}">${esc(t('common.status.' + k))}</span>`
+            + (paymentState(b) === 'pending' ? `<br><span class="status-tag status-pending" style="margin-top:4px">${t('pay.mp.awaiting')}</span>` : ''); })()}</td>
         <td>${b.invoice_number
           ? `<a href="/api/invoices/${encodeURIComponent(b.invoice_number)}" target="_blank">${esc(b.invoice_number)}</a>
              <span class="muted small">${esc(t('admin.invoicestatus.' + b.invoice_status))}${

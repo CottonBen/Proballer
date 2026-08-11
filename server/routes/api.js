@@ -299,14 +299,10 @@ function reactivateBooking(booking) {
   // Restore the invoice to whatever it was before the void (paid stays paid).
   db.prepare("UPDATE invoices SET status = COALESCE(prev_status, 'sent'), prev_status = NULL WHERE booking_id = ? AND status = 'void'")
     .run(booking.id);
-  // A reactivated unpaid invoice gets a FRESH payment window — its old deadline
-  // has usually passed, and without this the unpaid-booking sweep would
-  // release the booking again on the very next request. MAX() so a deadline
-  // still in the future (e.g. an admin pay-link's 72 h window after a quick
-  // cancel/reactivate) is never SHORTENED.
-  db.prepare(`UPDATE invoices SET pay_by = MAX(pay_by, ?), pay_reminder_sent = 0
-    WHERE booking_id = ? AND status = 'sent' AND pay_by IS NOT NULL`)
-    .run(new Date(Date.now() + (config.payment.holdHours || 72) * 3600000).toISOString(), booking.id);
+  // Clear the one-shot unpaid nudge so a reactivated booking can be reminded
+  // about again. Nothing expires, so there is no deadline to re-arm.
+  db.prepare("UPDATE invoices SET pay_reminder_sent = 0 WHERE booking_id = ? AND status = 'sent'")
+    .run(booking.id);
   const coach = db.prepare('SELECT name FROM coaches WHERE id = ?').get(booking.coach_id);
   db.prepare('INSERT INTO notifications (user_id, message, created_at) VALUES (?,?,?)')
     .run(booking.customer_id,
@@ -877,12 +873,10 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   // Optional free-text wishes for the coach, asked in the wizard's notes step.
   const notes = String(req.body?.notes || '').trim().slice(0, 500);
 
-  // UNPAID bookings are NOT announced to the coach yet: no alert, no chat, and
-  // the coach endpoints hide the row. The announcement (server/notify.js)
-  // fires when the payment confirms. Free-credit and active-package bookings
-  // have nothing pending, so the coach hears immediately; a booking waiting on
-  // a NEW package purchase is announced when that payment confirms
-  // (packages.markPackagePaid).
+  // Whether money is still owed. It does NOT gate anything about the session
+  // any more: a booking is a commitment to turn up, so the coach is told at
+  // once and the slot is held regardless. Payment is a separate ledger that
+  // stays open until it is settled — see remindUnpaidBookings() in db.js.
   const pendingPayment = !pkg && price - discount - promoOffCents > 0;
 
   // Billing details for the invoice, snapshotted onto the booking: the invoice
@@ -934,10 +928,11 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
   recordEvent(req, 'booking_completed', { coachId, code });
   sheets.scheduleSync();
 
-  // No payment pending -> announce now. A booking awaiting payment announces
-  // from the payment path instead (MobilePay webhook / admin mark-paid);
-  // new-package bookings when the package payment confirms.
-  if (!pendingPayment && !newPkg) announceBookingToCoach(bookingId);
+  // The coach hears NOW, whether or not the money has arrived — they have a
+  // session to plan, a pitch to pick and a player to message. (Withholding it
+  // until payment used to mean a coach never heard about a session that was
+  // going ahead anyway.)
+  announceBookingToCoach(bookingId);
   // The balance moved — maybe the "1 left" / "all used" notice is due.
   if (fundingPkg) packages.afterPackageChange(fundingPkg.id);
 
@@ -954,7 +949,6 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
       method: config.payment.method,
       mobilepay: config.payment.mobilepay,
       reference: invoice ? invoice.number : (newPkg ? newPkg.code : null),
-      holdHours: config.payment.holdHours,
     },
     billing,
     booking: {

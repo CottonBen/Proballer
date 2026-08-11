@@ -261,8 +261,8 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     const PKG1 = r.data.package.code;
     const B1 = r.data.booking.code;
     let bRow = db.prepare('SELECT * FROM bookings WHERE code = ?').get(B1);
-    check('booking waits unannounced for the package payment',
-      bRow.status === 'confirmed' && bRow.coach_notified === 0, bRow);
+    check('the coach is told about a package booking at once too',
+      bRow.status === 'confirmed' && bRow.coach_notified === 1, bRow);
     check('per-session value on the booking (114/3 = 38 €)', bRow.total_cents === 3800, bRow.total_cents);
 
     // A package booking carries NO invoice, so the only way the UI can tell it
@@ -367,7 +367,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     check('activating it adds its 8 sessions to the balance',
       (await G('GET', '/my-package')).data.remaining === balanceBefore + 8, balanceBefore);
 
-    // Pending-package expiry releases the linked booking…
+    // An unpaid package purchase, bought alongside a booking.
     const H = customers[6];
     r = await H('POST', '/bookings', { billing: BILLING,
       coachId, date: D5, hour: 12, position: 'defenders', focus: 'technical',
@@ -375,16 +375,21 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     });
     const PKG2 = r.data.package.code;
     const B3 = r.data.booking.code;
+    // An unpaid package is never voided and never takes its booking with it:
+    // payment has no deadline, so cancelling the session would remove a slot
+    // the customer still intends to use and still owes for. It simply grants
+    // no sessions until it is paid.
     db.prepare("UPDATE packages SET pay_by = '2000-01-01T00:00:00Z' WHERE code = ?").run(PKG2);
-    await G('GET', '/my-package'); // trigger sweeps
-    check('unpaid package voided by the sweep', db.prepare(
-      'SELECT status FROM packages WHERE code = ?').get(PKG2).status === 'void', null);
-    check('its booking released + customer emailed', db.prepare(
-      'SELECT status FROM bookings WHERE code = ?').get(B3).status === 'cancelled'
-      && emailCount('release') >= 1, null);
+    await H('GET', '/my-package'); // would have triggered the old sweep
+    check('an unpaid package is NOT voided', db.prepare(
+      'SELECT status FROM packages WHERE code = ?').get(PKG2).status === 'pending', null);
+    check('its booking stands, and no release email goes out', db.prepare(
+      'SELECT status FROM bookings WHERE code = ?').get(B3).status === 'confirmed'
+      && emailCount('release') === 0, emailCount('release'));
+    check('a pending package still grants no sessions',
+      (await H('GET', '/my-package')).data.packages.find((p) => p.code === PKG2).remaining === 0);
 
-    // …but a payment landing after the void still activates the package and
-    // restores the booking (the slot is still free).
+    // Paying it activates the package and the linked session is covered.
     await sendWebhook({ package: PKG2 }, 'pi_pkg2');
     check('late payment reactivates the package', db.prepare(
       'SELECT status FROM packages WHERE code = ?').get(PKG2).status === 'active', null);

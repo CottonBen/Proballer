@@ -394,15 +394,18 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     const expInv = db.prepare('SELECT * FROM invoices WHERE number = ?').get(r.data.invoice.number);
     db.prepare("UPDATE invoices SET pay_by = ? WHERE id = ?")
       .run(new Date(Date.now() - 60000).toISOString(), expInv.id);
-    await admin('GET', '/admin/bookings'); // triggers the sweep
+    await admin('GET', '/admin/bookings'); // would have triggered the old sweep
     const expAfter = db.prepare(`SELECT i.status AS inv, b.status AS bk FROM invoices i
       JOIN bookings b ON b.id = i.booking_id WHERE i.id = ?`).get(expInv.id);
-    check('unpaid link booking released at its deadline',
-      expAfter.inv === 'void' && expAfter.bk === 'cancelled', expAfter);
-    check('release email sent', emailCount('release') === sweepMailBefore + 1);
+    // An admin-created booking is a commitment like any other: a stale pay_by
+    // does not cancel it, and the emailed link keeps working so the customer
+    // can still settle up whenever they get to it.
+    check('an overdue link booking is NOT released',
+      expAfter.inv === 'sent' && expAfter.bk === 'confirmed', expAfter);
+    check('no release email sent', emailCount('release') === sweepMailBefore);
     pg = await page(`/api/pay/${expInv.pay_token}`);
-    check('pay link after release → gone page', pg.status === 410
-      && pg.text.includes('ei ole enää voimassa'), pg.status);
+    check('the pay link still works after its date has passed',
+      pg.status === 200 && pg.text.includes(expInv.number), pg.status);
 
     // --- review fixes: search, reactivate window, past-session pendings ------
     db.prepare(`INSERT INTO users (email, password_hash, name, role, email_verified, created_at)

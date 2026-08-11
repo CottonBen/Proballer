@@ -176,11 +176,16 @@ const day = (offset) => {
     check('card booking created', r.status === 201, r);
     const code = r.data.booking.code;
     const invoiceNumber = r.data.invoice.number;
-    check('card booking has a pay_by deadline', Boolean(r.data.invoice.payBy), r.data.invoice);
+    // Payment has no deadline: the money is a separate ledger that stays open
+    // until it is settled, so an unpaid booking is never released.
+    check('unpaid booking carries NO release deadline', r.data.invoice.payBy === null, r.data.invoice);
     let bRow = db.prepare('SELECT * FROM bookings WHERE code = ?').get(code);
-    check('card booking hidden from coach before payment', bRow.coach_notified === 0, bRow.coach_notified);
-    check('no booking-confirmation email before payment',
-      !db.prepare("SELECT 1 FROM email_log WHERE type = 'booking' AND booking_code = ?").get(code));
+    // The session is going ahead whether or not the money has arrived, so the
+    // coach has to hear immediately — they have a pitch to pick and a player
+    // to message.
+    check('coach is told at once, paid or not', bRow.coach_notified === 1, bRow.coach_notified);
+    check('booking-confirmation email sent at once',
+      Boolean(db.prepare("SELECT 1 FROM email_log WHERE type = 'booking' AND booking_code = ?").get(code)));
 
     // --- payment confirms -> announce + booking email + receipt --------------
     const wh = await sendWebhook({
@@ -314,10 +319,13 @@ const day = (offset) => {
     db.prepare(`UPDATE invoices SET pay_by = ? WHERE number = ?`)
       .run(new Date(Date.now() - 60000).toISOString(), r.data.invoice.number);
     await admin('GET', '/admin/analytics'); // triggers the sweep
-    check('unpaid booking was released',
-      db.prepare('SELECT status FROM bookings WHERE code = ?').get(relCode).status === 'cancelled');
-    check('release email logged to the customer',
-      Boolean(db.prepare("SELECT 1 FROM email_log WHERE type = 'release' AND booking_code = ? AND to_email = 'kunde2@test.local'").get(relCode)));
+    check('an unpaid booking is NOT cancelled, however old the invoice',
+      db.prepare('SELECT status FROM bookings WHERE code = ?').get(relCode).status === 'confirmed');
+    check('and no release email is sent',
+      !db.prepare("SELECT 1 FROM email_log WHERE type = 'release' AND booking_code = ?").get(relCode));
+    check('it stays owed on the invoice',
+      db.prepare(`SELECT i.status FROM invoices i JOIN bookings b ON b.id = i.booking_id
+        WHERE b.code = ?`).get(relCode).status === 'sent');
 
     // --- admin hard-delete of a booking ---------------------------------------
     const delBooking = db.prepare('SELECT * FROM bookings WHERE code = ?').get(code);

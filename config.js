@@ -84,9 +84,11 @@ module.exports = {
     // Blank (the default) = MobilePay only.
     iban: process.env.PAYMENT_IBAN || '',
     referenceHint: 'Use the invoice number as the message/reference',
-    // How long an unpaid booking holds its slot before the sweep releases it.
-    // The session start is always a deadline too, whichever comes first. The
-    // customer gets a "24 h left to pay" reminder when this exceeds 24 h.
+    // 1-on-1 bookings are NEVER cancelled for non-payment — the money is a
+    // separate ledger that stays open until it is settled. This window only
+    // still bounds the capacity-limited purchases (a group spot, a prepaid
+    // package), where an unpaid hold would block a real player or sit on
+    // sessions nobody can use.
     holdHours: 72,
   },
 

@@ -210,8 +210,15 @@ function fmtDate(iso) {
 // columns at all (e.g. the coach's own session list) fall back to the raw
 // status untouched.
 function bookingStatusKey(b) {
-  if (b.status !== 'confirmed') return b.status;
-  const unpaidInvoice = b.invoice_status === 'sent';
-  const unpaidPackage = b.package_status === 'pending';
-  return unpaidInvoice || unpaidPackage ? 'pending' : 'confirmed';
+  return b.status;
+}
+
+// Whether money is still owed on a booking. Kept SEPARATE from the status
+// above on purpose: the session is confirmed and going ahead either way, and
+// telling someone their booking is "pending" when the coach is already coming
+// would be untrue. Payment has its own timeline and can be settled whenever.
+function bookingUnpaid(b) {
+  if (b.status === 'cancelled') return false;
+  if (!b.total_cents) return false;
+  return b.invoice_status === 'sent' || b.package_status === 'pending';
 }
