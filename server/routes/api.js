@@ -212,6 +212,26 @@ function slotHasEnded(date, hour) {
 //  - a €0 booking (100%-off code, or otherwise free) cancelled -> no credit:
 //    its invoice is stamped 'paid' as a zero receipt, but no money changed
 //    hands, so `amount_cents > 0` is what makes "paid" mean "paid for".
+// Cancel a booking and settle up with the customer.
+//
+// A free-session credit is COMPENSATION for a session someone paid for and did
+// not get. It is therefore granted only when real money was actually taken:
+//
+//   - unpaid booking      -> no credit. They were never charged, so cancelling
+//                            costs them nothing. Without this, a customer could
+//                            book, never pay, get cancelled, and walk away with
+//                            a free session — and since bookings no longer
+//                            expire, cancelling the unpaid ones is routine.
+//   - 0 € booking         -> no credit. A 100 %-off code leaves an invoice
+//                            marked paid for nothing; `amount_cents > 0` is
+//                            what stops that reading as proof of payment.
+//   - unpaid package      -> no credit. Same reasoning; a package-funded
+//                            booking has no invoice at all, so wasPaid is false.
+//   - free-session booking-> the credit goes BACK, rather than a new one being
+//                            minted (see credit_applied below).
+//   - genuinely paid      -> one credit, and never a duplicate.
+//
+// tests/test-cancel-credit.js locks every one of those cases down.
 function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
   const wasPaid = Boolean(db.prepare(
     "SELECT 1 FROM invoices WHERE booking_id = ? AND status = 'paid' AND amount_cents > 0").get(booking.id));
