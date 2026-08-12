@@ -73,9 +73,43 @@ async function get(p) {
     check("today's revenue counts the completed session (40 €)", b.today.revenueCents === 4000, b.today.revenueCents);
     check('month revenue includes it', b.month.revenueCents === 4000, b.month.revenueCents);
 
+    // --- cancellations made today -------------------------------------------
+    // Reported by WHEN THEY WERE CANCELLED, not by session date: a coach
+    // dropping next week's session is today's news. A coach cancelling and the
+    // office cancelling must be distinguishable — the coach ones are the point.
+    const soon = helsinkiDate(4);
+    const mkCancelled = (code, hour, by, cancelledAt) => db.prepare(`INSERT INTO bookings
+      (code,customer_id,coach_id,date,hour,location,position,focus,price_cents,discount_cents,
+       total_cents,status,created_at,cancelled_at,cancelled_by)
+      VALUES (?,?,?,?,?,'Helsinki','','',4000,0,4000,'cancelled',?,?,?)`)
+      .run(code, uid, cid, soon, hour, now, cancelledAt, by);
+    mkCancelled('PBF-CX1', 9, 'coach', now);
+    mkCancelled('PBF-CX2', 10, 'team', now);
+    // Cancelled a week ago — must NOT appear in today's brief.
+    mkCancelled('PBF-CX3', 11, 'coach', new Date(Date.now() - 7 * 86400000).toISOString());
+
+    const c = (await get(`/api/brief?token=${TOKEN}`)).body;
+    const codes = c.today.cancellations.map((x) => x.code);
+    check("today's cancellations are listed", codes.includes('PBF-CX1') && codes.includes('PBF-CX2'), codes);
+    check('an older cancellation is not', !codes.includes('PBF-CX3'), codes);
+    const coachOne = c.today.cancellations.find((x) => x.code === 'PBF-CX1');
+    check('a coach cancellation is tagged as such', coachOne.by === 'coach', coachOne);
+    check('an office cancellation is tagged separately',
+      c.today.cancellations.find((x) => x.code === 'PBF-CX2').by === 'team');
+    check('it carries the session date, not the cancellation date',
+      coachOne.sessionDate === soon, coachOne.sessionDate);
+    check('and how much notice was given', coachOne.noticeDays === 4, coachOne.noticeDays);
+    check('coach cancellations are counted for the attention list',
+      c.attention.coachCancellations === 1, c.attention);
+    // A cancelled booking must not leak into the day's session list.
+    check('cancellations stay out of the sessions list',
+      !c.today.sessions.some((x) => x.code.startsWith('PBF-CX')), c.today.sessions);
+
     // --- HTML ---
     const h = await get(`/api/brief?token=${TOKEN}&format=html`);
     check('?format=html returns HTML', h.status === 200 && /kooste/i.test(h.body) && /<html/i.test(h.body));
+    check('the HTML names the coach cancellation', /valmentaja/i.test(h.body) && h.body.includes('PBF-CX1') === false
+      && /valmentajan perumaa/i.test(h.body), 'coach cancellation block missing');
 
     // --- email ---
     const e = await get(`/api/brief?token=${TOKEN}&send=1`);

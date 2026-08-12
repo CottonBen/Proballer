@@ -175,6 +175,13 @@ dashboard. A logged-in admin can also open the dashboard on demand at **`/api/ad
 puller. (Note: a scheduled *cloud* agent can't be used to fetch it — that sandbox blocks
 outbound requests to the site — which is why the app sends it itself.)
 
+Cancellations made **today** get their own section, keyed on when the booking
+was cancelled rather than the session date — a coach dropping next week's
+session is today's news. Each row names the coach, the customer, the session
+date and how much notice was given, and says whether the **coach** or the
+office cancelled it. Coach cancellations are also counted in the "Huomioitavaa"
+list, since those are the ones worth following up.
+
 ## Email invoices for real
 
 Set SMTP credentials from any provider (Brevo has a free tier; Gmail works with an

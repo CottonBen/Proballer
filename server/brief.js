@@ -33,6 +33,17 @@ function buildBrief() {
     FROM group_sessions g JOIN coaches c ON c.id = g.coach_id
     WHERE g.demo = 0 AND g.date = ? AND g.status != 'cancelled' ORDER BY g.hour, g.id`).all(today);
 
+  // Cancellations made TODAY (by when they were cancelled, not the session
+  // date) — a coach dropping next week's session is today's news. The session
+  // date is carried along so the brief can say how much notice was given.
+  const cancelledToday = db.prepare(`
+    SELECT b.code, b.date, b.hour, b.location, b.total_cents, b.cancelled_by,
+           c.name AS coach, u.name AS customer
+    FROM bookings b JOIN coaches c ON c.id = b.coach_id JOIN users u ON u.id = b.customer_id
+    WHERE b.demo = 0 AND b.status = 'cancelled' AND b.cancelled_at IS NOT NULL
+      AND date(b.cancelled_at) = ?
+    ORDER BY b.cancelled_at DESC`).all(today);
+
   const revToday = one("SELECT COALESCE(SUM(total_cents),0) c FROM bookings WHERE demo=0 AND status='completed' AND date=?", today).c;
   const revMonth = one("SELECT COALESCE(SUM(total_cents),0) c FROM bookings WHERE demo=0 AND status='completed' AND date>=? AND date<=?", monthStart, today).c;
   const completedMonth = one("SELECT COUNT(*) n FROM bookings WHERE demo=0 AND status='completed' AND date>=? AND date<=?", monthStart, today).n;
@@ -59,10 +70,24 @@ function buildBrief() {
       sessions: sessionsToday.map((s) => ({ time: hhmm(s.hour), coach: s.coach, customer: s.customer, location: s.location, code: s.code, status: s.status })),
       groups: groupsToday.map((g) => ({ time: hhmm(g.hour), coach: g.coach, location: g.location, players: g.players, capacity: g.capacity, code: g.code })),
       revenueCents: revToday, newCustomers, newLeads,
+      cancellations: cancelledToday.map((x) => ({
+        code: x.code, coach: x.coach, customer: x.customer, location: x.location,
+        sessionDate: x.date, time: hhmm(x.hour), amountCents: x.total_cents,
+        by: x.cancelled_by || 'team',
+        // Notice given, in whole days: negative means the session had passed.
+        noticeDays: Math.round(
+          (Date.parse(x.date + 'T00:00:00Z') - Date.parse(today + 'T00:00:00Z')) / 86400000),
+      })),
     },
     month: { revenueCents: revMonth, sessionsCompleted: completedMonth },
     upcoming7: { sessions: upcoming, groups: upcomingGroups },
-    attention: { unpaidInvoices: unpaid.n, unpaidCents: unpaid.c, atSessionUnpaid: atSession, openLeads, lowPackages },
+    attention: {
+      unpaidInvoices: unpaid.n, unpaidCents: unpaid.c, atSessionUnpaid: atSession,
+      openLeads, lowPackages,
+      // Coach cancellations are the ones worth chasing: a coach dropping a
+      // session costs a customer their slot and the business the revenue.
+      coachCancellations: cancelledToday.filter((x) => x.cancelled_by === 'coach').length,
+    },
   };
 }
 
@@ -80,7 +105,22 @@ function renderBriefHTML(b) {
     : '<tr><td colspan="4" style="padding:8px 10px;color:#6b7280">Ei 1-on-1-treenejä tänään.</td></tr>';
   const groupRows = b.today.groups.map((g) => `<tr><td style="padding:4px 10px">${esc(g.time)}</td><td style="padding:4px 10px">${esc(g.coach)}</td>
         <td style="padding:4px 10px">${esc(g.location)}</td><td style="padding:4px 10px;color:#6b7280">${g.players}/${g.capacity} pelaajaa</td></tr>`).join('');
+  // Cancellations get their own block: the coach ones are the point of it, so
+  // they are named explicitly and the notice given is spelled out.
+  const cancels = b.today.cancellations || [];
+  const byCoach = cancels.filter((c) => c.by === 'coach');
+  const notice = (d) => (d > 1 ? `${d} pv päästä` : d === 1 ? 'huomenna' : d === 0 ? 'TÄNÄÄN' : 'mennyt');
+  const cancelRows = cancels.map((c) => `<tr>
+      <td style="padding:4px 10px">${esc(c.time)}</td>
+      <td style="padding:4px 10px">${esc(c.coach)}</td>
+      <td style="padding:4px 10px">${esc(c.customer)}</td>
+      <td style="padding:4px 10px;color:#6b7280">${esc(c.sessionDate)} · ${esc(notice(c.noticeDays))}</td>
+      <td style="padding:4px 10px;font-weight:600;color:${c.by === 'coach' ? '#b3261e' : '#6b7280'}">${
+        c.by === 'coach' ? 'valmentaja' : 'toimisto'}</td>
+    </tr>`).join('');
+
   const attn = [];
+  if (b.attention.coachCancellations) attn.push(`${b.attention.coachCancellations} valmentajan perumaa treeniä tänään`);
   if (b.attention.unpaidInvoices) attn.push(`${b.attention.unpaidInvoices} maksamatonta laskua (${eur(b.attention.unpaidCents)})${b.attention.atSessionUnpaid ? `, joista ${b.attention.atSessionUnpaid} maksetaan treenillä` : ''}`);
   if (b.attention.openLeads) attn.push(`${b.attention.openLeads} avointa liidiä / yhteydenottoa`);
   if (b.attention.lowPackages) attn.push(`${b.attention.lowPackages} pakettia, joissa 1 treeni jäljellä`);
@@ -103,6 +143,12 @@ function renderBriefHTML(b) {
     <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:14px">
       ${sessionRows}${groupRows}
     </table>
+
+    ${cancels.length ? `<h2 style="font-size:15px;margin:22px 0 6px">Tänään peruttu${
+      byCoach.length ? ` — ${byCoach.length} valmentajan perumaa` : ''}</h2>
+    <table style="width:100%;border-collapse:collapse;background:#fff;border-radius:10px;overflow:hidden;font-size:14px">
+      ${cancelRows}
+    </table>` : ''}
 
     <h2 style="font-size:15px;margin:22px 0 6px">Seuraavat 7 päivää</h2>
     <p style="margin:0;font-size:14px">${b.upcoming7.sessions} varattua 1-on-1-treeniä · ${b.upcoming7.groups} avointa ryhmätreeniä</p>

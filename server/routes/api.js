@@ -235,7 +235,10 @@ function slotHasEnded(date, hour) {
 function cancelWithCredit(booking, actorKey /* 'coach' | 'team' */) {
   const wasPaid = Boolean(db.prepare(
     "SELECT 1 FROM invoices WHERE booking_id = ? AND status = 'paid' AND amount_cents > 0").get(booking.id));
-  db.prepare("UPDATE bookings SET status = 'cancelled', completed_at = NULL WHERE id = ?").run(booking.id);
+  // Stamp who did it and when, so the daily brief can report the day's
+  // cancellations and say whether a coach or the office dropped the session.
+  db.prepare(`UPDATE bookings SET status = 'cancelled', completed_at = NULL,
+    cancelled_at = ?, cancelled_by = ? WHERE id = ?`).run(nowISO(), actorKey, booking.id);
   // Remember the pre-void invoice status so reactivation can restore paid vs sent.
   db.prepare("UPDATE invoices SET prev_status = status, status = 'void' WHERE booking_id = ? AND status != 'void'")
     .run(booking.id);
@@ -310,7 +313,8 @@ function reactivateBooking(booking) {
     }
   }
 
-  db.prepare("UPDATE bookings SET status = 'confirmed', completed_at = NULL WHERE id = ?").run(booking.id);
+  db.prepare(`UPDATE bookings SET status = 'confirmed', completed_at = NULL,
+    cancelled_at = NULL, cancelled_by = NULL WHERE id = ?`).run(booking.id);
   // The pitch may have been claimed by another session while this one was cancelled.
   if (booking.pitch_id && db.prepare(`SELECT 1 FROM bookings WHERE pitch_id = ? AND date = ? AND hour = ?
       AND status != 'cancelled' AND id != ?`).get(booking.pitch_id, booking.date, booking.hour, booking.id)) {

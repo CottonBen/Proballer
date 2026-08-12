@@ -459,6 +459,13 @@ for (const stmt of [
   // customer may redeem this code. NULL = unlimited (every pre-existing code).
   // Set to 1 for a "first booking only" promotion.
   'ALTER TABLE discounts ADD COLUMN max_per_customer INTEGER',
+  // Who cancelled a booking and when. There was no record of either: a
+  // cancelled booking looked the same whoever did it, and carried no timestamp,
+  // so "which sessions did a coach drop today" was unanswerable. cancelled_at
+  // is a UTC ISO stamp; cancelled_by is 'coach' | 'team' ('team' covers the
+  // admin dashboard). Both stay NULL on bookings cancelled before this existed.
+  'ALTER TABLE bookings ADD COLUMN cancelled_at TEXT',
+  'ALTER TABLE bookings ADD COLUMN cancelled_by TEXT',
   // Last time this account was active on the site (any authenticated request),
   // stamped by server/auth.js and shown in the admin CRM. NULL until the
   // account's first request after this column was added.
