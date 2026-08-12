@@ -130,6 +130,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     // One pre-existing verified customer.
     const cust = client();
     r = await cust('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Vanha Asiakas', email: 'vanha@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi',
     });
     const code0 = db.prepare("SELECT code FROM pending_signups WHERE email = 'vanha@test.local'").get().code;

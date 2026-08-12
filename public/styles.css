@@ -737,3 +737,31 @@ body.theme-green::before {
 .pkg-card.popular { border-color: var(--lime); }
 .pkg-card.popular .pkg-tag, .pkg-card.elite .pkg-tag { color: var(--ink); background: var(--lime); border-color: var(--lime); }
 .pkg-card .pkg-price { font-size: 1.7rem; font-weight: 800; }
+
+/* --- privacy policy page ------------------------------------------------- */
+.privacy { max-width: 46rem; padding-bottom: 60px; }
+.privacy h1 { margin-bottom: 4px; }
+.privacy-lede { font-size: 1.05rem; line-height: 1.7; margin: 14px 0 8px; }
+.privacy h2 { font-size: 1.15rem; margin: 30px 0 8px; }
+.privacy p, .privacy li { line-height: 1.7; }
+.privacy ul { padding-left: 20px; }
+.privacy li { margin-bottom: 6px; }
+.privacy code {
+  background: rgba(255,255,255,0.07); padding: 1px 6px; border-radius: 5px; font-size: .9em;
+}
+/* Shown while the controller's legal details are still placeholders. */
+.privacy-draft {
+  border: 1px solid rgba(247,161,58,0.5); background: rgba(247,161,58,0.1);
+  border-radius: 10px; padding: 12px 14px; margin: 16px 0; line-height: 1.6;
+}
+
+/* The age/guardian confirmation at signup — a checkbox beside its label, not
+   the stacked label+input the other .f fields use. */
+.agecheck {
+  display: flex; align-items: flex-start; gap: 9px;
+  font-size: .88rem; line-height: 1.45; margin-bottom: 12px;
+}
+.agecheck input { margin-top: 3px; flex: none; }
+
+/* Account deletion sits apart from the rest of the page on purpose. */
+.danger-card { border-color: rgba(255,107,107,0.45); }

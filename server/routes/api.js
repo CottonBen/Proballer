@@ -480,6 +480,12 @@ router.post('/auth/signup', loginThrottle, (req, res) => {
     return res.status(400).json({ error: 'That phone number does not look right.' });
   }
   if (!config.locations.includes(area)) return res.status(400).json({ error: 'Please pick your home area.' });
+  // GDPR Art. 8: in Finland a 13-year-old can consent for themselves, younger
+  // players need a guardian. Our age groups start at 7, so the account holder
+  // confirms one or the other before an account exists at all.
+  if (req.body?.ageConfirmed !== true) {
+    return res.status(400).json({ error: 'Please confirm you are 13 or older, or that a parent or guardian agrees.' });
+  }
   if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
@@ -525,10 +531,11 @@ router.post('/auth/verify-signup', loginThrottle, (req, res) => {
     return res.status(409).json({ error: 'An account with this email already exists — try logging in.' });
   }
   const info = db.prepare(`INSERT INTO users
-      (email, password_hash, name, role, lang, phone, area, email_verified, created_at, source)
-    VALUES (?,?,?,?,?,?,?,1,?,?)`)
+      (email, password_hash, name, role, lang, phone, area, email_verified, created_at, source,
+       age_confirmed_at)
+    VALUES (?,?,?,?,?,?,?,1,?,?,?)`)
     .run(email, pending.password_hash, pending.name, 'customer', pending.lang,
-      pending.phone, pending.area, nowISO(), pending.source || '');
+      pending.phone, pending.area, nowISO(), pending.source || '', nowISO());
   db.prepare('DELETE FROM pending_signups WHERE id = ?').run(pending.id);
   const userId = Number(info.lastInsertRowid);
   createSession(res, userId);
@@ -995,6 +1002,32 @@ router.post('/bookings', requireRole('customer', 'admin'), async (req, res) => {
         : null,
     } : null,
   });
+});
+
+// Delete your own account (GDPR Art. 17). Everything that identifies you goes
+// at once — name, email, phone, address, messages, notes, reviews. The invoice
+// rows survive without your details because bookkeeping law requires them for
+// the statutory period; server/privacy.js does the actual scrubbing.
+router.post('/me/delete', requireRole('customer'), (req, res) => {
+  // Deleting is irreversible, so make the caller mean it: the client sends
+  // back the account's own email address to confirm.
+  const typed = String(req.body?.confirmEmail || '').trim().toLowerCase();
+  if (typed !== String(req.user.email).toLowerCase()) {
+    return res.status(400).json({ error: 'Type your email address to confirm.' });
+  }
+  // An upcoming session someone is expecting to coach must not silently
+  // vanish; ask them to cancel it first so the coach is told properly.
+  const upcoming = db.prepare(`SELECT COUNT(*) n FROM bookings
+    WHERE customer_id = ? AND status = 'confirmed'`).get(req.user.id).n;
+  if (upcoming) {
+    return res.status(409).json({
+      error: 'You still have upcoming sessions. Cancel them, or contact us, before deleting your account.',
+    });
+  }
+  const done = require('../privacy').anonymiseCustomer(req.user.id);
+  if (!done) return res.status(409).json({ error: 'This account is already deleted.' });
+  destroySession(req, res);
+  res.json({ ok: true });
 });
 
 router.get('/my-bookings', requireRole('customer', 'admin'), (req, res) => {

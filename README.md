@@ -307,6 +307,37 @@ links back into the Finnish site.
 `SITE_URL` controls the absolute URLs in all of the above. Covered by
 `tests/test-seo.js`.
 
+## Privacy policy (`/privacy`, `/en/privacy`)
+
+Generated from what the app actually does — [server/privacy.js](server/privacy.js)
+reads the retention periods, processors and cookie names out of
+[config.js](config.js) and the real code, so the policy cannot quietly drift
+away from the system it describes.
+
+**Before it goes live**, fill in `config.privacy`: `legalName`, `businessId`
+(Y-tunnus) and `address`. While any is still `TODO:` the page shows a draft
+warning instead of passing itself off as finished. Bump `privacy.updated`
+whenever the wording changes.
+
+Three things the policy promises, and where they are enforced:
+
+- **Age confirmation.** Signup requires "I am 13 or older, or my guardian has
+  agreed" — Finland's digital-consent age is 13 and the age groups start at 7.
+  Stored as `users.age_confirmed_at`.
+- **Health data.** Injuries written into the booking notes are special-category
+  data (GDPR Art. 9). The wizard says who can see it; the notes never enter the
+  Google Sheets export.
+- **Self-serve deletion.** *My bookings* → delete. It **anonymises** rather than
+  deletes: name, email, phone, address, chat, notes and reviews go at once, and
+  the invoices survive without personal details because bookkeeping law requires
+  `privacy.invoiceYears`. Refused while sessions are still upcoming, so a coach
+  is never left with a session whose customer has vanished.
+
+Covered by `tests/test-privacy.js`. **Not legal advice** — it is an accurate
+description of the system in plain language, which is the part a lawyer cannot
+write for you. Have someone qualified read it, particularly the children's and
+health sections.
+
 ## Configuration
 
 Business rules live in [config.js](config.js): prices, the sale percentage, training

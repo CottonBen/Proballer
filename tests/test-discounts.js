@@ -200,7 +200,7 @@ function client() {
 
     // customer signs up + verifies
     const cust = client();
-    await cust('POST', '/auth/signup', { name: 'Pelaaja', email: 'p@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    await cust('POST', '/auth/signup', { ageConfirmed: true, name: 'Pelaaja', email: 'p@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
     const vcode = db2.prepare("SELECT code FROM pending_signups WHERE email='p@test.local'").get().code;
     r = await cust('POST', '/auth/verify-signup', { email: 'p@test.local', code: vcode });
     check('customer verified', r.status === 200, r.data);
@@ -307,7 +307,7 @@ function client() {
 
     // A DIFFERENT customer can still redeem the same code (per-customer, not global).
     const cust2 = client();
-    await cust2('POST', '/auth/signup', { name: 'Toinen', email: 'p2@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    await cust2('POST', '/auth/signup', { ageConfirmed: true, name: 'Toinen', email: 'p2@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
     const v2 = db2.prepare("SELECT code FROM pending_signups WHERE email='p2@test.local'").get().code;
     await cust2('POST', '/auth/verify-signup', { email: 'p2@test.local', code: v2 });
     r = await cust2('POST', '/bookings', { billing: BILLING, coachId, date: dA2, hour: 11, location: 'Helsinki', code: 'firstonly' });
@@ -321,7 +321,7 @@ function client() {
 
     // (a) genuinely PAID booking cancelled -> one goodwill credit (unchanged path).
     const paidCust = client();
-    await paidCust('POST', '/auth/signup', { name: 'Maksaja', email: 'paid@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    await paidCust('POST', '/auth/signup', { ageConfirmed: true, name: 'Maksaja', email: 'paid@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
     const pv = db2.prepare("SELECT code FROM pending_signups WHERE email='paid@test.local'").get().code;
     const paidCustId = (await paidCust('POST', '/auth/verify-signup', { email: 'paid@test.local', code: pv })).data.user.id;
     const pd = helsinkiDate(8);
@@ -337,7 +337,7 @@ function client() {
 
     // (b) €0 (100%-off) booking cancelled -> NO credit (the bug fix).
     const freeCust = client();
-    await freeCust('POST', '/auth/signup', { name: 'Ilmainen', email: 'free@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+    await freeCust('POST', '/auth/signup', { ageConfirmed: true, name: 'Ilmainen', email: 'free@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi' });
     const fv = db2.prepare("SELECT code FROM pending_signups WHERE email='free@test.local'").get().code;
     const freeCustId = (await freeCust('POST', '/auth/verify-signup', { email: 'free@test.local', code: fv })).data.user.id;
     const fd = helsinkiDate(9);

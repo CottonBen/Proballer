@@ -459,6 +459,15 @@ for (const stmt of [
   // customer may redeem this code. NULL = unlimited (every pre-existing code).
   // Set to 1 for a "first booking only" promotion.
   'ALTER TABLE discounts ADD COLUMN max_per_customer INTEGER',
+  // GDPR Art. 8: under-13s cannot consent for themselves in Finland, and our
+  // age groups start at 7. Signup asks the account holder to confirm they are
+  // 13+ or have a guardian's agreement; this records that they did, and when.
+  // NULL = an account created before the confirmation existed.
+  'ALTER TABLE users ADD COLUMN age_confirmed_at TEXT',
+  // Set when a customer deletes their own account. The row survives in
+  // anonymised form because invoices must be kept for the statutory
+  // bookkeeping period — see server/privacy.js.
+  'ALTER TABLE users ADD COLUMN anonymised_at TEXT',
   // Who cancelled a booking and when. There was no record of either: a
   // cancelled booking looked the same whoever did it, and carried no timestamp,
   // so "which sessions did a coach drop today" was unanswerable. cancelled_at

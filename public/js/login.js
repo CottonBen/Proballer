@@ -21,6 +21,7 @@ function safeNext(raw) {
     document.getElementById('f-name').hidden = mode === 'login';
     document.getElementById('f-area').hidden = mode === 'login';
     document.getElementById('f-phone').hidden = mode === 'login';
+    document.getElementById('f-age').hidden = mode === 'login';
     document.getElementById('submit-btn').textContent = mode === 'login' ? t('login.action.login') : t('login.action.signup');
   }));
 
@@ -36,6 +37,7 @@ function safeNext(raw) {
         payload.name = fd.get('name');
         payload.phone = String(fd.get('phone') || '').trim();
         payload.area = String(fd.get('area') || '');
+        payload.ageConfirmed = Boolean(fd.get('ageConfirmed'));
       }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       // A signup is NOT an account yet — the emailed code creates it.

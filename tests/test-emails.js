@@ -115,6 +115,7 @@ const day = (offset) => {
     // --- signup: phone validation + storage + welcome email ------------------
     const anon = client();
     let r = await anon('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Testi Asiakas', email: 'kunde1@test.local', password: 'Password1!',
       phone: 'not-a-phone!!', area: 'Helsinki', lang: 'en',
     });
@@ -122,6 +123,7 @@ const day = (offset) => {
 
     const cust1 = client();
     r = await cust1('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Testi Asiakas', email: 'kunde1@test.local', password: 'Password1!',
       phone: '+358 40 123 4567', area: 'Helsinki', lang: 'en',
     });
@@ -153,6 +155,7 @@ const day = (offset) => {
 
     const cust2 = client();
     r = await cust2('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Toinen Asiakas', email: 'kunde2@test.local', password: 'Password1!', area: 'Espoo', lang: 'fi',
     });
     check('signup without phone succeeds', r.status === 200, r);

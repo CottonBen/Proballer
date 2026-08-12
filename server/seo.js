@@ -30,6 +30,12 @@ const SITE = config.siteUrl;
 // switching language in the browser: they are noindex, so nothing is lost.
 const LANGS = ['fi', 'en'];
 
+// The public pages that exist once per language. Everything else (assets, the
+// API, the signed-in pages) is single-URL and must never be prefixed. One
+// definition — the client has the matching one in public/js/i18n.js.
+const MIRRORED = (p) => p === '/' || p === '/privacy'
+  || /^\/coaches\/[^/]+\/?$/.test(p);
+
 // The path a given page has in a given language.
 const pathFor = (bare, lang) => (lang === 'en' ? (bare === '/' ? '/en' : '/en' + bare) : bare);
 
@@ -105,7 +111,10 @@ function sitemapXml() {
       + `    <priority>${priority}</priority>\n  </url>`;
   }
 
-  const pages = [{ bare: '/', priority: '1.0', changefreq: 'weekly', lastmod: today }];
+  const pages = [
+    { bare: '/', priority: '1.0', changefreq: 'weekly', lastmod: today },
+    { bare: '/privacy', priority: '0.3', changefreq: 'yearly', lastmod: config.privacy.updated },
+  ];
   for (const c of coaches) {
     pages.push({
       bare: `/coaches/${c.slug}`, priority: '0.8', changefreq: 'monthly',
@@ -280,8 +289,7 @@ function localiseLinks(html, lang) {
   return html.replace(/href="(\/[^"]*)"/g, (whole, href) => {
     if (/^\/en(?=[/#?]|$)/.test(href)) return whole;
     const pathPart = href.split(/[#?]/)[0];
-    const mirrored = pathPart === '/' || /^\/coaches\/[^/]+\/?$/.test(pathPart);
-    return mirrored ? `href="/en${href === '/' ? '' : href}"` : whole;
+    return MIRRORED(pathPart) ? `href="/en${href === '/' ? '' : href}"` : whole;
   });
 }
 
@@ -374,10 +382,29 @@ function renderCoachProfile(slug, lang = 'fi') {
   });
 }
 
+// The privacy policy. Its body is written server-side rather than by a script
+// so it is readable by a crawler — and, more to the point, by anyone with
+// JavaScript off, which is exactly the sort of person who goes looking for a
+// privacy policy.
+function renderPrivacy(lang = 'fi') {
+  const fi = lang === 'fi';
+  const html = localiseLinks(readPage('privacy.html'), lang);
+  const body = require('./privacy').renderPrivacyBody(lang);
+  return injectHead(html.replace('<main id="privacy-content"></main>', `<main>${body}</main>`), {
+    title: fi ? `Tietosuojaseloste — ${config.siteName}` : `Privacy policy — ${config.siteName}`,
+    description: fi
+      ? 'Mitä tietoja keräämme, miksi, kenelle niitä luovutetaan ja miten saat ne poistettua.'
+      : 'What we collect, why, who else sees it, and how to have it removed.',
+    canonical: SITE + pathFor('/privacy', lang),
+    alts: alternates('/privacy'),
+    lang,
+  });
+}
+
 // Signed-in pages. Nothing to index — they are empty shells until a script
 // fills them for one specific person — so they say so explicitly.
 function renderPrivate(file, title) {
   return injectHead(readPage(file), { title, canonical: null, noindex: true, keepI18n: true });
 }
 
-module.exports = { robotsTxt, sitemapXml, renderHome, renderCoachProfile, renderPrivate };
+module.exports = { robotsTxt, sitemapXml, renderHome, renderCoachProfile, renderPrivate, renderPrivacy };

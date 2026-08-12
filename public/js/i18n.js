@@ -415,6 +415,16 @@ const I18N_DICT = {
   "pay.mp.amount": { fi: "Summa", en: "Amount" },
   "pay.mp.awaiting": { fi: "Odottaa maksua", en: "Awaiting payment" },
 
+  // --- privacy, consent and account deletion ---
+  "privacy.title": { fi: "Tietosuojaseloste — Proballers Coaching", en: "Privacy policy — Proballers Coaching" },
+  "privacy.link": { fi: "Tietosuojaseloste", en: "Privacy policy" },
+  "signup.age_confirm": { fi: "Olen vähintään 13-vuotias, tai huoltajani on hyväksynyt tämän tilin.", en: "I am 13 or older, or my parent/guardian has agreed to this account." },
+  "booking.step.notes.health": { fi: "Jos kerrot loukkaantumisesta tai terveyteen liittyvästä asiasta, sen näkee vain valmentajasi. Voit myös kertoa sen hänelle kentällä.", en: "If you mention an injury or health condition, only your coach sees it. You are equally welcome to tell them on the pitch instead." },
+  "privacy.delete.title": { fi: "Poista tili", en: "Delete your account" },
+  "privacy.delete.body": { fi: "Poistaa nimesi, sähköpostisi, puhelinnumerosi, osoitteesi, viestisi ja muistiinpanosi heti. Laskut jäävät kirjanpitoon ilman henkilötietojasi, koska laki vaatii niiden säilyttämisen. Vahvista kirjoittamalla sähköpostiosoitteesi.", en: "Removes your name, email, phone, address, messages and notes straight away. Invoices stay in the accounts without your personal details, because the law requires us to keep them. Confirm by typing your email address." },
+  "privacy.delete.button": { fi: "Poista tilini", en: "Delete my account" },
+  "privacy.delete.confirm": { fi: "Tätä ei voi perua. Poistetaanko tili?", en: "This cannot be undone. Delete the account?" },
+
   // --- billing details asked in the wizard before an invoice is issued ---
   "booking.billing.title": { fi: "Laskutustiedot", en: "Billing details" },
   "booking.billing.hint": { fi: "Lähetämme laskun näillä tiedoilla. Maksu tapahtuu MobilePaylla varauksen jälkeen — varaus vahvistuu kun maksu on saapunut.", en: "We send the invoice to these details. Payment is by MobilePay after booking — the booking is confirmed once it arrives." },
@@ -1201,6 +1211,13 @@ const I18N_DICT = {
 // Keyed by the EXACT English string the server sends; translated only in FI
 // mode. Patterns (RegExp -> template) handle messages with embedded values.
 const I18N_SERVER_EXACT = {
+  "Please confirm you are 13 or older, or that a parent or guardian agrees.":
+    "Vahvista, että olet vähintään 13-vuotias tai että huoltajasi on hyväksynyt tilin.",
+  "Type your email address to confirm.":
+    "Vahvista kirjoittamalla sähköpostiosoitteesi.",
+  "You still have upcoming sessions. Cancel them, or contact us, before deleting your account.":
+    "Sinulla on vielä tulevia treenejä. Peru ne tai ota yhteyttä ennen tilin poistamista.",
+  "This account is already deleted.": "Tämä tili on jo poistettu.",
   "Please fill in your billing details so we can invoice you.":
     "Täytä laskutustiedot, jotta voimme lähettää sinulle laskun.",
   "That billing email does not look right.":
@@ -1441,7 +1458,9 @@ const I18N = (() => {
   // twin) the saved preference still decides, exactly as before.
   const EN_PREFIX = /^\/en(?=\/|$)/;
   const barePath = () => location.pathname.replace(EN_PREFIX, '') || '/';
-  const isMirrored = (p) => p === '/' || /^\/coaches\/[^/]+\/?$/.test(p);
+  // Keep in step with MIRRORED in server/seo.js.
+  const isMirrored = (p) => p === '/' || p === '/privacy'
+    || /^\/coaches\/[^/]+\/?$/.test(p);
 
   let lang = 'fi';
   if (EN_PREFIX.test(location.pathname)) {
@@ -1465,8 +1484,7 @@ const I18N = (() => {
     if (lang !== 'en' || typeof p !== 'string' || p[0] !== '/') return p;
     if (/^\/en(?=[/#?]|$)/.test(p)) return p;             // already localised
     const pathPart = p.split(/[#?]/)[0];
-    const mirrored = pathPart === '/' || /^\/coaches\/[^/]+\/?$/.test(pathPart);
-    return mirrored ? '/en' + (p === '/' ? '' : p) : p;
+    return isMirrored(pathPart) ? '/en' + (p === '/' ? '' : p) : p;
   }
 
   function t(key, params) {

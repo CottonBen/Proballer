@@ -34,6 +34,7 @@
 
   await loadPackageSection();
   await loadGroupsSection();
+  await loadDangerZone();
 
   // The MobilePay number is only in /config for signed-in callers, which is
   // exactly who this page serves.
@@ -83,6 +84,36 @@ function mobilePayNote(pay, reference, amountCents, payBy) {
     <div><span class="muted">${t('pay.mp.amount')}:</span> <strong>${eur(amountCents)}</strong></div>
     ${payBy ? `<div class="small muted" style="margin-top:4px">⏳ ${t('pay.deadline', { deadline: esc(payDeadline(payBy)) })}</div>` : ''}
   </div>`;
+}
+
+// GDPR Art. 17 in one button. Deliberately plain and slightly effortful —
+// typing your own address — because it cannot be undone.
+async function loadDangerZone() {
+  const box = document.getElementById('danger-zone');
+  if (!box) return;
+  let me;
+  try { me = (await API.get('/me')).user; } catch { return; }
+  if (!me) return;
+  box.innerHTML = `<div class="card danger-card">
+    <h3 style="font-size:1.05rem;margin:0 0 4px">${t('privacy.delete.title')}</h3>
+    <p class="small muted" style="margin:0 0 10px">${t('privacy.delete.body')}</p>
+    <div style="display:flex;gap:8px;flex-wrap:wrap;align-items:center">
+      <input class="input" id="del-confirm" style="flex:1;min-width:200px"
+        placeholder="${esc(me.email)}" autocomplete="off">
+      <button class="btn btn-danger btn-sm" id="del-account">${t('privacy.delete.button')}</button>
+    </div>
+    <p class="small form-error" id="del-error" style="margin:8px 0 0"></p>
+  </div>`;
+  box.querySelector('#del-account').addEventListener('click', async (e) => {
+    const btn = e.currentTarget;
+    const err = box.querySelector('#del-error');
+    if (!confirm(t('privacy.delete.confirm'))) return;
+    btn.disabled = true;
+    try {
+      await API.post('/me/delete', { confirmEmail: box.querySelector('#del-confirm').value });
+      location.href = '/';
+    } catch (ex) { btn.disabled = false; err.textContent = I18N.server(ex.message); }
+  });
 }
 
 // Payment deadline (config.payment.holdHours from booking) in local time.

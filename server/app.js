@@ -129,6 +129,10 @@ app.get('/sitemap.xml', (req, res) => {
 // be indexed as Finnish. hreflang on each page ties the pair together.
 app.get('/', seoPage(() => seo.renderHome('fi')));
 app.get('/en', seoPage(() => seo.renderHome('en')));
+// The privacy policy, rendered server-side so it is readable without
+// JavaScript — which is exactly the sort of visitor who goes looking for one.
+app.get('/privacy', seoPage(() => seo.renderPrivacy('fi')));
+app.get('/en/privacy', seoPage(() => seo.renderPrivacy('en')));
 // Public coach profile pages, e.g. /coaches/otto-ukkonen. Each gets its own
 // title, description and Person markup — they used to share one generic head,
 // which made six real pages look like one duplicate to a search engine.

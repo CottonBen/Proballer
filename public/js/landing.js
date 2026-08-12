@@ -590,6 +590,10 @@ function showGate(cb) {
           <select name="area" required class="input" style="width:100%">
             ${(SITE ? SITE.locations : ['Helsinki', 'Espoo', 'Vantaa', 'Kirkkonummi']).map((c) => `<option>${esc(c)}</option>`).join('')}
           </select></label>
+          <label class="f agecheck">
+            <input type="checkbox" name="ageConfirmed" required>
+            <span data-i18n="signup.age_confirm">Olen vähintään 13-vuotias, tai huoltajani on hyväksynyt tämän tilin.</span>
+          </label>
         <label class="f"><span>${t('login.form.phone')}</span>
           <input type="tel" name="phone" autocomplete="tel" placeholder="+358 40 123 4567"></label>` : ''}
         <label class="f"><span>${t('common.form.password')}</span>
@@ -620,6 +624,7 @@ function showGate(cb) {
         payload.name = fd.get('name');
         payload.phone = String(fd.get('phone') || '').trim();
         payload.area = String(fd.get('area') || '');
+        payload.ageConfirmed = Boolean(fd.get('ageConfirmed'));
       }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       // A signup is NOT an account yet — the emailed code creates it.

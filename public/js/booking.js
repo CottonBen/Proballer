@@ -157,7 +157,8 @@ function renderNotes() {
       style="width:100%;resize:vertical;background:rgba(255,255,255,0.05);border:1px solid var(--line);
         border-radius:12px;color:var(--text);font-family:var(--body);font-size:0.95rem;padding:12px"
       >${esc(W.notes)}</textarea></label>
-    <p class="small muted">${t('booking.step.notes.hint')}</p>` +
+    <p class="small muted">${t('booking.step.notes.hint')}</p>
+    <p class="small muted">${t('booking.step.notes.health')}</p>` +
     nav({ nextOk: true });
   body().querySelector('#notes-input').addEventListener('input', (e) => {
     W.notes = e.target.value.slice(0, 500);
@@ -494,6 +495,10 @@ function renderAuthPanel() {
           <select name="area" class="input" style="width:100%">
             ${(W.site.locations || []).map((c) => `<option>${esc(c)}</option>`).join('')}
           </select></label>
+          <label class="f agecheck" id="f-age" hidden>
+            <input type="checkbox" name="ageConfirmed" required>
+            <span data-i18n="signup.age_confirm">Olen vähintään 13-vuotias, tai huoltajani on hyväksynyt tämän tilin.</span>
+          </label>
         <label class="f" id="f-phone" hidden><span>${t('login.form.phone')}</span>
           <input type="tel" name="phone" autocomplete="tel" placeholder="+358 40 123 4567"></label>
         <label class="f"><span>${t('common.form.password')}</span>
@@ -515,6 +520,7 @@ function renderAuthPanel() {
     panel.querySelector('#f-name').hidden = mode === 'login';
     panel.querySelector('#f-area').hidden = mode === 'login';
     panel.querySelector('#f-phone').hidden = mode === 'login';
+    panel.querySelector('#f-age').hidden = mode === 'login';
     panel.querySelector('button[type="submit"]').textContent =
       mode === 'login' ? t('booking.auth.submit_login') : t('booking.auth.submit_signup');
   }));
@@ -531,6 +537,7 @@ function renderAuthPanel() {
         payload.name = fd.get('name');
         payload.phone = String(fd.get('phone') || '').trim();
         payload.area = String(fd.get('area') || '');
+        payload.ageConfirmed = Boolean(fd.get('ageConfirmed'));
       }
       const res = await API.post(mode === 'signup' ? '/auth/signup' : '/auth/login', payload);
       // A signup is NOT an account yet — the emailed code creates it.

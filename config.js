@@ -92,6 +92,30 @@ module.exports = {
     holdHours: 72,
   },
 
+  // Data-protection identity, printed on the privacy policy (/privacy). GDPR
+  // Art. 13 requires the controller to be identifiable and contactable, so
+  // these must be real before the policy goes live — the page says so out loud
+  // while any of them are still placeholders.
+  privacy: {
+    // Registered name and business ID (Y-tunnus). Leave the placeholder text
+    // exactly as-is until you have them; the page then shows a warning banner
+    // instead of pretending to be complete.
+    legalName: process.env.PRIVACY_LEGAL_NAME || 'TODO: registered name',
+    businessId: process.env.PRIVACY_BUSINESS_ID || 'TODO: Y-tunnus',
+    address: process.env.PRIVACY_ADDRESS || 'TODO: registered address',
+    // Where data-protection requests go. Defaults to the normal reply address.
+    contactEmail: process.env.PRIVACY_EMAIL || 'proballerscoaching@gmail.com',
+    // Named processors. Anything that receives personal data must be listed —
+    // if you switch another integration on (Attio, say), add it here too.
+    smtpProvider: process.env.PRIVACY_SMTP_PROVIDER || 'Brevo (Sendinblue)',
+    // Bookkeeping retention (Finnish Accounting Act: 6 years from year end).
+    invoiceYears: 6,
+    // Everything not needed for accounting goes after this long inactive.
+    inactiveMonths: 24,
+    // Bumped by hand when the policy text changes.
+    updated: '2026-08-12',
+  },
+
   // Vipps MobilePay MERCHANT integration (optional, off by default).
   //
   // A PERSONAL MobilePay number — the +358 number above — has no API and no

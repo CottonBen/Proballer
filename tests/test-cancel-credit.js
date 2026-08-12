@@ -93,7 +93,7 @@ const day = (n) => new Date(Date.now() + n * 86400000).toISOString().slice(0, 10
       const c = client();
       const email = `${tag}@test.local`;
       await c('POST', '/auth/signup',
-        { name: tag, email, password: 'Password1!', area: 'Helsinki', lang: 'fi' });
+        { ageConfirmed: true, name: tag, email, password: 'Password1!', area: 'Helsinki', lang: 'fi' });
       const code = db.prepare('SELECT code FROM pending_signups WHERE email = ?').get(email).code;
       const v = await c('POST', '/auth/verify-signup', { email, code });
       return { c, id: v.data.user.id, email };

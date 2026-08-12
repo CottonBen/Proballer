@@ -132,6 +132,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     for (let i = 0; i < 7; i++) {
       const c = client();
       r = await c('POST', '/auth/signup', {
+      ageConfirmed: true,
         name: `Pelaaja ${i}`, email: `pelaaja${i}@test.local`, password: 'Password1!', area: 'Helsinki', lang: 'fi',
       });
       check(`customer ${i} signs up`, r.status === 200, r.status);
@@ -403,6 +404,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     // An unverified account cannot book or join.
     const unv = client();
     r = await unv('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Ei Vahvistettu', email: 'unverified@test.local', password: 'Password1!',
       area: 'Vantaa', lang: 'fi',
     });

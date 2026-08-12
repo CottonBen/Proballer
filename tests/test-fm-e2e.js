@@ -96,6 +96,7 @@ const helsinkiDate = (offset) => new Intl.DateTimeFormat('en-CA',
     r = await coach.api('POST', '/auth/login', { email: 'purecoach@test.local', password: 'CoachOnly123!' });
     check('pure coach logs in', r.status === 200 && r.data.user.role === 'coach', r.data);
     r = await customer.api('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Malli Asiakas', email: 'malli@test.local', password: 'Password1!', area: 'Helsinki', lang: 'fi',
     });
     const code = db.prepare("SELECT code FROM pending_signups WHERE email = 'malli@test.local'").get().code;

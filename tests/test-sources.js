@@ -149,6 +149,7 @@ const helsinkiDate = (offset) => new Intl.DateTimeFormat('en-CA',
 
     // --- stamping: signup chain, contact lead, admin-created -----------------
     let r = await fb.api('POST', '/auth/signup', {
+      ageConfirmed: true,
       name: 'Facebook Asiakas', email: 'fbcust@test.local', password: 'Password1!',
       area: 'Helsinki', lang: 'fi',
     });
