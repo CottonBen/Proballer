@@ -100,9 +100,19 @@ function client() {
     check('policy states the real retention periods',
       fi.body.includes(String(require('../config').privacy.invoiceYears))
       && fi.body.includes(String(require('../config').privacy.inactiveMonths)));
-    // Placeholders must be visible as such, not passed off as a finished policy.
-    check('unfilled legal details raise a draft warning',
-      fi.body.includes('Keskeneräinen') && en.body.includes('Draft'));
+    // The controller must be identifiable (GDPR Art. 13) and, now that the
+    // details are filled in, the draft warning must be gone.
+    const P = require('../config').privacy;
+    check('the policy names the controller and its address',
+      fi.body.includes(P.legalName) && fi.body.includes(P.address), P);
+    check('a contact address for data requests is given',
+      fi.body.includes(P.contactEmail));
+    check('no draft warning once the details are real',
+      !fi.body.includes('Keskeneräinen') && !en.body.includes('>Draft<'), 'still draft');
+    // No business ID yet — the line must be omitted, not left as a stray label.
+    check('no orphan Y-tunnus label while unregistered',
+      P.businessId ? fi.body.includes(P.businessId) : !fi.body.includes('Y-tunnus'), P.businessId);
+    check('the SMTP processor is named', fi.body.includes(P.smtpProvider), P.smtpProvider);
 
     // --- signup age gate -----------------------------------------------------
     const anon = client();

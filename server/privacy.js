@@ -20,7 +20,7 @@ const esc = (s) => String(s == null ? '' : s).replace(/[&<>"']/g,
 
 // True while the legal identity is still placeholder text. The page says so
 // rather than presenting an incomplete policy as if it were finished.
-const isDraft = () => ['legalName', 'businessId', 'address']
+const isDraft = () => ['legalName', 'address']
   .some((k) => String(config.privacy[k] || '').startsWith('TODO'));
 
 const P = config.privacy;
@@ -36,9 +36,9 @@ function sections(lang) {
     {
       h: s('Rekisterinpitäjä', 'Who is responsible'),
       body: `<p>${s(
-        `${esc(P.legalName)} (Y-tunnus ${esc(P.businessId)}), ${esc(P.address)}. `
+        `${esc(P.legalName)}${P.businessId ? ` (Y-tunnus ${esc(P.businessId)})` : ''}, ${esc(P.address)}. `
         + `Tietosuoja-asioissa ota yhteyttä: <a href="mailto:${esc(P.contactEmail)}">${esc(P.contactEmail)}</a>.`,
-        `${esc(P.legalName)} (business ID ${esc(P.businessId)}), ${esc(P.address)}. `
+        `${esc(P.legalName)}${P.businessId ? ` (business ID ${esc(P.businessId)})` : ''}, ${esc(P.address)}. `
         + `For anything about your data, contact <a href="mailto:${esc(P.contactEmail)}">${esc(P.contactEmail)}</a>.`)}</p>
       <p>${s(
         'Emme ole nimenneet tietosuojavastaavaa — toimintamme on pienimuotoista eikä laki sitä edellytä. '

@@ -97,12 +97,15 @@ module.exports = {
   // these must be real before the policy goes live — the page says so out loud
   // while any of them are still placeholders.
   privacy: {
-    // Registered name and business ID (Y-tunnus). Leave the placeholder text
-    // exactly as-is until you have them; the page then shows a warning banner
+    // Who the data controller is. GDPR Art. 13 needs a name and a way to reach
+    // them; a business ID is NOT required by the regulation, so businessId may
+    // be blank and the policy simply omits the line. legalName and address are
+    // required — while either is still 'TODO:' the page shows a draft warning
     // instead of pretending to be complete.
-    legalName: process.env.PRIVACY_LEGAL_NAME || 'TODO: registered name',
-    businessId: process.env.PRIVACY_BUSINESS_ID || 'TODO: Y-tunnus',
-    address: process.env.PRIVACY_ADDRESS || 'TODO: registered address',
+    legalName: process.env.PRIVACY_LEGAL_NAME || 'Proballers Coaching',
+    // Y-tunnus, once the business is registered. Blank = the line is omitted.
+    businessId: process.env.PRIVACY_BUSINESS_ID || '',
+    address: process.env.PRIVACY_ADDRESS || 'Koirasaarentie 37 A, Helsinki',
     // Where data-protection requests go. Defaults to the normal reply address.
     contactEmail: process.env.PRIVACY_EMAIL || 'proballerscoaching@gmail.com',
     // Named processors. Anything that receives personal data must be listed —

@@ -314,10 +314,12 @@ reads the retention periods, processors and cookie names out of
 [config.js](config.js) and the real code, so the policy cannot quietly drift
 away from the system it describes.
 
-**Before it goes live**, fill in `config.privacy`: `legalName`, `businessId`
-(Y-tunnus) and `address`. While any is still `TODO:` the page shows a draft
-warning instead of passing itself off as finished. Bump `privacy.updated`
-whenever the wording changes.
+The controller's details live in `config.privacy`. `legalName` and `address`
+are required — while either is still `TODO:` the page shows a draft warning
+instead of passing itself off as finished. `businessId` (Y-tunnus) is optional:
+GDPR does not require one, so while the business is unregistered the line is
+simply omitted rather than left as an empty label. Set it once you have one, and
+bump `privacy.updated` whenever the wording changes.
 
 Three things the policy promises, and where they are enforced:
 
