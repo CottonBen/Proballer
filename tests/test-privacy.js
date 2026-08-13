@@ -138,64 +138,71 @@ function client() {
       Boolean(created && created.age_confirmed_at), created);
 
     // --- self-serve deletion -------------------------------------------------
+    // Demo data is randomised, so rather than hunt for a customer in the right
+    // state, put two of them into the states we need. Deleting is irreversible
+    // and the test must exercise it deliberately, not by luck.
+    const withHistory = db.prepare(`SELECT DISTINCT u.id, u.email FROM users u
+      JOIN bookings b ON b.customer_id = u.id
+      WHERE u.role = 'customer' AND u.anonymised_at IS NULL ORDER BY u.id LIMIT 2`).all();
+    check('two demo customers with booking history', withHistory.length === 2, withHistory.length);
+    const [keeper, victim] = withHistory;
+
+    // 1. A customer who still has a session coming must NOT be able to vanish
+    //    on the coach.
+    db.prepare("UPDATE bookings SET status = 'confirmed' WHERE id = (SELECT MIN(id) FROM bookings WHERE customer_id = ?)")
+      .run(keeper.id);
+    const live = client();
+    await live('POST', '/auth/login', { email: keeper.email, password: 'DemoCustomer1!' });
+    let d = await live('POST', '/me/delete', { confirmEmail: keeper.email });
+    check('deletion refused while sessions are upcoming', d.status === 409
+      && /upcoming/i.test(d.data.error || ''), d.data);
+    check('the refused account is untouched',
+      db.prepare('SELECT anonymised_at FROM users WHERE id = ?').get(keeper.id).anonymised_at === null);
+
+    // 2. A customer with only past sessions can delete.
+    db.prepare("UPDATE bookings SET status = 'completed' WHERE customer_id = ? AND status = 'confirmed'")
+      .run(victim.id);
     const cust = client();
-    // A customer with history but nothing upcoming.
-    const target = db.prepare(`SELECT u.email FROM users u
-      WHERE u.role = 'customer' AND u.anonymised_at IS NULL
-        AND EXISTS (SELECT 1 FROM bookings b WHERE b.customer_id = u.id)
-        AND NOT EXISTS (SELECT 1 FROM bookings b WHERE b.customer_id = u.id AND b.status = 'confirmed')
-      LIMIT 1`).get();
-    check('found a demo customer with history', Boolean(target), target);
-    await cust('POST', '/auth/login', { email: target.email, password: 'DemoCustomer1!' });
-    const before = db.prepare('SELECT * FROM users WHERE email = ?').get(target.email);
+    await cust('POST', '/auth/login', { email: victim.email, password: 'DemoCustomer1!' });
+    const before = db.prepare('SELECT * FROM users WHERE id = ?').get(victim.id);
     const invBefore = db.prepare(`SELECT COUNT(*) n FROM invoices i JOIN bookings b ON b.id = i.booking_id
-      WHERE b.customer_id = ?`).get(before.id).n;
+      WHERE b.customer_id = ?`).get(victim.id).n;
 
-    r = await cust('POST', '/me/delete', { confirmEmail: 'wrong@example.com' });
-    check('deletion refused without the right email', r.status === 400, r.data);
+    d = await cust('POST', '/me/delete', { confirmEmail: 'wrong@example.com' });
+    check('deletion refused without the right email', d.status === 400, d.data);
     check('nothing deleted by the refused attempt',
-      db.prepare('SELECT anonymised_at FROM users WHERE id = ?').get(before.id).anonymised_at === null);
+      db.prepare('SELECT anonymised_at FROM users WHERE id = ?').get(victim.id).anonymised_at === null);
 
-    r = await cust('POST', '/me/delete', { confirmEmail: target.email });
-    check('deletion accepted', r.status === 200, r.data);
+    d = await cust('POST', '/me/delete', { confirmEmail: victim.email });
+    check('deletion accepted', d.status === 200, d.data);
 
-    const after = db.prepare('SELECT * FROM users WHERE id = ?').get(before.id);
-    check('name and email are gone', after.name !== before.name
-      && after.email.startsWith('deleted-'), after.email);
+    const after = db.prepare('SELECT * FROM users WHERE id = ?').get(victim.id);
+    check('name and email are gone',
+      after.name !== before.name && after.email.startsWith('deleted-'), after.email);
     check('phone and address are cleared',
       !after.phone && !after.billing_address && !after.billing_city, after);
     check('the login is destroyed', after.password_hash === '', after.password_hash);
     check('deletion is stamped', Boolean(after.anonymised_at));
     check('chat messages are gone',
-      db.prepare('SELECT COUNT(*) n FROM chat_messages WHERE sender_id = ?').get(before.id).n === 0);
+      db.prepare('SELECT COUNT(*) n FROM chat_messages WHERE sender_id = ?').get(victim.id).n === 0);
     check('notes and billing on bookings are wiped',
       db.prepare(`SELECT COUNT(*) n FROM bookings
-        WHERE customer_id = ? AND (notes != '' OR billing_name != '')`).get(before.id).n === 0);
+        WHERE customer_id = ? AND (notes != '' OR billing_name != '')`).get(victim.id).n === 0);
     check('sessions revoked',
-      db.prepare('SELECT COUNT(*) n FROM sessions WHERE user_id = ?').get(before.id).n === 0);
+      db.prepare('SELECT COUNT(*) n FROM sessions WHERE user_id = ?').get(victim.id).n === 0);
     // …but the accounting survives, which is the whole reason this anonymises
     // rather than deletes.
     check('invoices are KEPT for the statutory period',
       db.prepare(`SELECT COUNT(*) n FROM invoices i JOIN bookings b ON b.id = i.booking_id
-        WHERE b.customer_id = ?`).get(before.id).n === invBefore, invBefore);
+        WHERE b.customer_id = ?`).get(victim.id).n === invBefore, invBefore);
     check('invoice emails are scrubbed', db.prepare(`SELECT COUNT(*) n FROM invoices i
       JOIN bookings b ON b.id = i.booking_id
-      WHERE b.customer_id = ? AND i.customer_email NOT LIKE 'deleted-%'`).get(before.id).n === 0);
+      WHERE b.customer_id = ? AND i.customer_email NOT LIKE 'deleted-%'`).get(victim.id).n === 0);
     check('the deleted session no longer authenticates',
       (await cust('GET', '/my-bookings')).status === 401);
+    check('deleting twice is refused',
+      (await cust('POST', '/me/delete', { confirmEmail: victim.email })).status === 401);
 
-    // A customer with an upcoming session must not vanish on the coach.
-    const live = client();
-    const withUpcoming = db.prepare(`SELECT u.email FROM users u
-      WHERE u.role = 'customer' AND u.anonymised_at IS NULL
-        AND EXISTS (SELECT 1 FROM bookings b WHERE b.customer_id = u.id AND b.status = 'confirmed')
-      LIMIT 1`).get();
-    if (withUpcoming) {
-      await live('POST', '/auth/login', { email: withUpcoming.email, password: 'DemoCustomer1!' });
-      r = await live('POST', '/me/delete', { confirmEmail: withUpcoming.email });
-      check('deletion refused while sessions are upcoming', r.status === 409
-        && /upcoming/i.test(r.data.error || ''), r.data);
-    }
     db.close();
   } catch (err) {
     failed++;

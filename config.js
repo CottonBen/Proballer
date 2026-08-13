@@ -105,7 +105,7 @@ module.exports = {
     legalName: process.env.PRIVACY_LEGAL_NAME || 'Proballers Coaching',
     // Y-tunnus, once the business is registered. Blank = the line is omitted.
     businessId: process.env.PRIVACY_BUSINESS_ID || '',
-    address: process.env.PRIVACY_ADDRESS || 'Koirasaarentie 37 A, Helsinki',
+    address: process.env.PRIVACY_ADDRESS || 'Koirasaarentie 37 A, 00590 Helsinki',
     // Where data-protection requests go. Defaults to the normal reply address.
     contactEmail: process.env.PRIVACY_EMAIL || 'proballerscoaching@gmail.com',
     // Named processors. Anything that receives personal data must be listed —
