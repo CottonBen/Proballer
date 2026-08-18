@@ -59,7 +59,9 @@ function client() {
 
   try {
     let up = false;
-    for (let i = 0; i < 80; i++) {
+    // See test-seo.js: seeding DEMO_DATA takes ~50 s (bcrypt per demo account),
+    // far longer than the 20 s this used to allow.
+    for (let i = 0; i < 400; i++) {
       await new Promise((r) => setTimeout(r, 250));
       try { if ((await fetch(BASE + '/api/config')).ok) { up = true; break; } } catch { /* boot */ }
     }

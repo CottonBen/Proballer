@@ -45,7 +45,12 @@ const get = async (p) => {
 
   try {
     let up = false;
-    for (let i = 0; i < 60; i++) {
+    // Generous on purpose: this is one of only two suites that seed DEMO_DATA,
+    // and the demo seed bcrypt-hashes a password for every demo account — ~50 s
+    // on a laptop against ~5 s for the plain seed every other suite uses. The
+    // old 15 s window was shorter than the seed itself, so the suite failed
+    // with an empty log and looked like a boot crash.
+    for (let i = 0; i < 400; i++) {
       await new Promise((r) => setTimeout(r, 250));
       try { if ((await fetch(BASE + '/robots.txt')).ok) { up = true; break; } } catch { /* boot */ }
     }
