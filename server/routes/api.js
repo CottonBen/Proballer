@@ -1118,7 +1118,11 @@ router.post('/groups/start', requireRole('customer', 'admin'), async (req, res) 
     return res.status(400).json({ error: 'This coach does not train in that city.' });
   }
   if (date < helsinkiDateOffset(config.groupTraining.minLeadDays)) {
-    return res.status(400).json({ error: 'Group sessions can be started at least 5 days ahead.' });
+    // The number comes from config, so I18N_SERVER_PATTERNS translates it
+    // rather than the exact map — a hardcoded "5" here went stale silently.
+    return res.status(400).json({
+      error: `Group sessions can be started at least ${config.groupTraining.minLeadDays} days ahead.`,
+    });
   }
   // Fill the open group before opening another (owner's rule): while this
   // coach has an upcoming session with spots left, players join that one.

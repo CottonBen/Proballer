@@ -1153,7 +1153,7 @@ const I18N_DICT = {
   "landing.groups.age_of": { fi: "{age} v", en: "ages {age}" },
   "landing.groups.join_title": { fi: "Liity ryhmään", en: "Join a group" },
   "landing.groups.start_title": { fi: "Aloita uusi ryhmä", en: "Start a new group" },
-  "landing.groups.start_sub": { fi: "Valitse valmentajan vapaa aika (vähintään 5 päivän päästä) ja ikäryhmäsi — muut pelaajat voivat liittyä samaan treeniin.", en: "Pick a coach's free time (at least 5 days ahead) and your age group — other players can join the same session." },
+  "landing.groups.start_sub": { fi: "Valitse valmentajan vapaa aika (vähintään {days} päivän päästä) ja ikäryhmäsi — muut pelaajat voivat liittyä samaan treeniin.", en: "Pick a coach's free time (at least {days} days ahead) and your age group — other players can join the same session." },
   "landing.groups.pick_slot": { fi: "Valitse aika", en: "Pick a time" },
   "landing.groups.pick_age": { fi: "Valitse ikäryhmä", en: "Pick the age group" },
   "landing.groups.pick_city": { fi: "Kaupunki", en: "City" },
@@ -1358,7 +1358,6 @@ const I18N_SERVER_EXACT = {
   "Please verify your email address first.": "Vahvista ensin sähköpostiosoitteesi.",
   "Please pick an age group.": "Valitse ikäryhmä.",
   "This group session is for a different age group.": "Tämä ryhmätreeni on eri ikäryhmälle.",
-  "Group sessions can be started at least 5 days ahead.": "Ryhmätreenin voi aloittaa aikaisintaan 5 päivän päähän.",
   "This coach already has an open group session — join it instead of starting a new one.": "Tällä valmentajalla on jo avoin ryhmätreeni — liity siihen ennen uuden aloittamista.",
   "Sessions must be booked at least 24 hours in advance.": "Treenit on varattava vähintään 24 tuntia etukäteen.",
   "Leave a valid email address or phone number.": "Jätä toimiva sähköpostiosoite tai puhelinnumero.",
@@ -1387,6 +1386,11 @@ const fiDate = (iso) => {
 const I18N_SERVER_PATTERNS = [
   [/^Sessions run between (\d{1,2}):00 and (\d{1,2}):00\.$/,
     (m) => `Treeniajat ovat klo ${m[1]}.00–${m[2]}.00.`],
+  // The group start-lead comes from config.groupTraining.minLeadDays, so it
+  // has to match any number — it lived in the exact map with a hardcoded 5 and
+  // would have silently fallen through to English the moment that changed.
+  [/^Group sessions can be started at least (\d+) days ahead\.$/,
+    (m) => `Ryhmätreenin voi aloittaa aikaisintaan ${m[1]} päivän päähän.`],
   [/^Unknown dataset\. Options: ([\s\S]*)$/,
     (m) => `Tuntematon tietojoukko. Vaihtoehdot: ${m[1]}`],
   [/^Sheets sync failed: ([\s\S]*)$/,

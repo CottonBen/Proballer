@@ -131,9 +131,9 @@ let LANDING_USER = null;
 const hourFmt = (h) => `${String(h).padStart(2, '0')}${I18N.lang === 'fi' ? '.' : ':'}00`;
 const ageLabel = (a) => t('landing.groups.age_of', { age: a });
 
-// Two halves under the spotlight: joinable sessions (with live spot counts
-// and their age group) and free coach hours ≥5 days out where a player can
-// START a brand-new group for their own age group.
+// Two halves under the spotlight: joinable sessions (with live spot counts and
+// their age group) and free coach hours at least groupTraining.minLeadDays out,
+// where a player can START a brand-new group for their own age group.
 async function buildGroups() {
   const section = document.getElementById('groups');
   if (!section) return;
@@ -180,7 +180,7 @@ async function buildGroups() {
     <div class="card group-start reveal">
       <div class="group-start-head">
         <strong>${t('landing.groups.start_title')}</strong>
-        <span class="muted small">${t('landing.groups.start_sub')}</span>
+        <span class="muted small">${t('landing.groups.start_sub', { days: gt.minLeadDays })}</span>
       </div>
       <div class="group-fields">
         <label for="gs-coach">${t('landing.groups.f.coach')}

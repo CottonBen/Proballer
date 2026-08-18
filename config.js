@@ -139,10 +139,17 @@ module.exports = {
   // `pricePerPlayer` euros for their own spot. Players can START a group
   // session on any coach's free hour at least `minLeadDays` days ahead; the
   // first booker sets the session's age group.
+  //
+  // `minLeadDays` is the window a new group needs to fill up — the point of it
+  // is that other players get a chance to see the session and join, not that
+  // the coach needs the notice (a 1-on-1 books on 24 hours). JOINING an
+  // existing group is exempt entirely and stays open until the session starts.
+  // Every place that mentions the number reads it from here, so changing it is
+  // enough — nothing else needs editing.
   groupTraining: {
     pricePerPlayer: 25,
     capacity: 4,
-    minLeadDays: 5,
+    minLeadDays: 2,
     ageGroups: ['7-10', '10-13', '13-16'],
   },
 

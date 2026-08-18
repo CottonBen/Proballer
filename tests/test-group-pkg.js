@@ -436,7 +436,7 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     const plainCode = r.data.booking.code;
     check('plain booking has an invoice (single flow)', Boolean(r.data.invoice), r.data.invoice);
 
-    // Player-started group session from a free slot >= 5 days ahead.
+    // Player-started group session from a free slot at least minLeadDays out.
     const D6 = day(6), D7 = day(7);
     for (const [d, h] of [[D6, 10], [D7, 11]]) {
       db.prepare('INSERT OR IGNORE INTO availability (coach_id, date, hour, created_at) VALUES (?,?,?,?)')
@@ -447,10 +447,15 @@ const helsinkiHour = () => Number(new Intl.DateTimeFormat('en-GB',
     check('free far-out slots are startable', Boolean(startable)
       && startable.slots.some((sl) => sl.date === D6 && sl.hour === 10), r.startable);
 
+    // One day inside the window, whatever the window currently is — hardcoding
+    // the number here meant the guard stopped being tested the moment
+    // minLeadDays moved (day(2) was "too soon" at 5, but is legal at 2).
+    const LEAD = require('../config').groupTraining.minLeadDays;
     r = await customers[0]('POST', '/groups/start', {
-      coachId, date: day(2), hour: 12, location: 'Helsinki', ageGroup: '7-10',
+      coachId, date: day(LEAD - 1), hour: 12, location: 'Helsinki', ageGroup: '7-10',
     });
-    check('start under 5 days ahead rejected', r.status === 400 && /5 days/.test(r.data.error), r.data);
+    check(`start under ${LEAD} days ahead rejected`,
+      r.status === 400 && new RegExp(`${LEAD} days`).test(r.data.error), r.data);
 
     r = await customers[0]('POST', '/groups/start', {
       coachId, date: D6, hour: 10, location: 'Helsinki', ageGroup: '7-10',
