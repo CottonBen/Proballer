@@ -105,6 +105,27 @@ async function get(p) {
     check('cancellations stay out of the sessions list',
       !c.today.sessions.some((x) => x.code.startsWith('PBF-CX')), c.today.sessions);
 
+    // Helsinki runs 2–3 h ahead of UTC, so between local midnight and UTC
+    // midnight a cancellation carries YESTERDAY's UTC date. Comparing that
+    // string against the Helsinki day dropped it from today's brief — and
+    // yesterday's had already been sent, so it was never reported at all.
+    // Build that exact instant rather than trusting the clock: the old bug only
+    // showed itself if the suite happened to run after 01:00 Finnish time.
+    const utcOffsetHours = Number(new Intl.DateTimeFormat('en-GB', {
+      timeZone: 'Europe/Helsinki', hour: '2-digit', hour12: false,
+    }).format(new Date(today + 'T12:00:00Z'))) - 12;
+    const justAfterLocalMidnight =
+      new Date(Date.parse(today + 'T00:30:00Z') - utcOffsetHours * 3600000).toISOString();
+    check('the boundary fixture really straddles UTC midnight',
+      justAfterLocalMidnight.slice(0, 10) !== today, justAfterLocalMidnight);
+    mkCancelled('PBF-CX4', 12, 'coach', justAfterLocalMidnight);
+    const mid = (await get(`/api/brief?token=${TOKEN}`)).body;
+    check('a cancellation just after Helsinki midnight is still today\'s news',
+      mid.today.cancellations.some((x) => x.code === 'PBF-CX4'),
+      mid.today.cancellations.map((x) => x.code));
+    check('and it counts towards the coach-cancellation tally',
+      mid.attention.coachCancellations === 2, mid.attention.coachCancellations);
+
     // --- HTML ---
     const h = await get(`/api/brief?token=${TOKEN}&format=html`);
     check('?format=html returns HTML', h.status === 200 && /kooste/i.test(h.body) && /<html/i.test(h.body));

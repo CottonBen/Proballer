@@ -36,13 +36,23 @@ function buildBrief() {
   // Cancellations made TODAY (by when they were cancelled, not the session
   // date) — a coach dropping next week's session is today's news. The session
   // date is carried along so the brief can say how much notice was given.
+  //
+  // `cancelled_at` is a UTC instant but `today` is a HELSINKI calendar day, so
+  // the comparison has to be made in Helsinki time. SQLite's date() reads the
+  // raw UTC string, which silently dropped everything cancelled between
+  // Helsinki midnight and UTC midnight (00:00–03:00 local in summer): such a
+  // row carries yesterday's UTC date, so it matched neither today's brief nor
+  // yesterday's — a coach cancelling at half past midnight vanished entirely.
+  // The SQL window is a cheap ±1-day prefilter; the JS filter, using the same
+  // helper as the rest of the app, is what actually decides.
   const cancelledToday = db.prepare(`
-    SELECT b.code, b.date, b.hour, b.location, b.total_cents, b.cancelled_by,
+    SELECT b.code, b.date, b.hour, b.location, b.total_cents, b.cancelled_by, b.cancelled_at,
            c.name AS coach, u.name AS customer
     FROM bookings b JOIN coaches c ON c.id = b.coach_id JOIN users u ON u.id = b.customer_id
     WHERE b.demo = 0 AND b.status = 'cancelled' AND b.cancelled_at IS NOT NULL
-      AND date(b.cancelled_at) = ?
-    ORDER BY b.cancelled_at DESC`).all(today);
+      AND date(b.cancelled_at) BETWEEN date(?, '-1 day') AND date(?, '+1 day')
+    ORDER BY b.cancelled_at DESC`).all(today, today)
+    .filter((x) => helsinkiNow(new Date(x.cancelled_at)).date === today);
 
   const revToday = one("SELECT COALESCE(SUM(total_cents),0) c FROM bookings WHERE demo=0 AND status='completed' AND date=?", today).c;
   const revMonth = one("SELECT COALESCE(SUM(total_cents),0) c FROM bookings WHERE demo=0 AND status='completed' AND date>=? AND date<=?", monthStart, today).c;
