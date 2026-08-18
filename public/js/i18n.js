@@ -978,7 +978,7 @@ const I18N_DICT = {
   // --- group training: landing section ---------------------------------------
   "landing.groups.kicker": { fi: "Ryhmätreenit", en: "Group training" },
   "landing.groups.title": { fi: "Treenaa porukalla", en: "Train as a group" },
-  "landing.groups.sub": { fi: "Valmentajan vetämä pienryhmä, enintään {cap} pelaajaa. Varaa oma paikkasi — maksu heti varatessa.", en: "A coach-led small group of up to {cap} players. Book your own spot — payment right at booking." },
+  "landing.groups.sub": { fi: "Valmentajan vetämä pienryhmä, enintään {cap} pelaajaa. Varaa oma paikkasi — maksu MobilePaylla varauksen jälkeen.", en: "A coach-led small group of up to {cap} players. Book your own spot — pay by MobilePay after booking." },
   "landing.groups.spots": { fi: "{left}/{cap} paikkaa jäljellä", en: "{left}/{cap} spots remaining" },
   "landing.groups.full": { fi: "Täynnä", en: "Full" },
   "landing.groups.join": { fi: "Varaa paikka", en: "Book a spot" },
@@ -1164,7 +1164,13 @@ const I18N_DICT = {
   "landing.groups.f.age":   { fi: "Ikäryhmä", en: "Age group" },
   "landing.groups.age":     { fi: "Ikäryhmä", en: "Age group" },
   "landing.groups.start_cta": { fi: "Aloita ryhmä — {price}", en: "Start the group — {price}" },
-  "landing.groups.none_start": { fi: "Ei vapaita aloitusaikoja juuri nyt.", en: "No free starting times right now." },
+  // Empty states. The section always renders, so it has to be able to say
+  // "nothing yet" in two flavours: groups can be started but none has been, or
+  // no coach has free hours far enough out for a group to exist at all.
+  "landing.groups.none_yet": { fi: "Yhtään ryhmää ei ole vielä käynnissä — aloita ensimmäinen alta.", en: "No groups are running yet — start the first one below." },
+  "landing.groups.empty_title": { fi: "Ei ryhmätreenejä juuri nyt", en: "No group sessions right now" },
+  "landing.groups.empty_body": { fi: "Ryhmätreeni syntyy, kun valmentajalla on vapaa aika vähintään {days} päivän päässä. Katso pian uudelleen — tai varaa yksilötreeni.", en: "A group session opens up as soon as a coach has a free hour at least {days} days ahead. Check back soon — or book a 1-on-1." },
+  "landing.groups.empty_cta": { fi: "Varaa yksilötreeni", en: "Book a 1-on-1" },
 
   // --- email verification -----------------------------------------------------
   "verify.title": { fi: "Vahvista sähköpostisi", en: "Confirm your email" },

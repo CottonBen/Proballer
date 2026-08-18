@@ -138,10 +138,10 @@ async function buildGroups() {
   const section = document.getElementById('groups');
   if (!section) return;
   try { GROUPS = await API.get('/groups'); } catch { GROUPS = { sessions: [], startable: [] }; }
-  const any = GROUPS.sessions.length || GROUPS.startable.length;
-  section.hidden = !any;
-  if (!any) return;
-  const gt = SITE.groupTraining || { pricePerPlayer: 25, capacity: 4, ageGroups: [] };
+  const gt = SITE.groupTraining || { pricePerPlayer: 25, capacity: 4, minLeadDays: 5, ageGroups: [] };
+  // The heading and the price are unconditional. An offer that erases itself on
+  // a quiet week reads as a broken site, strands the menu's "Ryhmätreenit" item
+  // on nothing, and keeps the product out of the page search engines see.
   document.getElementById('groups-sub').textContent = t('landing.groups.sub', { cap: gt.capacity });
   document.getElementById('group-price-tag').innerHTML =
     `<span class="price-new">${eur(gt.pricePerPlayer * 100)}</span>
@@ -204,12 +204,29 @@ async function buildGroups() {
     </div>`;
   }
 
-  document.getElementById('group-grid').innerHTML = sessionCards;
+  // Nothing to join is two different situations and they need different words.
+  // Free hours exist → the groups simply haven't been started yet, so point at
+  // the panel below. Nothing at all → name the reason and offer the thing that
+  // IS available, rather than leaving a heading standing over blank space.
+  const emptyState = GROUPS.startable.length
+    ? `<p class="muted group-empty-note reveal">${esc(t('landing.groups.none_yet'))}</p>`
+    : `<div class="card group-empty reveal">
+        <strong>${esc(t('landing.groups.empty_title'))}</strong>
+        <p class="muted">${esc(t('landing.groups.empty_body', { days: gt.minLeadDays }))}</p>
+        <button class="btn btn-primary btn-sm" id="gs-empty-cta">
+          ${esc(t('landing.groups.empty_cta'))}</button>
+      </div>`;
+
+  document.getElementById('group-grid').innerHTML = sessionCards || emptyState;
   document.getElementById('group-start').innerHTML = startPanel;
   // buildGroups() re-runs after joining or starting a group, so these are fresh
   // `.reveal` nodes the page-load observer never saw — reveal them explicitly or
   // they render at opacity 0.
   initReveal(document.getElementById('groups'));
+
+  // The dead-end state's one way out: the 1-on-1 roster, which is right below.
+  document.getElementById('gs-empty-cta')?.addEventListener('click',
+    () => document.getElementById('coaches')?.scrollIntoView({ behavior: 'smooth' }));
 
   document.getElementById('group-grid').querySelectorAll('[data-join]').forEach((btn) =>
     btn.addEventListener('click', () => {

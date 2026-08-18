@@ -333,6 +333,15 @@ body.gated { overflow: hidden; }
 .group-tags { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; }
 .group-card .btn { margin-top: auto; width: 100%; }
 
+/* Empty states live inside the auto-fill card grid, so they must be told to
+   span it — otherwise the explanation renders as a lone 260px column and reads
+   as a broken card rather than a message. */
+.group-empty, .group-empty-note { grid-column: 1 / -1; }
+.group-empty { display: flex; flex-direction: column; align-items: flex-start; gap: 6px; }
+.group-empty strong { font-size: 1.05rem; }
+.group-empty p { max-width: 54ch; margin: 0 0 6px; }
+.group-empty-note { margin: 0; }
+
 /* "Start a new group": its own panel under the cards, so four inputs never form
    a tall tower inside one narrow grid column. Every field carries a visible
    label — the four bare selects here used to be unreadable. */

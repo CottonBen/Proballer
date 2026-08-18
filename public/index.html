@@ -48,8 +48,12 @@
     </section>
 
     <!-- Group training: coach-led small groups, one spot per player.
-         Hidden until there are upcoming sessions (landing.js). -->
-    <section class="section" id="groups" hidden style="padding-bottom:0">
+         Always rendered. landing.js fills it with joinable sessions, a
+         start-your-own panel, or an empty state explaining why there is
+         neither. It used to hide itself when both were empty, which left the
+         menu's "Ryhmätreenit" item scrolling to nothing and kept the whole
+         offer out of the page a crawler sees. -->
+    <section class="section" id="groups" style="padding-bottom:0">
       <div class="wrap">
         <div class="section-head reveal">
           <div>
